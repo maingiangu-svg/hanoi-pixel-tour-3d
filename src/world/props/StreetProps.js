@@ -7,6 +7,9 @@ export class StreetProps {
     this.group.name = 'Đạo cụ khu phố'
     this.lineGeometries = []
     this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x2d3333 })
+    this.streetLights = []
+    this.lampPools = []
+    this.cafeLights = []
     parent.add(this.group)
 
     this.#addPlazaFurniture(colliders)
@@ -80,7 +83,7 @@ export class StreetProps {
 
   #addStreetLamps(colliders) {
     for (const [x, z] of [[-14, 6], [14, 6], [-15, -8], [15, -8]]) {
-      this.kit.cylinder(this.group, {
+      const lightPool = this.kit.cylinder(this.group, {
         name: 'Cột đèn đường',
         radius: 0.1,
         height: 4.4,
@@ -115,9 +118,11 @@ export class StreetProps {
         material: 'lampPool',
         receiveShadow: false,
       })
+      this.lampPools.push(lightPool)
       const light = new THREE.PointLight(0xf1b86f, 6.3, 10, 2)
       light.position.set(x + (x < 0 ? 0.56 : -0.56), 4, z)
       this.group.add(light)
+      this.streetLights.push(light)
       this.kit.addCollider(colliders, x, z, 0.32, 0.32, 'Cột đèn đường')
     }
   }
@@ -160,6 +165,14 @@ export class StreetProps {
         material: 'warmGlass',
       })
       this.kit.addCollider(colliders, x, z, 1.15, 1.15, 'Bàn cà phê')
+    }
+
+    for (const x of [17.2, 21.8]) {
+      const light = new THREE.PointLight(0xf0ae68, 5.4, 8, 2)
+      light.name = 'Ánh sáng quán cà phê'
+      light.position.set(x, 2.7, 19.3)
+      this.group.add(light)
+      this.cafeLights.push(light)
     }
   }
 

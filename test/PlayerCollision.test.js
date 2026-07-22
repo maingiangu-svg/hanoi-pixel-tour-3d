@@ -64,3 +64,13 @@ test('collision world can switch without recreating the player', () => {
   assert.equal(position.x, 1.5)
   assert.equal(position.z, 2.5)
 })
+
+test('disabled dynamic NPC colliders do not block the player', () => {
+  const npc = { ...wall, disabled: true }
+  const collision = new PlayerCollision({ colliders: [npc], bounds, radius: 0.5 })
+  const position = { x: 0, z: 0 }
+
+  collision.move(position, { x: 3, z: 0 })
+
+  assert.ok(position.x > 2.5)
+})

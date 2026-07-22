@@ -35,6 +35,7 @@ export class PlayerCollision {
       let resolvedCollision = false
 
       for (const box of this.colliders) {
+        if (box.disabled) continue
         const closestX = Math.max(box.minX, Math.min(position.x, box.maxX))
         const closestZ = Math.max(box.minZ, Math.min(position.z, box.maxZ))
         const offsetX = position.x - closestX

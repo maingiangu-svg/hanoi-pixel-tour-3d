@@ -28,22 +28,40 @@ export class StartOverlay {
     `
 
     this.overlay = this.root.querySelector('.start-overlay')
+    this.shell = this.root.querySelector('.game-shell')
     this.startButton = this.root.querySelector('.start-card')
+    this.phaseLabel = this.root.querySelector('.phase-label')
+    this.startTitle = this.root.querySelector('.start-title')
     this.crosshair = this.root.querySelector('.crosshair')
     this.interactionPrompt = this.root.querySelector('.interaction-prompt')
     this.interactionLabel = this.interactionPrompt.querySelector('span')
     this.sceneFade = this.root.querySelector('.scene-fade')
     this.debugPanel = this.root.querySelector('.debug-panel')
+    this.locked = false
+    this.dialogueActive = false
+    this.resumeMode = false
     this.handleStart = () => onStart()
     this.overlay.addEventListener('click', this.handleStart)
   }
 
   setLocked(locked) {
-    this.overlay.classList.toggle('is-hidden', locked)
-    this.crosshair.classList.toggle('is-visible', locked)
-    this.overlay.setAttribute('aria-hidden', String(locked))
-    this.startButton.tabIndex = locked ? -1 : 0
+    this.locked = locked
+    if (locked) this.setResumeMode(false)
+    this.#renderState()
     if (!locked) this.setInteraction(null)
+  }
+
+  setDialogueActive(active) {
+    this.dialogueActive = active
+    this.shell.classList.toggle('is-dialogue-active', active)
+    if (active) this.setInteraction(null)
+    this.#renderState()
+  }
+
+  setResumeMode(resume) {
+    this.resumeMode = resume
+    this.phaseLabel.textContent = resume ? 'TRỞ LẠI KHU NHÀ THỜ' : 'KHU NHÀ THỜ LỚN'
+    this.startTitle.textContent = resume ? 'Nhấp để tiếp tục' : 'Nhấp để bắt đầu'
   }
 
   setInteraction(label) {
@@ -53,6 +71,15 @@ export class StartOverlay {
 
   setFading(fading) {
     this.sceneFade.classList.toggle('is-visible', fading)
+  }
+
+  #renderState() {
+    const overlayHidden = this.locked || this.dialogueActive
+    const crosshairVisible = this.locked && !this.dialogueActive
+    this.overlay.classList.toggle('is-hidden', overlayHidden)
+    this.crosshair.classList.toggle('is-visible', crosshairVisible)
+    this.overlay.setAttribute('aria-hidden', String(overlayHidden))
+    this.startButton.tabIndex = overlayHidden ? -1 : 0
   }
 
   dispose() {

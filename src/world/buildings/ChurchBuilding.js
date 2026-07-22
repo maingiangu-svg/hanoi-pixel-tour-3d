@@ -5,6 +5,7 @@ export class ChurchBuilding {
     this.kit = kit
     this.group = new THREE.Group()
     this.group.name = 'Nhà thờ Lớn Hà Nội'
+    this.facadeLights = []
     parent.add(this.group)
 
     this.#buildMasses(colliders)
@@ -403,6 +404,7 @@ export class ChurchBuilding {
       light.position.set(x, 1.05, -6.8)
       light.target.position.set(x, x === 0 ? 9 : 10.5, -16)
       this.group.add(light, light.target)
+      this.facadeLights.push(light)
     }
   }
 }

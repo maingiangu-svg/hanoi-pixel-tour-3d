@@ -5,6 +5,7 @@ export class InteractionSystem {
     collision,
     world,
     ui,
+    dialogue = null,
     eventTarget = window,
     setTimer = window.setTimeout.bind(window),
     clearTimer = window.clearTimeout.bind(window),
@@ -14,10 +15,12 @@ export class InteractionSystem {
     this.collision = collision
     this.world = world
     this.ui = ui
+    this.dialogue = dialogue
     this.eventTarget = eventTarget
     this.setTimer = setTimer
     this.clearTimer = clearTimer
     this.availablePortal = null
+    this.availableInteraction = null
     this.transitioning = false
     this.timer = null
     this.handleKeyDown = this.handleKeyDown.bind(this)
@@ -25,19 +28,34 @@ export class InteractionSystem {
   }
 
   update() {
-    if (this.transitioning || !this.player.controls.isLocked) {
+    if (this.transitioning || this.dialogue?.isActive() || !this.player.controls.isLocked) {
       this.availablePortal = null
+      this.availableInteraction = null
       this.ui.setInteraction(null)
       return
     }
 
-    const portal = this.world.getActivePortal()
     const position = this.player.camera.position
-    const offsetX = position.x - portal.position.x
-    const offsetZ = position.z - portal.position.z
-    const isNear = offsetX * offsetX + offsetZ * offsetZ <= portal.radius * portal.radius
-    this.availablePortal = isNear ? portal : null
-    this.ui.setInteraction(this.availablePortal?.label ?? null)
+    const interactions = this.world.getActiveInteractions?.() ?? [this.world.getActivePortal()]
+    let nearest = null
+    let nearestDistanceSquared = Infinity
+
+    for (const interaction of interactions) {
+      const offsetX = position.x - interaction.position.x
+      const offsetZ = position.z - interaction.position.z
+      const distanceSquared = offsetX * offsetX + offsetZ * offsetZ
+      if (
+        distanceSquared <= interaction.radius * interaction.radius &&
+        distanceSquared < nearestDistanceSquared
+      ) {
+        nearest = interaction
+        nearestDistanceSquared = distanceSquared
+      }
+    }
+
+    this.availableInteraction = nearest
+    this.availablePortal = nearest?.type === 'portal' || !nearest?.type ? nearest : null
+    this.ui.setInteraction(nearest?.label ?? null)
   }
 
   handleKeyDown(event) {
@@ -45,13 +63,23 @@ export class InteractionSystem {
       event.code !== 'KeyE' ||
       event.repeat ||
       this.transitioning ||
-      !this.availablePortal ||
+      (!this.availableInteraction && !this.availablePortal) ||
       !this.player.controls.isLocked
     ) return
 
     event.preventDefault()
-    const portal = this.availablePortal
+    const interaction = this.availableInteraction ?? this.availablePortal
+    if (interaction.type === 'dialogue') {
+      this.availableInteraction = null
+      this.availablePortal = null
+      this.ui.setInteraction(null)
+      this.dialogue?.start(interaction.target)
+      return
+    }
+
+    const portal = interaction
     this.availablePortal = null
+    this.availableInteraction = null
     this.transitioning = true
     this.input.setEnabled(false)
     this.ui.setInteraction(null)

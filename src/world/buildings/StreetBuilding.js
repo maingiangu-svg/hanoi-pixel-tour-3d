@@ -4,6 +4,7 @@ export class StreetBuilding {
   constructor({ kit, parent, colliders, config }) {
     this.kit = kit
     this.config = config
+    this.lights = []
     this.group = new THREE.Group()
     this.group.name = config.name
     parent.add(this.group)
@@ -83,6 +84,7 @@ export class StreetBuilding {
       const warmLight = new THREE.PointLight(0xf0ad63, 11, 9, 2)
       warmLight.position.set(x, 2.7, frontZ - 1.15)
       this.group.add(warmLight)
+      this.lights.push(warmLight)
     } else if (variant === 'shop') {
       this.kit.box(this.group, {
         name: 'Cửa cuốn',

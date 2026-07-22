@@ -108,3 +108,56 @@ test('held E does not trigger a transition', () => {
   assert.equal(harness.calls.transitions, 0)
   harness.system.dispose()
 })
+
+test('nearest NPC interaction uses E without triggering the church portal', () => {
+  const target = new EventTarget()
+  const npc = { name: 'Mơ' }
+  const calls = { dialogueTarget: null, transitioned: 0, label: null }
+  const system = new InteractionSystem({
+    player: {
+      controls: { isLocked: true },
+      camera: { position: { x: 1, z: 1 } },
+    },
+    input: { setEnabled: () => {} },
+    collision: { setWorld: () => {} },
+    world: {
+      getActiveInteractions: () => [
+        {
+          type: 'portal',
+          position: { x: 1.5, z: 1.5 },
+          radius: 2,
+          label: 'Vào Nhà thờ',
+          target: 'interior',
+        },
+        {
+          type: 'dialogue',
+          position: { x: 1.1, z: 1.1 },
+          radius: 2,
+          label: 'Nói chuyện với Mơ',
+          target: npc,
+        },
+      ],
+      transition: () => {
+        calls.transitioned += 1
+      },
+    },
+    ui: {
+      setInteraction: (label) => { calls.label = label },
+      setFading: () => {},
+    },
+    dialogue: {
+      isActive: () => false,
+      start: (targetNpc) => { calls.dialogueTarget = targetNpc },
+    },
+    eventTarget: target,
+    setTimer: () => 1,
+    clearTimer: () => {},
+  })
+
+  system.update()
+  assert.equal(calls.label, 'Nói chuyện với Mơ')
+  dispatchInteraction(target)
+  assert.equal(calls.dialogueTarget, npc)
+  assert.equal(calls.transitioned, 0)
+  system.dispose()
+})

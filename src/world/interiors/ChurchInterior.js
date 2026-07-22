@@ -7,6 +7,11 @@ export class ChurchInterior {
     this.group.name = 'Interior Nhà thờ'
     this.group.visible = false
     this.colliders = []
+    this.lighting = {
+      ambient: null,
+      pendantLights: [],
+      altarLight: null,
+    }
     this.bounds = { minX: -10, maxX: 10, minZ: -20, maxZ: 16 }
     parent.add(this.group)
 
@@ -231,11 +236,13 @@ export class ChurchInterior {
 
   #buildLighting() {
     const ambient = new THREE.AmbientLight(0x9299a2, 1.18)
+    this.lighting.ambient = ambient
     this.group.add(ambient)
     for (const z of [7, 0, -7, -14]) {
       const light = new THREE.PointLight(0xe7aa66, 9, 12, 2)
       light.position.set(0, 6.8, z)
       this.group.add(light)
+      this.lighting.pendantLights.push(light)
       this.kit.sphere(this.group, {
         name: 'Đèn treo Nhà thờ',
         scale: [0.18, 0.28, 0.18],
@@ -254,5 +261,6 @@ export class ChurchInterior {
     altarLight.position.set(0, 8, -10)
     altarLight.target.position.set(0, 1.4, -17)
     this.group.add(altarLight, altarLight.target)
+    this.lighting.altarLight = altarLight
   }
 }

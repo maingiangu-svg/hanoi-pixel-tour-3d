@@ -4,12 +4,14 @@ import { ChurchBuilding } from './buildings/ChurchBuilding.js'
 import { StreetBuilding } from './buildings/StreetBuilding.js'
 import { ChurchInterior } from './interiors/ChurchInterior.js'
 import { StreetProps } from './props/StreetProps.js'
+import { MoNpc } from './npcs/MoNpc.js'
+import { ChurchCrowd } from './ChurchCrowd.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
 
 export class ChurchDistrict {
-  constructor(scene) {
+  constructor(scene, { camera = null, assetLoader = null } = {}) {
     this.scene = scene
     this.kit = new SceneKit()
     this.root = new THREE.Group()
@@ -20,6 +22,7 @@ export class ChurchDistrict {
     scene.add(this.root)
 
     const outdoorColliders = []
+    this.streetBuildingLights = []
     this.#buildOutdoorLighting()
     this.#buildGround(outdoorColliders)
     this.church = new ChurchBuilding({
@@ -33,7 +36,31 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
     })
+    this.mo = camera && assetLoader
+      ? new MoNpc({
+          parent: this.outdoor,
+          camera,
+          assetLoader,
+          colliders: outdoorColliders,
+        })
+      : null
     this.interior = new ChurchInterior({ kit: this.kit, parent: this.root })
+    this.mo?.setScheduleEnvironment({
+      outdoorParent: this.outdoor,
+      interiorParent: this.interior.group,
+      interiorColliders: this.interior.colliders,
+    })
+    this.crowd = camera
+      ? new ChurchCrowd({
+          kit: this.kit,
+          outdoor: this.outdoor,
+          interior: this.interior.group,
+          outdoorColliders,
+          interiorColliders: this.interior.colliders,
+          playerPosition: camera.position,
+          mo: this.mo,
+        })
+      : null
 
     this.areas = {
       outdoor: {
@@ -44,6 +71,7 @@ export class ChurchDistrict {
         spawn: { x: 0, z: 6, yaw: 0 },
         returnSpawn: { x: 0, z: -9.7, yaw: Math.PI },
         portal: {
+          type: 'portal',
           position: new THREE.Vector3(0, 0, -12.65),
           radius: 2.5,
           label: 'Vào Nhà thờ',
@@ -57,6 +85,7 @@ export class ChurchDistrict {
         bounds: this.interior.bounds,
         spawn: { x: 0, z: 10.7, yaw: 0 },
         portal: {
+          type: 'portal',
           position: new THREE.Vector3(0, 0, 13.15),
           radius: 2.25,
           label: 'Ra ngoài',
@@ -73,6 +102,57 @@ export class ChurchDistrict {
 
   getActivePortal() {
     return this.areas[this.activeAreaName].portal
+  }
+
+  getActiveInteractions() {
+    const interactions = [this.getActivePortal()]
+    interactions.push(this.mo?.getInteraction())
+    interactions.push(...(this.crowd?.getInteractions(this.activeAreaName) ?? []))
+    return interactions.filter(Boolean)
+  }
+
+  update(deltaTime, clock = null) {
+    if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
+    this.mo?.update(deltaTime, this.activeAreaName)
+  }
+
+  getLightingContext() {
+    const emissiveMaterials = [
+      'warmGlass',
+      'lampPool',
+      'redGlass',
+      'blueGlass',
+      'amberGlass',
+      'tealGlass',
+    ].map((name) => this.kit.material(name))
+
+    return {
+      outdoor: {
+        ambient: this.outdoorLighting.ambient,
+        hemisphere: this.outdoorLighting.hemisphere,
+        directional: this.outdoorLighting.sun,
+        rim: this.outdoorLighting.rim,
+        pointLights: [
+          ...this.props.streetLights,
+          ...this.props.cafeLights,
+          ...this.streetBuildingLights,
+        ],
+        spotLights: this.church.facadeLights,
+        emissiveMaterials,
+      },
+      interior: {
+        ambient: this.interior.lighting.ambient,
+        pointLights: this.interior.lighting.pendantLights,
+        spotLights: [this.interior.lighting.altarLight],
+        emissiveMaterials,
+      },
+    }
+  }
+
+  getActiveNpcCount() {
+    return (this.crowd?.getActiveCount(this.activeAreaName) ?? 0) + (
+      this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0
+    )
   }
 
   transition(targetAreaName) {
@@ -112,6 +192,7 @@ export class ChurchDistrict {
     rim.name = 'Ánh trời xanh cuối ngày'
     rim.position.set(22, 18, -30)
     rim.target.position.set(0, 8, -12)
+    this.outdoorLighting = { ambient, hemisphere: sky, sun, rim }
     this.outdoor.add(ambient, sky, sun, sun.target, rim, rim.target)
   }
 
@@ -309,7 +390,7 @@ export class ChurchDistrict {
       { x: 29.5, width: 9.4, height: 12.4, material: 'plaster', variant: 'home', sign: null, roof: 'flat' },
     ]
     buildings.forEach((building, index) => {
-      new StreetBuilding({
+      const streetBuilding = new StreetBuilding({
         kit: this.kit,
         parent: this.outdoor,
         colliders,
@@ -322,6 +403,7 @@ export class ChurchDistrict {
           signColor: index % 2 === 0 ? '#315c55' : '#80443c',
         },
       })
+      this.streetBuildingLights.push(...streetBuilding.lights)
     })
     this.kit.sign(this.outdoor, {
       text: 'NGÕ ẤU TRIỆU',
@@ -343,6 +425,8 @@ export class ChurchDistrict {
   }
 
   dispose() {
+    this.crowd?.dispose()
+    this.mo?.dispose()
     this.props.dispose()
     this.kit.dispose()
     this.scene.remove(this.root)
