@@ -1,0 +1,264 @@
+:root {
+  color: #f6f0df;
+  background: #303735;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --accent: #d3ad63;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+.game-shell {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+}
+
+.render-root,
+.game-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.game-canvas {
+  display: block;
+  touch-action: none;
+}
+
+.game-shell {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.start-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(90deg, rgba(24, 29, 28, 0.74), rgba(24, 29, 28, 0.16) 64%),
+    linear-gradient(0deg, rgba(24, 29, 28, 0.34), rgba(24, 29, 28, 0.08));
+  opacity: 1;
+  transition: opacity 180ms ease;
+  pointer-events: auto;
+}
+
+.start-overlay.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.start-card {
+  display: grid;
+  width: min(92vw, 520px);
+  padding: clamp(24px, 4vw, 42px);
+  color: #f6f0df;
+  text-align: left;
+  background: rgba(37, 43, 42, 0.88);
+  border: 1px solid rgba(246, 240, 223, 0.38);
+  border-radius: 0;
+  box-shadow: 12px 12px 0 rgba(28, 33, 32, 0.34);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.start-card:hover,
+.start-card:focus-visible {
+  border-color: var(--accent);
+}
+
+.start-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.start-card:active {
+  transform: translateY(1px);
+}
+
+.phase-label {
+  color: var(--accent);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+}
+
+.start-title {
+  margin-top: 18px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: 720;
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.start-rule {
+  width: 56px;
+  height: 2px;
+  margin: 28px 0 24px;
+  background: var(--accent);
+}
+
+.controls-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  color: rgba(246, 240, 223, 0.76);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.controls-list span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+kbd {
+  min-width: 50px;
+  color: #fff7df;
+  font: inherit;
+  font-weight: 700;
+}
+
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border: 1px solid rgba(255, 250, 231, 0.9);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease;
+}
+
+.crosshair.is-visible {
+  opacity: 1;
+}
+
+.interaction-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(32px, 8vh, 76px);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 15px 10px 10px;
+  color: #f8ecd1;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 620;
+  background: rgba(31, 36, 35, 0.88);
+  border: 1px solid rgba(211, 173, 99, 0.76);
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  z-index: 2;
+}
+
+.interaction-prompt kbd {
+  display: grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #272d2c;
+  background: var(--accent);
+  border: 1px solid #efd59f;
+}
+
+.interaction-prompt.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.scene-fade {
+  position: absolute;
+  inset: 0;
+  background: #17191b;
+  opacity: 0;
+  transition: opacity 190ms ease;
+  z-index: 3;
+}
+
+.scene-fade.is-visible {
+  opacity: 1;
+}
+
+.debug-panel {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: none;
+  min-width: 156px;
+  padding: 8px 10px;
+  color: rgba(255, 250, 231, 0.86);
+  font-size: 0.66rem;
+  line-height: 1.55;
+  white-space: pre-line;
+  background: rgba(37, 43, 42, 0.7);
+  border-left: 2px solid var(--accent);
+  z-index: 4;
+}
+
+.debug-panel.is-visible {
+  display: block;
+}
+
+@media (max-width: 560px) {
+  .start-overlay {
+    align-items: end;
+    padding: 16px;
+  }
+
+  .start-card {
+    width: 100%;
+    padding: 24px 20px;
+  }
+
+  .controls-list {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .start-rule {
+    margin: 22px 0 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-overlay,
+  .crosshair,
+  .interaction-prompt,
+  .scene-fade {
+    transition: none;
+  }
+}
+
+@supports not (backdrop-filter: blur(8px)) {
+  .start-card {
+    background: rgba(37, 43, 42, 0.97);
+  }
+}
