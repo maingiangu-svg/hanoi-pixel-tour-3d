@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   getAmbientDensity,
   getChurchCrowdState,
+  getMoOutfitForTime,
   getMoScheduleState,
 } from '../src/npcs/npcSchedules.js'
 
@@ -26,4 +27,14 @@ test('the plaza is denser during the evening window', () => {
   assert.equal(getAmbientDensity(12 * 60), 'day')
   assert.equal(getAmbientDensity(18 * 60 + 30), 'busy')
   assert.equal(getAmbientDensity(2 * 60), 'quiet')
+})
+
+test('Mơ wears the church outfit from 17:00 until returning to normal life at 20:00', () => {
+  assert.equal(getMoOutfitForTime(16 * 60 + 59), 'idle')
+  assert.equal(getMoOutfitForTime(17 * 60), 'church')
+  assert.equal(getMoOutfitForTime(18 * 60), 'church')
+  assert.equal(getMoOutfitForTime(19 * 60), 'church')
+  assert.equal(getMoOutfitForTime(19 * 60 + 59), 'church')
+  assert.equal(getMoOutfitForTime(20 * 60), 'idle')
+  assert.equal(getMoOutfitForTime(24 * 60 + 17 * 60 + 30), 'church')
 })

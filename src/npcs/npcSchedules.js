@@ -8,6 +8,11 @@ export const CHURCH_TIMES = Object.freeze({
   departuresEnd: 19 * 60 + 25,
 })
 
+export const MO_OUTFIT_TIMES = Object.freeze({
+  churchOutfitBegins: 17 * 60,
+  idleOutfitReturns: 20 * 60,
+})
+
 export function normalizeGameMinutes(minutes) {
   return ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
 }
@@ -28,6 +33,13 @@ export function getMoScheduleState(minutes) {
   }
   if (time >= 6 * 60 && time < 15 * 60 + 30) return 'dayStroll'
   return 'courtyardIdle'
+}
+
+export function getMoOutfitForTime(minutes) {
+  const time = normalizeGameMinutes(minutes)
+  return time >= MO_OUTFIT_TIMES.churchOutfitBegins && time < MO_OUTFIT_TIMES.idleOutfitReturns
+    ? 'church'
+    : 'idle'
 }
 
 export function getChurchCrowdState(minutes) {

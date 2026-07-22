@@ -6,6 +6,11 @@ import { ChurchInterior } from './interiors/ChurchInterior.js'
 import { StreetProps } from './props/StreetProps.js'
 import { MoNpc } from './npcs/MoNpc.js'
 import { ChurchCrowd } from './ChurchCrowd.js'
+import { OldQuarterConnector } from './OldQuarterConnector.js'
+import { HoanKiemDistrict } from './HoanKiemDistrict.js'
+import { NgocSonBranch } from './NgocSonBranch.js'
+import { HoanKiemCrowd } from './HoanKiemCrowd.js'
+import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
@@ -13,6 +18,7 @@ const INTERIOR_SKY = 0x17191b
 export class ChurchDistrict {
   constructor(scene, { camera = null, assetLoader = null } = {}) {
     this.scene = scene
+    this.playerPosition = camera?.position ?? null
     this.kit = new SceneKit()
     this.root = new THREE.Group()
     this.root.name = 'Vertical slice Nhà thờ Lớn'
@@ -32,6 +38,21 @@ export class ChurchDistrict {
     })
     this.#buildStreet(outdoorColliders)
     this.props = new StreetProps({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+    })
+    this.oldQuarterConnector = new OldQuarterConnector({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+    })
+    this.hoanKiemDistrict = new HoanKiemDistrict({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+    })
+    this.ngocSonBranch = new NgocSonBranch({
       kit: this.kit,
       parent: this.outdoor,
       colliders: outdoorColliders,
@@ -61,13 +82,33 @@ export class ChurchDistrict {
           mo: this.mo,
         })
       : null
+    this.hoanKiemCrowd = camera
+      ? new HoanKiemCrowd({
+          kit: this.kit,
+          parent: this.outdoor,
+          colliders: outdoorColliders,
+          playerPosition: camera.position,
+        })
+      : null
+
+    this.districts = Object.freeze({
+      churchDistrict: { center: new THREE.Vector2(0, 0), activationRadius: 52 },
+      oldQuarterConnector: { center: new THREE.Vector2(50, 19), activationRadius: 43 },
+      hoanKiemDistrict: { center: new THREE.Vector2(101, 0), activationRadius: 72 },
+      ngocSonBranch: { center: new THREE.Vector2(119, 48), activationRadius: 38 },
+    })
+    this.npcRouteAnchors = Object.freeze({
+      churchPlaza: new THREE.Vector3(6.8, 0, -0.5),
+      nhaChungTurn: new THREE.Vector3(51.5, 0, 5),
+      lakeViewpoint: new THREE.Vector3(68, 0, -3),
+    })
 
     this.areas = {
       outdoor: {
         name: 'outdoor',
         group: this.outdoor,
         colliders: outdoorColliders,
-        bounds: { minX: -34, maxX: 34, minZ: -38, maxZ: 32 },
+        bounds: { minX: -34, maxX: 143, minZ: -43, maxZ: 60 },
         spawn: { x: 0, z: 6, yaw: 0 },
         returnSpawn: { x: 0, z: -9.7, yaw: Math.PI },
         portal: {
@@ -108,11 +149,19 @@ export class ChurchDistrict {
     const interactions = [this.getActivePortal()]
     interactions.push(this.mo?.getInteraction())
     interactions.push(...(this.crowd?.getInteractions(this.activeAreaName) ?? []))
+    if (this.activeAreaName === 'outdoor') {
+      interactions.push(...this.oldQuarterConnector.interactions)
+      interactions.push(...this.hoanKiemDistrict.interactions)
+      interactions.push(...this.ngocSonBranch.interactions)
+      interactions.push(...(this.hoanKiemCrowd?.getInteractions('outdoor') ?? []))
+    }
     return interactions.filter(Boolean)
   }
 
   update(deltaTime, clock = null) {
+    this.#updateDistrictVisibility()
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
+    if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
     this.mo?.update(deltaTime, this.activeAreaName)
   }
 
@@ -124,6 +173,9 @@ export class ChurchDistrict {
       'blueGlass',
       'amberGlass',
       'tealGlass',
+      'lampGlow',
+      'lakeWater',
+      'waterReflection',
     ].map((name) => this.kit.material(name))
 
     return {
@@ -136,6 +188,9 @@ export class ChurchDistrict {
           ...this.props.streetLights,
           ...this.props.cafeLights,
           ...this.streetBuildingLights,
+          ...this.oldQuarterConnector.lights,
+          ...this.hoanKiemDistrict.lights,
+          ...this.ngocSonBranch.lights,
         ],
         spotLights: this.church.facadeLights,
         emissiveMaterials,
@@ -152,7 +207,22 @@ export class ChurchDistrict {
   getActiveNpcCount() {
     return (this.crowd?.getActiveCount(this.activeAreaName) ?? 0) + (
       this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0
-    )
+    ) + (this.hoanKiemCrowd?.getActiveCount(this.activeAreaName) ?? 0)
+  }
+
+  getActiveDistrictNames(position) {
+    if (this.activeAreaName !== 'outdoor') return ['churchInterior']
+    return Object.entries(this.districts)
+      .filter(([, district]) => Math.hypot(
+        district.center.x - position.x,
+        district.center.y - position.z,
+      ) <= district.activationRadius)
+      .map(([name]) => name)
+  }
+
+  getNamedNpc(name) {
+    if (name === 'Mơ') return this.mo
+    return this.crowd?.getActorByName(name) ?? this.hoanKiemCrowd?.getActorByName(name) ?? null
   }
 
   transition(targetAreaName) {
@@ -376,6 +446,15 @@ export class ChurchDistrict {
         }
       }
     }
+    this.kit.sign(this.outdoor, {
+      text: 'NHÀ THỜ  ←   HỒ GƯƠM  →',
+      width: 4.9,
+      height: 0.72,
+      position: [33.86, 3.15, 7.2],
+      rotation: [0, Math.PI / 2, 0],
+      background: '#315c55',
+      foreground: '#f4e7c8',
+    })
   }
 
   #buildStreet(colliders) {
@@ -389,6 +468,7 @@ export class ChurchDistrict {
       { x: 19.5, width: 9, height: 10.3, material: 'sage', variant: 'cafe', sign: 'CÀ PHÊ NHÀ THỜ', roof: 'tile', castShadow: true },
       { x: 29.5, width: 9.4, height: 12.4, material: 'plaster', variant: 'home', sign: null, roof: 'flat' },
     ]
+    this.streetBuildingGroups = []
     buildings.forEach((building, index) => {
       const streetBuilding = new StreetBuilding({
         kit: this.kit,
@@ -403,6 +483,8 @@ export class ChurchDistrict {
           signColor: index % 2 === 0 ? '#315c55' : '#80443c',
         },
       })
+      streetBuilding.group.userData.centerX = building.x
+      this.streetBuildingGroups.push(streetBuilding.group)
       this.streetBuildingLights.push(...streetBuilding.lights)
     })
     this.kit.sign(this.outdoor, {
@@ -416,6 +498,19 @@ export class ChurchDistrict {
     })
   }
 
+  #updateDistrictVisibility() {
+    if (!this.playerPosition || this.activeAreaName !== 'outdoor') return
+    const { x, z } = this.playerPosition
+    this.church.group.visible = x < 37
+    this.props.group.visible = x < 51
+    this.streetBuildingGroups?.forEach((group) => {
+      group.visible = x < 64 && Math.abs(x - group.userData.centerX) < 46
+    })
+    this.oldQuarterConnector.group.visible = x < 106
+    this.hoanKiemDistrict.group.visible = x > 52.5
+    this.ngocSonBranch.group.visible = x > 60 || z > 28
+  }
+
   #applyAtmosphere(areaName) {
     const indoor = areaName === 'interior'
     this.scene.background = new THREE.Color(indoor ? INTERIOR_SKY : OUTDOOR_SKY)
@@ -426,6 +521,8 @@ export class ChurchDistrict {
 
   dispose() {
     this.crowd?.dispose()
+    this.hoanKiemCrowd?.dispose()
+    disposeSharedNpcResources()
     this.mo?.dispose()
     this.props.dispose()
     this.kit.dispose()

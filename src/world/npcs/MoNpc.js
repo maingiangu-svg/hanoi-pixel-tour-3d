@@ -3,6 +3,8 @@ import * as THREE from 'three'
 const NPC_HEIGHT = 1.72
 const TALK_RADIUS = 2.35
 const WALK_SPEED = 0.92
+const OUTFIT_IDS = Object.freeze(['idle', 'church'])
+const MAX_BILLBOARD_YAW = Math.PI * 0.42
 
 const OUTDOOR_POSITIONS = Object.freeze({
   courtyardIdle: [6.2, 0.07, -4.2],
@@ -13,6 +15,61 @@ const OUTDOOR_POSITIONS = Object.freeze({
 })
 
 const INTERIOR_POSITION = [4.75, 0.02, -11.5]
+
+function textureAspect(texture) {
+  const image = texture?.image
+  const width = image?.naturalWidth ?? image?.videoWidth ?? image?.width
+  const height = image?.naturalHeight ?? image?.videoHeight ?? image?.height
+  return width && height ? width / height : 2 / 3
+}
+
+function billboardMetrics(texture) {
+  const image = texture?.image
+  const imageHeight = image?.naturalHeight ?? image?.videoHeight ?? image?.height ?? 1
+  const metadata = texture?.userData?.moBillboard
+  const contentHeight = metadata?.contentHeight ?? imageHeight
+  const planeHeight = NPC_HEIGHT / Math.max(contentHeight / imageHeight, 0.01)
+  return {
+    planeHeight,
+    planeWidth: planeHeight * textureAspect(texture),
+    footOffset: planeHeight * ((metadata?.bottomPadding ?? 0) / imageHeight),
+  }
+}
+
+function createContactShadow() {
+  const geometry = new THREE.PlaneGeometry(0.86, 0.5)
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+    uniforms: {
+      shadowColor: { value: new THREE.Color(0x101311) },
+      shadowOpacity: { value: 0.3 },
+    },
+    vertexShader: `
+      varying vec2 shadowUv;
+      void main() {
+        shadowUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 shadowColor;
+      uniform float shadowOpacity;
+      varying vec2 shadowUv;
+      void main() {
+        vec2 centered = (shadowUv - 0.5) * vec2(1.0, 1.7);
+        float contact = 1.0 - smoothstep(0.08, 0.5, length(centered));
+        gl_FragColor = vec4(shadowColor, contact * shadowOpacity);
+      }
+    `,
+  })
+  const shadow = new THREE.Mesh(geometry, material)
+  shadow.name = 'Contact shadow Mơ'
+  shadow.rotation.x = -Math.PI / 2
+  shadow.position.y = 0.008
+  return shadow
+}
 
 export class MoNpc {
   constructor({ parent, camera, assetLoader, colliders, position = [6.2, 0.07, -4.2] }) {
@@ -45,6 +102,13 @@ export class MoNpc {
     this.disabled = false
     this.dialogueActive = false
     this.disposed = false
+    this.currentOutfit = null
+    this.desiredOutfit = 'idle'
+    this.pendingOutfit = null
+    this.outfitRequestVersion = 0
+    this.outfitPromise = Promise.resolve(false)
+    this.billboardBaseMetrics = null
+    this.baseYaw = 0
     this.interaction = {
       type: 'dialogue',
       position: this.position,
@@ -73,47 +137,42 @@ export class MoNpc {
   }
 
   async #loadBillboard() {
-    const texture = await this.assetLoader.getFullbody()
+    let outfitId
+    let texture
+    do {
+      outfitId = this.desiredOutfit
+      texture = await this.assetLoader.getFullbody(outfitId)
+    } while (!this.disposed && outfitId !== this.desiredOutfit)
+
     if (this.disposed || !texture) {
       this.disabled = true
       return
     }
 
-    const image = texture.image
-    const aspect = image?.naturalWidth && image?.naturalHeight
-      ? image.naturalWidth / image.naturalHeight
-      : 2 / 3
-    const geometry = new THREE.PlaneGeometry(NPC_HEIGHT * aspect, NPC_HEIGHT)
-    const material = new THREE.MeshBasicMaterial({
+    const metrics = billboardMetrics(texture)
+    this.billboardBaseMetrics = metrics
+    const geometry = new THREE.PlaneGeometry(metrics.planeWidth, metrics.planeHeight)
+    geometry.translate(0, metrics.planeHeight / 2, 0)
+    const material = new THREE.MeshLambertMaterial({
       map: texture,
       transparent: true,
-      alphaTest: 0.14,
+      alphaTest: 0.08,
       depthWrite: true,
       side: THREE.DoubleSide,
-      toneMapped: false,
+      toneMapped: true,
+      emissive: 0x15120f,
+      emissiveIntensity: 0.12,
     })
     this.billboard = new THREE.Mesh(geometry, material)
     this.billboard.name = 'Billboard Mơ'
-    this.billboard.position.y = NPC_HEIGHT / 2
+    this.billboard.position.y = -metrics.footOffset
     this.billboard.renderOrder = 1
     this.pose.add(this.billboard)
 
-    const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.43, 18),
-      new THREE.MeshBasicMaterial({
-        color: 0x1c211f,
-        transparent: true,
-        opacity: 0.24,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    )
-    shadow.name = 'Bóng chân Mơ'
-    shadow.rotation.x = -Math.PI / 2
-    shadow.scale.set(1, 0.52, 1)
-    shadow.position.y = 0.008
-    this.group.add(shadow)
+    this.contactShadow = createContactShadow()
+    this.group.add(this.contactShadow)
 
+    this.currentOutfit = outfitId
     this.ready = true
     this.#syncColliderState()
     this.group.visible = this.areaName === this.lastActiveAreaName && !this.dialogueActive
@@ -132,22 +191,27 @@ export class MoNpc {
     const offsetZ = this.camera.position.z - this.position.z
     const distanceSquared = offsetX * offsetX + offsetZ * offsetZ
     const near = distanceSquared <= TALK_RADIUS * TALK_RADIUS * 2.3
-    const targetYaw = Math.atan2(offsetX, offsetZ)
+    const requestedYaw = Math.atan2(offsetX, offsetZ)
+    const requestedFromBase = Math.atan2(
+      Math.sin(requestedYaw - this.baseYaw),
+      Math.cos(requestedYaw - this.baseYaw),
+    )
+    const targetYaw = this.baseYaw + THREE.MathUtils.clamp(
+      requestedFromBase,
+      -MAX_BILLBOARD_YAW,
+      MAX_BILLBOARD_YAW,
+    )
     const turnRate = near ? 4.2 : 1.35
     const yawDelta = Math.atan2(
       Math.sin(targetYaw - this.group.rotation.y),
       Math.cos(targetYaw - this.group.rotation.y),
     )
-    this.group.rotation.y += yawDelta * (1 - Math.exp(-turnRate * deltaTime))
+    this.group.rotation.y += yawDelta * (1 - Math.exp(-turnRate * clampedDelta))
 
     const breath = Math.sin(this.elapsed * 1.45) * 0.006
     this.pose.scale.set(1 + breath * 0.28, 1 + breath, 1)
 
-    const tiltCycle = this.elapsed % 13
-    const tiltWave = tiltCycle > 9.4 && tiltCycle < 11.8
-      ? Math.sin(((tiltCycle - 9.4) / 2.4) * Math.PI)
-      : 0
-    this.pose.rotation.z = tiltWave * 0.018
+    this.pose.rotation.z = 0
   }
 
   getInteraction() {
@@ -165,14 +229,55 @@ export class MoNpc {
   }
 
   setDialogueActive(active) {
-    this.dialogueActive = active
+    const nextActive = Boolean(active)
+    if (
+      nextActive &&
+      !this.dialogueActive &&
+      this.currentOutfit &&
+      this.desiredOutfit !== this.currentOutfit
+    ) {
+      this.pendingOutfit = this.desiredOutfit
+      this.desiredOutfit = this.currentOutfit
+      this.outfitRequestVersion += 1
+    }
+
+    this.dialogueActive = nextActive
     this.#syncColliderState()
-    this.group.visible = this.ready && !active && this.areaName === this.lastActiveAreaName
-    if (!active && this.pendingScheduleState) {
+    this.group.visible = this.ready && !nextActive && this.areaName === this.lastActiveAreaName
+    if (!nextActive && this.pendingScheduleState) {
       const pending = this.pendingScheduleState
       this.pendingScheduleState = null
       this.setScheduleState(pending)
     }
+    if (!nextActive && this.pendingOutfit) {
+      const pending = this.pendingOutfit
+      this.pendingOutfit = null
+      this.setWorldOutfit(pending)
+    }
+  }
+
+  setWorldOutfit(outfitId) {
+    if (!OUTFIT_IDS.includes(outfitId)) {
+      throw new RangeError(`Unknown Mơ world outfit: ${outfitId}`)
+    }
+    if (this.dialogueActive) {
+      this.pendingOutfit = outfitId === this.currentOutfit ? null : outfitId
+      return Promise.resolve(false)
+    }
+
+    this.pendingOutfit = null
+    if (outfitId === this.desiredOutfit && outfitId === this.currentOutfit) {
+      return this.outfitPromise
+    }
+
+    this.desiredOutfit = outfitId
+    if (!this.billboard) {
+      this.outfitPromise = this.readyPromise.then(() => this.currentOutfit === outfitId)
+      return this.outfitPromise
+    }
+
+    this.outfitPromise = this.#applyOutfitTexture(outfitId)
+    return this.outfitPromise
   }
 
   setScheduleEnvironment({ outdoorParent, interiorParent, interiorColliders }) {
@@ -260,6 +365,30 @@ export class MoNpc {
     this.outdoorCollider.disabled = !usable || this.areaName !== 'outdoor'
     this.interiorCollider.disabled = !usable || this.areaName !== 'interior'
     this.#updateCollider()
+  }
+
+  async #applyOutfitTexture(outfitId) {
+    const requestVersion = ++this.outfitRequestVersion
+    const texture = await this.assetLoader.getFullbody(outfitId)
+    if (
+      this.disposed ||
+      !texture ||
+      requestVersion !== this.outfitRequestVersion ||
+      outfitId !== this.desiredOutfit ||
+      !this.billboard
+    ) return false
+
+    const metrics = billboardMetrics(texture)
+    this.billboard.material.map = texture
+    this.billboard.material.needsUpdate = true
+    this.billboard.scale.set(
+      metrics.planeWidth / this.billboardBaseMetrics.planeWidth,
+      metrics.planeHeight / this.billboardBaseMetrics.planeHeight,
+      1,
+    )
+    this.billboard.position.y = -metrics.footOffset
+    this.currentOutfit = outfitId
+    return true
   }
 
   dispose() {

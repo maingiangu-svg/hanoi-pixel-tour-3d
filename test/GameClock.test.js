@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   GAME_CLOCK_SPEEDS,
   GameClock,
+  MAX_CLOCK_DELTA_SECONDS,
 } from '../src/time/GameClock.js'
 
 function dispatchClockKey(target, code, { repeat = false } = {}) {
@@ -82,4 +83,49 @@ test('non-positive and invalid deltas leave time unchanged', () => {
   clock.update(Number.NaN)
 
   assert.equal(clock.formatted, '08:30')
+})
+
+test('clock clamps long frame deltas and supports named pause reasons', () => {
+  const clock = new GameClock({
+    initialHour: 8,
+    initialMinute: 0,
+    eventTarget: null,
+    visibilityTarget: null,
+  })
+
+  clock.update(20)
+  assert.equal(MAX_CLOCK_DELTA_SECONDS, 2)
+  assert.equal(clock.formatted, '08:02')
+
+  clock.pause('dialogue').pause('menu')
+  clock.update(1)
+  assert.equal(clock.formatted, '08:02')
+  clock.resume('dialogue')
+  clock.update(1)
+  assert.equal(clock.formatted, '08:02')
+  clock.resume('menu')
+  clock.update(1)
+  assert.equal(clock.formatted, '08:03')
+})
+
+test('hidden documents pause time until the tab is visible again', () => {
+  const visibilityTarget = new EventTarget()
+  visibilityTarget.hidden = false
+  const clock = new GameClock({
+    initialHour: 9,
+    initialMinute: 0,
+    eventTarget: null,
+    visibilityTarget,
+  })
+
+  visibilityTarget.hidden = true
+  visibilityTarget.dispatchEvent(new Event('visibilitychange'))
+  clock.update(1)
+  assert.equal(clock.formatted, '09:00')
+
+  visibilityTarget.hidden = false
+  visibilityTarget.dispatchEvent(new Event('visibilitychange'))
+  clock.update(1)
+  assert.equal(clock.formatted, '09:01')
+  clock.dispose()
 })

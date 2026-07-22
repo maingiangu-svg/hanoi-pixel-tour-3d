@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { NpcActor } from '../npcs/NpcActor.js'
 import { NpcManager } from '../npcs/NpcManager.js'
-import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
 import {
   getAmbientDensity,
   getChurchCrowdState,
+  getMoOutfitForTime,
   getMoScheduleState,
 } from '../npcs/npcSchedules.js'
 
@@ -31,6 +31,7 @@ export class ChurchCrowd {
     this.outdoor = outdoor
     this.interior = interior
     this.mo = mo
+    this.playerPosition = playerPosition
     this.manager = new NpcManager(playerPosition)
     this.outdoorGroup = new THREE.Group()
     this.outdoorGroup.name = 'Đời sống sân Nhà thờ'
@@ -43,6 +44,8 @@ export class ChurchCrowd {
     this.lastAmbientDensity = null
     this.lastChurchState = null
     this.lastMoState = null
+    this.lastMoOutfit = null
+    this.lastNearChurch = null
 
     this.#buildTeaStall()
     this.#buildAmbientCast()
@@ -50,15 +53,24 @@ export class ChurchCrowd {
   }
 
   update(deltaTime, clock, activeAreaName) {
+    const nearChurch = activeAreaName === 'interior' || Math.hypot(
+      this.playerPosition.x,
+      this.playerPosition.z,
+    ) < 55
     const ambientDensity = getAmbientDensity(clock.minutes)
-    if (ambientDensity !== this.lastAmbientDensity) {
-      this.#applyAmbientDensity(ambientDensity)
+    if (ambientDensity !== this.lastAmbientDensity || nearChurch !== this.lastNearChurch) {
+      if (nearChurch) this.#applyAmbientDensity(ambientDensity)
+      else this.#disableAmbientRoles()
       this.lastAmbientDensity = ambientDensity
     }
 
     const churchState = getChurchCrowdState(clock.minutes)
-    if (churchState !== this.lastChurchState) {
-      this.#applyChurchState(churchState)
+    if (churchState !== this.lastChurchState || nearChurch !== this.lastNearChurch) {
+      if (nearChurch) this.#applyChurchState(churchState)
+      else {
+        this.manager.setRoleActive('churchProcession', false)
+        this.manager.setRoleActive('churchService', false)
+      }
       this.lastChurchState = churchState
     }
 
@@ -68,6 +80,13 @@ export class ChurchCrowd {
       this.lastMoState = moState
     }
 
+    const moOutfit = getMoOutfitForTime(clock.minutes)
+    if (moOutfit !== this.lastMoOutfit) {
+      this.mo?.setWorldOutfit(moOutfit)
+      this.lastMoOutfit = moOutfit
+    }
+
+    this.lastNearChurch = nearChurch
     this.manager.update(deltaTime, activeAreaName)
   }
 
@@ -85,7 +104,6 @@ export class ChurchCrowd {
 
   dispose() {
     this.manager.dispose()
-    disposeSharedNpcResources()
     this.outdoorGroup.removeFromParent()
     this.interiorGroup.removeFromParent()
   }
@@ -221,7 +239,7 @@ export class ChurchCrowd {
 
     this.#actor({
       preset: 'child',
-      name: 'Em nhỏ áo đỏ',
+      name: 'Bé Lan',
       behavior: 'walker',
       position: [-6.1, 0, -0.6],
       waypoints: [[-6.1, 0, -0.6], [-4.1, 0, -1.4], [-5.7, 0, -2.8]],
@@ -339,6 +357,12 @@ export class ChurchCrowd {
     this.manager.setRoleActive('teaStall', density !== 'quiet', { stagger: 0 })
     this.manager.setRoleActive('teaGuest', dayOrBusy, { stagger: 0.12 })
     this.manager.setRoleActive('driver', density !== 'quiet', { stagger: 0 })
+  }
+
+  #disableAmbientRoles() {
+    for (const role of ['ambientDay', 'ambientBusy', 'teaStall', 'teaGuest', 'driver']) {
+      this.manager.setRoleActive(role, false)
+    }
   }
 
   #applyChurchState(state) {

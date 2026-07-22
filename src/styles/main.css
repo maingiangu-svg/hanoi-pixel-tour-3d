@@ -207,6 +207,50 @@ kbd {
   opacity: 1;
 }
 
+.photo-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #fff8e7;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photo-flash.is-visible {
+  animation: photo-flash 220ms ease-out;
+}
+
+.world-notice {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(94px, 15vh, 138px);
+  max-width: min(86vw, 520px);
+  padding: 10px 14px;
+  color: #f8ecd1;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: center;
+  background: rgba(31, 36, 35, 0.86);
+  border-left: 2px solid var(--accent);
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.world-notice.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@keyframes photo-flash {
+  0% { opacity: 0; }
+  20% { opacity: 0.82; }
+  100% { opacity: 0; }
+}
+
 .debug-panel {
   position: absolute;
   top: 14px;

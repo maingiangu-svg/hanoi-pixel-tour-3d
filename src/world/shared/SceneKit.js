@@ -74,11 +74,36 @@ export class SceneKit {
     this.#standard('curb', COLORS.curb)
     this.#standard('metal', COLORS.metal, { roughness: 0.55, metalness: 0.45 })
     this.#standard('foliage', COLORS.foliage)
+    this.#standard('foliageLight', 0x668267)
+    this.#standard('foliageDark', 0x344f45)
     this.#standard('terracotta', COLORS.terracotta)
     this.#standard('altar', COLORS.altar)
     this.#standard('pew', COLORS.pew)
     this.#standard('whiteMarking', 0xd7d2c3)
     this.#standard('roadPatch', 0x454a4b)
+    this.#standard('lakeWater', 0x315f69, {
+      emissive: 0x17343b,
+      emissiveIntensity: 0.18,
+      roughness: 0.36,
+      metalness: 0.08,
+      transparent: true,
+      opacity: 0.94,
+    })
+    this.#standard('waterReflection', 0xd7ad68, {
+      emissive: 0xc58f49,
+      emissiveIntensity: 0.72,
+      transparent: true,
+      opacity: 0.2,
+      depthWrite: false,
+    })
+    this.#standard('bridgeRed', 0xa53f35, { roughness: 0.78 })
+    this.#standard('templeWall', 0xd2b879)
+    this.#standard('tileRed', 0x75443e, { roughness: 0.86 })
+    this.#standard('lampGlow', 0xf1bf73, {
+      emissive: 0xe9a856,
+      emissiveIntensity: 0.9,
+      roughness: 0.42,
+    })
     this.#standard('lampPool', 0xe2a85f, {
       emissive: 0xe2a85f,
       emissiveIntensity: 0.45,

@@ -161,3 +161,40 @@ test('nearest NPC interaction uses E without triggering the church portal', () =
   assert.equal(calls.transitioned, 0)
   system.dispose()
 })
+
+test('action interactions execute once without starting a portal transition', () => {
+  const target = new EventTarget()
+  const calls = { actions: 0, labels: [], fades: 0 }
+  const system = new InteractionSystem({
+    player: {
+      controls: { isLocked: true },
+      camera: { position: { x: 4, z: 5 } },
+    },
+    input: { setEnabled: () => {} },
+    collision: { setWorld: () => {} },
+    world: {
+      getActiveInteractions: () => [{
+        type: 'action',
+        position: { x: 4, z: 5 },
+        radius: 2,
+        label: 'Ngắm Tháp Rùa',
+        activate: () => { calls.actions += 1 },
+      }],
+    },
+    ui: {
+      setInteraction: (label) => calls.labels.push(label),
+      setFading: () => { calls.fades += 1 },
+    },
+    dialogue: { isActive: () => false },
+    eventTarget: target,
+    setTimer: () => 1,
+    clearTimer: () => {},
+  })
+
+  system.update()
+  assert.equal(calls.labels.at(-1), 'Ngắm Tháp Rùa')
+  dispatchInteraction(target)
+  assert.equal(calls.actions, 1)
+  assert.equal(calls.fades, 0)
+  system.dispose()
+})

@@ -77,6 +77,20 @@ export class InteractionSystem {
       return
     }
 
+    if (interaction.type === 'action') {
+      this.availableInteraction = null
+      this.availablePortal = null
+      this.ui.setInteraction(null)
+      interaction.activate?.({
+        player: this.player,
+        input: this.input,
+        collision: this.collision,
+        world: this.world,
+        ui: this.ui,
+      })
+      return
+    }
+
     const portal = interaction
     this.availablePortal = null
     this.availableInteraction = null

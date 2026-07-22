@@ -23,6 +23,8 @@ export class StartOverlay {
           <span></span>
         </div>
         <div class="scene-fade" aria-hidden="true"></div>
+        <div class="photo-flash" aria-hidden="true"></div>
+        <div class="world-notice" role="status" aria-live="polite"></div>
         <div class="debug-panel" aria-live="off"></div>
       </main>
     `
@@ -36,10 +38,14 @@ export class StartOverlay {
     this.interactionPrompt = this.root.querySelector('.interaction-prompt')
     this.interactionLabel = this.interactionPrompt.querySelector('span')
     this.sceneFade = this.root.querySelector('.scene-fade')
+    this.photoFlash = this.root.querySelector('.photo-flash')
+    this.worldNotice = this.root.querySelector('.world-notice')
     this.debugPanel = this.root.querySelector('.debug-panel')
     this.locked = false
     this.dialogueActive = false
     this.resumeMode = false
+    this.noticeTimer = null
+    this.flashTimer = null
     this.handleStart = () => onStart()
     this.overlay.addEventListener('click', this.handleStart)
   }
@@ -73,6 +79,29 @@ export class StartOverlay {
     this.sceneFade.classList.toggle('is-visible', fading)
   }
 
+  showNotice(message, duration = 2300) {
+    window.clearTimeout(this.noticeTimer)
+    this.worldNotice.textContent = message ?? ''
+    this.worldNotice.classList.toggle('is-visible', Boolean(message))
+    if (message) {
+      this.noticeTimer = window.setTimeout(() => {
+        this.worldNotice.classList.remove('is-visible')
+        this.noticeTimer = null
+      }, duration)
+    }
+  }
+
+  flashPhoto() {
+    window.clearTimeout(this.flashTimer)
+    this.photoFlash.classList.remove('is-visible')
+    void this.photoFlash.offsetWidth
+    this.photoFlash.classList.add('is-visible')
+    this.flashTimer = window.setTimeout(() => {
+      this.photoFlash.classList.remove('is-visible')
+      this.flashTimer = null
+    }, 220)
+  }
+
   #renderState() {
     const overlayHidden = this.locked || this.dialogueActive
     const crosshairVisible = this.locked && !this.dialogueActive
@@ -83,6 +112,8 @@ export class StartOverlay {
   }
 
   dispose() {
+    window.clearTimeout(this.noticeTimer)
+    window.clearTimeout(this.flashTimer)
     this.overlay.removeEventListener('click', this.handleStart)
     this.root.replaceChildren()
   }

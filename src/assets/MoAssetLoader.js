@@ -5,7 +5,9 @@ import portraitSuspectUrl from './characters/mo/portrait-suspect.png?url'
 import portraitWorriedUrl from './characters/mo/portrait-worried.png?url'
 import portraitSurprisedUrl from './characters/mo/portrait-surprised.png?url'
 import portraitSadUrl from './characters/mo/portrait-sad.png?url'
-import fullbodyIdleUrl from './characters/mo/fullbody-idle.png?url'
+import fullbodyIdleUrl from './characters/mo/fullbody-idle-clean.png?url'
+import fullbodyChurchUrl from './characters/mo/fullbody-church-clean.png?url'
+import { MO_CLEAN_PADDING } from './MoBillboardProcessor.js'
 
 export const MO_EXPRESSIONS = Object.freeze({
   idle: portraitIdleUrl,
@@ -16,9 +18,40 @@ export const MO_EXPRESSIONS = Object.freeze({
   sad: portraitSadUrl,
 })
 
+export const MO_WORLD_OUTFITS = Object.freeze({
+  idle: fullbodyIdleUrl,
+  church: fullbodyChurchUrl,
+})
+
+const MO_OUTFIT_ASSET_KEYS = Object.freeze({
+  idle: 'fullbodyIdle',
+  church: 'fullbodyChurch',
+})
+
+function configureTexture(texture) {
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.generateMipmaps = false
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.needsUpdate = true
+  return texture
+}
+
+function configureCleanFullbodyTexture(texture) {
+  configureTexture(texture)
+  const imageHeight = texture.image?.naturalHeight ?? texture.image?.height ?? 1
+  texture.name = `${texture.name || 'Mơ fullbody'} (build-time clean alpha)`
+  texture.userData.moBillboard = {
+    contentHeight: Math.max(1, imageHeight - MO_CLEAN_PADDING * 2),
+    bottomPadding: MO_CLEAN_PADDING,
+  }
+  return texture
+}
+
 export const MO_ASSETS = Object.freeze({
   ...MO_EXPRESSIONS,
-  fullbody: fullbodyIdleUrl,
+  fullbodyIdle: MO_WORLD_OUTFITS.idle,
+  fullbodyChurch: MO_WORLD_OUTFITS.church,
 })
 
 export class MoAssetLoader {
@@ -43,12 +76,12 @@ export class MoAssetLoader {
     const request = new Promise((resolve) => {
       this.textureLoader.load(
         url,
-        (texture) => {
-          texture.colorSpace = THREE.SRGBColorSpace
-          texture.generateMipmaps = false
-          texture.minFilter = THREE.LinearFilter
-          texture.magFilter = THREE.LinearFilter
-          texture.needsUpdate = true
+        (sourceTexture) => {
+          const texture = (
+            key === MO_OUTFIT_ASSET_KEYS.idle || key === MO_OUTFIT_ASSET_KEYS.church
+          )
+            ? configureCleanFullbodyTexture(sourceTexture)
+            : configureTexture(sourceTexture)
           resolve(texture)
         },
         undefined,
@@ -77,8 +110,11 @@ export class MoAssetLoader {
     return this.assets[key]
   }
 
-  getFullbody() {
-    return this.load('fullbody')
+  async getFullbody(outfitId = 'idle') {
+    const assetKey = MO_OUTFIT_ASSET_KEYS[outfitId] ?? MO_OUTFIT_ASSET_KEYS.idle
+    const texture = await this.load(assetKey)
+    if (texture || assetKey === MO_OUTFIT_ASSET_KEYS.idle) return texture
+    return this.load(MO_OUTFIT_ASSET_KEYS.idle)
   }
 
   dispose() {

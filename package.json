@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "assets:mo": "node scripts/clean-mo-billboards.mjs",
+    "prebuild": "npm run assets:mo",
     "build": "vite build",
     "test": "node --test",
     "preview": "vite preview"

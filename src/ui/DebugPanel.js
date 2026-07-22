@@ -30,10 +30,15 @@ export class DebugPanel {
           this.world.mo.pendingScheduleState
             ? ` → ${this.world.mo.pendingScheduleState}`
             : ''
-        } · ${this.world.mo.areaName}`
+        } · ${this.world.mo.areaName} · đồ ${
+          this.world.mo.currentOutfit ?? this.world.mo.desiredOutfit
+        }`
       : null
     const crowdLine = this.world.crowd?.lastChurchState
       ? `Nhà thờ · ${this.world.crowd.lastChurchState}`
+      : null
+    const districtLine = this.world.getActiveDistrictNames
+      ? this.world.getActiveDistrictNames(this.player.camera.position).join(' · ')
       : null
     this.element.textContent = [
       `${fps} FPS · ${this.world.activeAreaName}`,
@@ -42,6 +47,7 @@ export class DebugPanel {
       npcLine,
       scheduleLine,
       crowdLine,
+      districtLine,
       `X ${x.toFixed(1)} · Z ${z.toFixed(1)}`,
     ].filter(Boolean).join('\n')
     this.frames = 0

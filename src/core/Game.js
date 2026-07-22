@@ -25,6 +25,7 @@ export class Game {
       camera: this.renderer.camera,
       assetLoader: this.assets,
     })
+    this.world.update(0, this.clock)
     this.collision = new PlayerCollision({
       colliders: this.world.colliders,
       bounds: this.world.bounds,
@@ -118,6 +119,7 @@ export class Game {
     if (debugTime && /^\d{1,2}:\d{2}$/.test(debugTime)) {
       const [hour, minute] = debugTime.split(':').map(Number)
       this.clock.setTime(hour, minute)
+      this.world.update(0, this.clock)
     }
     if (!inspection) return
 
@@ -131,6 +133,16 @@ export class Game {
       this.player.teleport({ x: 0, z: 9.5 }, 0)
     } else if (inspection === 'cafe') {
       this.player.teleport({ x: 19, z: 12.5 }, Math.PI)
+    } else if (inspection === 'route') {
+      this.player.teleport({ x: 43, z: 13 }, Math.PI / 2)
+    } else if (inspection === 'lake') {
+      this.player.teleport({ x: 68, z: -3 }, -Math.PI / 2)
+    } else if (inspection === 'old-quarter') {
+      this.player.teleport({ x: 55, z: 36.5 }, Math.PI / 2)
+    } else if (inspection === 'bridge') {
+      this.player.teleport({ x: 119, z: 35.5 }, Math.PI)
+    } else if (inspection === 'temple') {
+      this.player.teleport({ x: 119, z: 44.8 }, Math.PI)
     } else if (inspection === 'mo' || inspection === 'dialogue') {
       this.player.teleport({ x: 6.2, z: -1.7 }, 0)
       if (inspection === 'dialogue') {

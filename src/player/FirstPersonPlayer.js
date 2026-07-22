@@ -60,6 +60,12 @@ export class FirstPersonPlayer {
     this.input.reset()
   }
 
+  lookAt(target) {
+    this.camera.lookAt(target.x, target.y ?? EYE_HEIGHT, target.z)
+    this.camera.rotation.order = 'YXZ'
+    this.input.reset()
+  }
+
   dispose() {
     this.controls.dispose()
   }

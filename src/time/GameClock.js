@@ -1,5 +1,6 @@
 export const GAME_MINUTES_PER_DAY = 24 * 60
 export const GAME_CLOCK_SPEEDS = Object.freeze([1, 5, 15, 60])
+export const MAX_CLOCK_DELTA_SECONDS = 2
 
 const DEFAULT_HOUR = 17
 const DEFAULT_MINUTE = 30
@@ -12,21 +13,31 @@ function defaultEventTarget() {
   return typeof window === 'undefined' ? null : window
 }
 
+function defaultVisibilityTarget() {
+  return typeof document === 'undefined' ? null : document
+}
+
 export class GameClock {
   constructor({
     initialHour = DEFAULT_HOUR,
     initialMinute = DEFAULT_MINUTE,
     speed = GAME_CLOCK_SPEEDS[0],
     eventTarget = defaultEventTarget(),
+    visibilityTarget = defaultVisibilityTarget(),
   } = {}) {
     this._minutes = 0
     this._speedIndex = 0
     this.eventTarget = eventTarget
+    this.visibilityTarget = visibilityTarget
+    this.pauseReasons = new Set()
     this.handleKeyDown = this.handleKeyDown.bind(this)
+    this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
 
     this.setTime(initialHour, initialMinute)
     this.setSpeed(speed)
     this.eventTarget?.addEventListener('keydown', this.handleKeyDown)
+    this.visibilityTarget?.addEventListener('visibilitychange', this.handleVisibilityChange)
+    this.handleVisibilityChange()
   }
 
   get minutes() {
@@ -49,10 +60,16 @@ export class GameClock {
     return GAME_CLOCK_SPEEDS[this._speedIndex]
   }
 
-  update(deltaTime) {
-    if (!Number.isFinite(deltaTime) || deltaTime <= 0) return this._minutes
+  get paused() {
+    return this.pauseReasons.size > 0
+  }
 
-    this._minutes = wrapMinutes(this._minutes + deltaTime * this.speed)
+  update(deltaTime) {
+    if (!Number.isFinite(deltaTime) || deltaTime <= 0 || this.paused) return this._minutes
+
+    this._minutes = wrapMinutes(
+      this._minutes + Math.min(deltaTime, MAX_CLOCK_DELTA_SECONDS) * this.speed,
+    )
     return this._minutes
   }
 
@@ -99,6 +116,22 @@ export class GameClock {
     return this.speed
   }
 
+  pause(reason = 'manual') {
+    this.pauseReasons.add(reason)
+    return this
+  }
+
+  resume(reason = 'manual') {
+    this.pauseReasons.delete(reason)
+    return this
+  }
+
+  handleVisibilityChange() {
+    if (!this.visibilityTarget) return
+    if (this.visibilityTarget.hidden) this.pause('document-hidden')
+    else this.resume('document-hidden')
+  }
+
   handleKeyDown(event) {
     if (event.repeat) return
 
@@ -119,6 +152,9 @@ export class GameClock {
 
   dispose() {
     this.eventTarget?.removeEventListener('keydown', this.handleKeyDown)
+    this.visibilityTarget?.removeEventListener('visibilitychange', this.handleVisibilityChange)
     this.eventTarget = null
+    this.visibilityTarget = null
+    this.pauseReasons.clear()
   }
 }
