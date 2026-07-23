@@ -134,6 +134,29 @@ test('interior uses its own warm-light balance and can switch back outdoors', ()
   assert.throws(() => cycle.setArea('crypt'), RangeError)
 })
 
+test('Ba Dinh and Long Bien use outdoor lighting without rejecting area changes', () => {
+  const scene = new THREE.Scene()
+  const clock = { minutes: 12 * 60 }
+  const baDinh = createLightSet()
+  const longBien = createLightSet()
+  const cycle = new DayNightCycle({
+    scene,
+    clock,
+    lighting: {
+      baDinh: baDinh.context,
+      longBien: longBien.context,
+    },
+  })
+
+  cycle.update('baDinh')
+  assert.equal(cycle.area, 'baDinh')
+  closeTo(baDinh.directional.intensity, 2.05)
+
+  cycle.update('longBien')
+  assert.equal(cycle.area, 'longBien')
+  closeTo(longBien.hemisphere.intensity, 1.25)
+})
+
 test('light and material descriptors can override captured base intensity', () => {
   const scene = new THREE.Scene()
   const clock = { minutes: 0 }

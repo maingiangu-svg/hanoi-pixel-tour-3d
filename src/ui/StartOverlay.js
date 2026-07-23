@@ -13,6 +13,7 @@ export class StartOverlay {
               <span><kbd>Chuột</kbd> quan sát</span>
               <span><kbd>Shift</kbd> chạy</span>
               <span><kbd>E</kbd> tương tác</span>
+              <span><kbd>M</kbd> bản đồ</span>
               <span><kbd>Esc</kbd> mở khóa chuột</span>
             </span>
           </button>
@@ -43,6 +44,7 @@ export class StartOverlay {
     this.debugPanel = this.root.querySelector('.debug-panel')
     this.locked = false
     this.dialogueActive = false
+    this.mapActive = false
     this.resumeMode = false
     this.noticeTimer = null
     this.flashTimer = null
@@ -60,6 +62,13 @@ export class StartOverlay {
   setDialogueActive(active) {
     this.dialogueActive = active
     this.shell.classList.toggle('is-dialogue-active', active)
+    if (active) this.setInteraction(null)
+    this.#renderState()
+  }
+
+  setMapActive(active) {
+    this.mapActive = active
+    this.shell.classList.toggle('is-map-active', active)
     if (active) this.setInteraction(null)
     this.#renderState()
   }
@@ -103,8 +112,8 @@ export class StartOverlay {
   }
 
   #renderState() {
-    const overlayHidden = this.locked || this.dialogueActive
-    const crosshairVisible = this.locked && !this.dialogueActive
+    const overlayHidden = this.locked || this.dialogueActive || this.mapActive
+    const crosshairVisible = this.locked && !this.dialogueActive && !this.mapActive
     this.overlay.classList.toggle('is-hidden', overlayHidden)
     this.crosshair.classList.toggle('is-visible', crosshairVisible)
     this.overlay.setAttribute('aria-hidden', String(overlayHidden))

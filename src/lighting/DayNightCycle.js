@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
-export const DAY_NIGHT_AREAS = Object.freeze(['outdoor', 'interior'])
+export const DAY_NIGHT_AREAS = Object.freeze([
+  'outdoor',
+  'baDinh',
+  'longBien',
+  'interior',
+])
 
 const GAME_MINUTES_PER_DAY = 24 * 60
 const KEYFRAMES = Object.freeze([
@@ -192,7 +197,12 @@ const INTERIOR = Object.freeze({
   }),
 })
 
-const PALETTES = Object.freeze({ outdoor: OUTDOOR, interior: INTERIOR })
+const PALETTES = Object.freeze({
+  outdoor: OUTDOOR,
+  baDinh: OUTDOOR,
+  longBien: OUTDOOR,
+  interior: INTERIOR,
+})
 
 function lerp(from, to, amount) {
   return from + (to - from) * amount
@@ -261,10 +271,12 @@ export class DayNightCycle {
 
     this.scene = scene
     this.clock = clock
-    this.lighting = {
-      outdoor: normalizeLighting(lighting.outdoor),
-      interior: normalizeLighting(lighting.interior),
-    }
+    this.lighting = Object.fromEntries(DAY_NIGHT_AREAS.map((areaName) => [
+      areaName,
+      normalizeLighting(lighting[areaName] ?? (
+        areaName === 'interior' ? lighting.interior : lighting.outdoor
+      )),
+    ]))
     this._area = 'outdoor'
     this._phase = 'dusk'
 

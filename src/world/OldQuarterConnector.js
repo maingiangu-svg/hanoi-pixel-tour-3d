@@ -13,6 +13,7 @@ export class OldQuarterConnector {
     parent.add(this.group)
     this.lights = []
     this.interactions = []
+    this.legacyHouseGroups = new Map()
 
     this.#buildRoutes()
     this.#buildStreetWalls()
@@ -107,8 +108,15 @@ export class OldQuarterConnector {
 
   #tubeHouse({ x, z, w, d, h, side, sign }, index) {
     const material = HOUSE_MATERIALS[index % HOUSE_MATERIALS.length]
-    this.kit.box(this.group, {
-      name: `Nhà ống tuyến Hồ Gươm ${index + 1}`,
+    const legacyName = `Nhà ống tuyến Hồ Gươm ${index + 1}`
+    const houseGroup = new THREE.Group()
+    houseGroup.name = `Cụm ${legacyName}`
+    houseGroup.userData.legacyColliderName = legacyName
+    this.group.add(houseGroup)
+    this.legacyHouseGroups.set(legacyName, houseGroup)
+
+    this.kit.box(houseGroup, {
+      name: legacyName,
       size: [w, h, d],
       position: [x, h / 2, z],
       material,
@@ -116,7 +124,7 @@ export class OldQuarterConnector {
       colliders: this.colliders,
       castShadow: index % 4 === 0,
     })
-    this.kit.box(this.group, {
+    this.kit.box(houseGroup, {
       name: 'Gờ mái nhà ống',
       size: [w + 0.3, 0.3, d + 0.3],
       position: [x, h + 0.04, z],
@@ -125,20 +133,20 @@ export class OldQuarterConnector {
     })
 
     const facade = this.#facadeTransform({ x, z, w, d, side })
-    this.kit.box(this.group, {
+    this.kit.box(houseGroup, {
       name: 'Cửa cuốn nhà ống',
       size: facade.horizontal ? [w * 0.62, 2.7, 0.14] : [0.14, 2.7, d * 0.62],
       position: [facade.x, 1.5, facade.z],
       material: index % 2 === 0 ? 'greenDoor' : 'metal',
     })
     for (const y of [4.8, 7.4].filter((level) => level < h - 1)) {
-      this.kit.box(this.group, {
+      this.kit.box(houseGroup, {
         name: 'Cửa sổ nhà ống',
         size: facade.horizontal ? [Math.min(2.8, w * 0.55), 1.5, 0.14] : [0.14, 1.5, Math.min(2.8, d * 0.55)],
         position: [facade.x, y, facade.z],
         material: (index + Math.round(y)) % 3 === 0 ? 'warmGlass' : 'glass',
       })
-      this.kit.box(this.group, {
+      this.kit.box(houseGroup, {
         name: 'Ban công nhà ống',
         size: facade.horizontal ? [Math.min(3.5, w * 0.7), 0.15, 0.75] : [0.75, 0.15, Math.min(3.5, d * 0.7)],
         position: [
@@ -151,7 +159,7 @@ export class OldQuarterConnector {
       })
     }
     if (sign) {
-      this.kit.sign(this.group, {
+      this.kit.sign(houseGroup, {
         text: sign,
         width: Math.min(4.6, facade.horizontal ? w - 0.6 : d - 0.6),
         height: 0.68,

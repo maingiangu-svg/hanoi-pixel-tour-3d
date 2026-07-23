@@ -10,6 +10,10 @@ import { OldQuarterConnector } from './OldQuarterConnector.js'
 import { HoanKiemDistrict } from './HoanKiemDistrict.js'
 import { NgocSonBranch } from './NgocSonBranch.js'
 import { HoanKiemCrowd } from './HoanKiemCrowd.js'
+import { HoanKiemCoverageDistrict } from './districts/HoanKiemCoverageDistrict.js'
+import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
+import { LongBienDistrict } from './districts/LongBienDistrict.js'
+import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
 import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
 
 const OUTDOOR_SKY = 0x596777
@@ -57,6 +61,22 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
     })
+    this.hoanKiemCoverageDistrict = new HoanKiemCoverageDistrict({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+      existingLandmarks: { nhaThoLon: this.church.group },
+    })
+    this.baDinhDistrict = new BaDinhDistrict({
+      kit: this.kit,
+      parent: this.root,
+    })
+    this.baDinhDistrict.group.visible = false
+    this.longBienDistrict = new LongBienDistrict({
+      kit: this.kit,
+      parent: this.root,
+    })
+    this.longBienDistrict.group.visible = false
     this.mo = camera && assetLoader
       ? new MoNpc({
           parent: this.outdoor,
@@ -92,7 +112,7 @@ export class ChurchDistrict {
       : null
 
     this.districts = Object.freeze({
-      churchDistrict: { center: new THREE.Vector2(0, 0), activationRadius: 52 },
+      churchDistrict: { center: new THREE.Vector2(0, -28), activationRadius: 75 },
       oldQuarterConnector: { center: new THREE.Vector2(50, 19), activationRadius: 43 },
       hoanKiemDistrict: { center: new THREE.Vector2(101, 0), activationRadius: 72 },
       ngocSonBranch: { center: new THREE.Vector2(119, 48), activationRadius: 38 },
@@ -103,50 +123,71 @@ export class ChurchDistrict {
       lakeViewpoint: new THREE.Vector3(68, 0, -3),
     })
 
+    const interiorPortals = this.interior.exits.map((exit) => ({
+      ...exit,
+      position: new THREE.Vector3(exit.position.x, exit.position.y, exit.position.z),
+    }))
     this.areas = {
       outdoor: {
+        mapId: 'hoanKiem',
         name: 'outdoor',
         group: this.outdoor,
         colliders: outdoorColliders,
-        bounds: { minX: -34, maxX: 143, minZ: -43, maxZ: 60 },
-        spawn: { x: 0, z: 6, yaw: 0 },
-        returnSpawn: { x: 0, z: -9.7, yaw: Math.PI },
-        portal: {
-          type: 'portal',
-          position: new THREE.Vector3(0, 0, -12.65),
-          radius: 2.5,
-          label: 'Vào Nhà thờ',
-          target: 'interior',
-        },
+        bounds: this.hoanKiemCoverageDistrict.bounds,
+        spawn: this.hoanKiemCoverageDistrict.spawn,
+        portals: this.hoanKiemCoverageDistrict.interactions,
+        portal: this.hoanKiemCoverageDistrict.interactions[0],
+        coverage: this.hoanKiemCoverageDistrict.coverage,
+      },
+      baDinh: {
+        mapId: 'baDinh',
+        name: 'baDinh',
+        group: this.baDinhDistrict.group,
+        colliders: this.baDinhDistrict.colliders,
+        bounds: this.baDinhDistrict.bounds,
+        spawn: this.baDinhDistrict.spawn,
+        portals: this.baDinhDistrict.interactions,
+        portal: this.baDinhDistrict.interactions[0],
+        coverage: this.baDinhDistrict.coverage,
+      },
+      longBien: {
+        mapId: 'longBien',
+        name: 'longBien',
+        group: this.longBienDistrict.group,
+        colliders: this.longBienDistrict.colliders,
+        bounds: this.longBienDistrict.bounds,
+        spawn: this.longBienDistrict.spawn,
+        portals: this.longBienDistrict.interactions,
+        portal: this.longBienDistrict.interactions[0],
+        coverage: this.longBienDistrict.coverage,
       },
       interior: {
+        mapId: 'churchInterior',
         name: 'interior',
         group: this.interior.group,
         colliders: this.interior.colliders,
         bounds: this.interior.bounds,
-        spawn: { x: 0, z: 10.7, yaw: 0 },
-        portal: {
-          type: 'portal',
-          position: new THREE.Vector3(0, 0, 13.15),
-          radius: 2.25,
-          label: 'Ra ngoài',
-          target: 'outdoor',
-        },
+        spawn: this.interior.spawn,
+        portals: interiorPortals,
+        portal: interiorPortals[0],
+        coverage: this.interior.coverage,
       },
     }
     this.activeAreaName = 'outdoor'
+    this.activeMapId = MAP_REGISTRY.hoanKiem.id
     this.colliders = this.areas.outdoor.colliders
     this.bounds = this.areas.outdoor.bounds
     this.spawn = this.areas.outdoor.spawn
+    this.#setAreaVisibility('outdoor')
     this.#applyAtmosphere('outdoor')
   }
 
   getActivePortal() {
-    return this.areas[this.activeAreaName].portal
+    return this.areas[this.activeAreaName].portals[0] ?? null
   }
 
   getActiveInteractions() {
-    const interactions = [this.getActivePortal()]
+    const interactions = [...this.areas[this.activeAreaName].portals]
     interactions.push(this.mo?.getInteraction())
     interactions.push(...(this.crowd?.getInteractions(this.activeAreaName) ?? []))
     if (this.activeAreaName === 'outdoor') {
@@ -177,24 +218,31 @@ export class ChurchDistrict {
       'lakeWater',
       'waterReflection',
     ].map((name) => this.kit.material(name))
+    const outdoorContext = (pointLights, spotLights = []) => ({
+      ambient: this.outdoorLighting.ambient,
+      hemisphere: this.outdoorLighting.hemisphere,
+      directional: this.outdoorLighting.sun,
+      rim: this.outdoorLighting.rim,
+      pointLights,
+      spotLights,
+      emissiveMaterials,
+    })
 
     return {
-      outdoor: {
-        ambient: this.outdoorLighting.ambient,
-        hemisphere: this.outdoorLighting.hemisphere,
-        directional: this.outdoorLighting.sun,
-        rim: this.outdoorLighting.rim,
-        pointLights: [
+      outdoor: outdoorContext(
+        [
           ...this.props.streetLights,
           ...this.props.cafeLights,
           ...this.streetBuildingLights,
           ...this.oldQuarterConnector.lights,
           ...this.hoanKiemDistrict.lights,
           ...this.ngocSonBranch.lights,
+          ...this.hoanKiemCoverageDistrict.lights,
         ],
-        spotLights: this.church.facadeLights,
-        emissiveMaterials,
-      },
+        this.church.facadeLights,
+      ),
+      baDinh: outdoorContext(this.baDinhDistrict.lights),
+      longBien: outdoorContext(this.longBienDistrict.lights),
       interior: {
         ambient: this.interior.lighting.ambient,
         pointLights: this.interior.lighting.pendantLights,
@@ -211,13 +259,15 @@ export class ChurchDistrict {
   }
 
   getActiveDistrictNames(position) {
-    if (this.activeAreaName !== 'outdoor') return ['churchInterior']
-    return Object.entries(this.districts)
+    if (this.activeAreaName !== 'outdoor') {
+      return [this.areas[this.activeAreaName].mapId]
+    }
+    return ['hoanKiem', ...Object.entries(this.districts)
       .filter(([, district]) => Math.hypot(
         district.center.x - position.x,
         district.center.y - position.z,
       ) <= district.activationRadius)
-      .map(([name]) => name)
+      .map(([name]) => name)]
   }
 
   getNamedNpc(name) {
@@ -225,52 +275,58 @@ export class ChurchDistrict {
     return this.crowd?.getActorByName(name) ?? this.hoanKiemCrowd?.getActorByName(name) ?? null
   }
 
-  transition(targetAreaName) {
-    if (targetAreaName === this.activeAreaName || !this.areas[targetAreaName]) {
-      return this.areas[this.activeAreaName]
-    }
+  transition(target) {
+    const destination = resolveMapDestination(target)
+    const areaName = destination.definition.areaName
+    const area = this.areas[areaName]
+    if (!area) throw new Error(`Map area is not mounted: ${areaName}`)
 
-    this.activeAreaName = targetAreaName
-    this.outdoor.visible = targetAreaName === 'outdoor'
-    this.interior.group.visible = targetAreaName === 'interior'
-    this.#applyAtmosphere(targetAreaName)
+    this.activeAreaName = areaName
+    this.activeMapId = destination.definition.id
+    this.#setAreaVisibility(areaName)
+    this.#applyAtmosphere(areaName)
 
-    const area = this.areas[targetAreaName]
-    const spawn = targetAreaName === 'outdoor' ? area.returnSpawn : area.spawn
+    const spawn = destination.spawn
     this.colliders = area.colliders
     this.bounds = area.bounds
-    return { ...area, spawn }
+    this.spawn = spawn
+    return { ...area, spawn, exitId: destination.exitId }
   }
 
   #buildOutdoorLighting() {
+    const group = new THREE.Group()
+    group.name = 'Ánh sáng dùng chung cho các bản đồ ngoài trời'
     const ambient = new THREE.AmbientLight(0x84909f, 0.5)
     const sky = new THREE.HemisphereLight(0x8d9caf, 0x4c4137, 1.2)
     const sun = new THREE.DirectionalLight(0xffd39b, 1.9)
     sun.name = 'Ánh chiều tối'
-    sun.position.set(-18, 26, 18)
-    sun.target.position.set(0, 5, -16)
+    // Keep the original light direction while centering the shadow volume over
+    // the rebuilt 64.5 m cathedral, which extends toward negative Z.
+    sun.position.set(-18, 26, -7)
+    sun.target.position.set(0, 5, -41)
     sun.castShadow = true
-    sun.shadow.mapSize.set(1024, 1024)
-    sun.shadow.camera.left = -34
-    sun.shadow.camera.right = 34
-    sun.shadow.camera.top = 34
-    sun.shadow.camera.bottom = -34
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.camera.left = -70
+    sun.shadow.camera.right = 70
+    sun.shadow.camera.top = 70
+    sun.shadow.camera.bottom = -70
     sun.shadow.camera.near = 1
-    sun.shadow.camera.far = 74
+    sun.shadow.camera.far = 150
     sun.shadow.bias = -0.0005
     const rim = new THREE.DirectionalLight(0x8498b6, 0.42)
     rim.name = 'Ánh trời xanh cuối ngày'
     rim.position.set(22, 18, -30)
     rim.target.position.set(0, 8, -12)
-    this.outdoorLighting = { ambient, hemisphere: sky, sun, rim }
-    this.outdoor.add(ambient, sky, sun, sun.target, rim, rim.target)
+    this.outdoorLighting = { group, ambient, hemisphere: sky, sun, rim }
+    this.root.add(group)
+    group.add(ambient, sky, sun, sun.target, rim, rim.target)
   }
 
   #buildGround(colliders) {
     this.kit.box(this.outdoor, {
       name: 'Nền khu phố',
-      size: [70, 0.32, 72],
-      position: [0, -0.22, -3],
+      size: [70, 0.32, 130],
+      position: [0, -0.22, -32],
       material: 'stoneDark',
       receiveShadow: true,
     })
@@ -496,6 +552,13 @@ export class ChurchDistrict {
       background: '#315c55',
       foreground: '#f4e7c8',
     })
+  }
+
+  #setAreaVisibility(activeAreaName) {
+    Object.entries(this.areas).forEach(([areaName, area]) => {
+      area.group.visible = areaName === activeAreaName
+    })
+    this.outdoorLighting.group.visible = activeAreaName !== 'interior'
   }
 
   #updateDistrictVisibility() {

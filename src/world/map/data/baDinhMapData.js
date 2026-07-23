@@ -1,0 +1,340 @@
+// Faithful, gameplay-agnostic geometry port of src/data/mapBaDinh.js from
+// hanoi-pixel-tour-2d. Coordinates remain in the original 3000 x 2200 map space.
+
+import { MAP_MOBILITY_METADATA } from './mapMobilityMetadata.js'
+
+const mobility = MAP_MOBILITY_METADATA.baDinh
+
+export const sourceCounts = Object.freeze({
+  walkZones: 34,
+  water: 2,
+  groundPatches: 7,
+  buildings: 24,
+  shops: 2,
+  landmarks: 5,
+  collisionBlocks: 2,
+  exits: 2,
+  decorations: 77,
+  parkingSpots: 2,
+})
+
+export const baDinhMapData = Object.freeze({
+  id: 'baDinh',
+  name: 'Ba Đình - Văn Miếu',
+  arrivalName: 'khu Ba Đình - Văn Miếu',
+  dimensions: Object.freeze({ width: 3000, height: 2200 }),
+  width: 3000,
+  height: 2200,
+  background: '#85847b',
+  spawn: Object.freeze({ x: 340, y: 1850 }),
+  sourceCounts,
+  mobilitySourceCounts: Object.freeze({
+    parkingSpots: mobility.parkingSpots.length,
+    vehicleRestrictedZones: mobility.vehicleRestrictedZones.length,
+    ambientVehicles: mobility.ambientVehicles.length,
+  }),
+  parkingSpots: mobility.parkingSpots,
+  vehicleRestrictedZones: mobility.vehicleRestrictedZones,
+  ambientVehicles: mobility.ambientVehicles,
+
+  walkZones: Object.freeze([
+    { id: 'ba-dinh-walk-plaza-01', x: 520, y: 106, width: 1100, height: 838, kind: 'plaza' },
+    { id: 'ba-dinh-walk-plaza-02', x: 1680, y: 300, width: 540, height: 190, kind: 'plaza' },
+    { id: 'ba-dinh-walk-plaza-03', x: 1680, y: 650, width: 540, height: 300, kind: 'plaza' },
+    { id: 'ba-dinh-walk-plaza-04', x: 2020, y: 490, width: 200, height: 160, kind: 'plaza' },
+    { id: 'ba-dinh-walk-courtyard-01', x: 586, y: 1240, width: 1044, height: 260, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-courtyard-02', x: 586, y: 1600, width: 1044, height: 388, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-courtyard-03', x: 586, y: 1508, width: 166, height: 90, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-courtyard-04', x: 1018, y: 1508, width: 612, height: 90, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-sidewalk-01', x: 1870, y: 1010, width: 830, height: 770, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-sidewalk-02', x: 120, y: 1480, width: 520, height: 430, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-road-01', x: 180, y: 1780, width: 2580, height: 126, kind: 'road' },
+    { id: 'ba-dinh-walk-road-02', x: 220, y: 960, width: 2440, height: 122, kind: 'road' },
+    { id: 'ba-dinh-walk-road-03', x: 358, y: 120, width: 126, height: 1900, kind: 'road' },
+    { id: 'ba-dinh-walk-road-04', x: 1556, y: 240, width: 126, height: 1700, kind: 'road' },
+    { id: 'ba-dinh-walk-road-05', x: 2496, y: 820, width: 126, height: 700, kind: 'road' },
+    { id: 'ba-dinh-walk-sidewalk-03', x: 560, y: 168, width: 1040, height: 112, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-sidewalk-04', x: 560, y: 812, width: 1040, height: 108, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-sidewalk-05', x: 560, y: 240, width: 106, height: 680, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-sidewalk-06', x: 1500, y: 240, width: 110, height: 680, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-plaza-05', x: 640, y: 290, width: 820, height: 500, kind: 'plaza' },
+    { id: 'ba-dinh-walk-plaza-06', x: 760, y: 680, width: 580, height: 120, kind: 'plaza' },
+    { id: 'ba-dinh-walk-courtyard-05', x: 1700, y: 320, width: 470, height: 170, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-courtyard-06', x: 1700, y: 650, width: 470, height: 60, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-sidewalk-07', x: 1660, y: 548, width: 96, height: 96, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-sidewalk-08', x: 2020, y: 548, width: 150, height: 96, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-courtyard-07', x: 1920, y: 1070, width: 610, height: 330, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-sidewalk-09', x: 2030, y: 1410, width: 620, height: 96, kind: 'sidewalk' },
+    { id: 'ba-dinh-walk-courtyard-08', x: 620, y: 1310, width: 960, height: 190, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-courtyard-09', x: 620, y: 1600, width: 960, height: 330, kind: 'courtyard' },
+    { id: 'ba-dinh-walk-path-01', x: 710, y: 1420, width: 780, height: 94, kind: 'path' },
+    { id: 'ba-dinh-walk-path-02', x: 710, y: 1570, width: 44, height: 94, kind: 'path' },
+    { id: 'ba-dinh-walk-path-03', x: 1016, y: 1570, width: 474, height: 94, kind: 'path' },
+    { id: 'ba-dinh-walk-path-04', x: 710, y: 1720, width: 780, height: 94, kind: 'path' },
+    { id: 'ba-dinh-walk-sidewalk-10', x: 2050, y: 1620, width: 560, height: 100, kind: 'sidewalk' }
+  ]),
+
+  water: Object.freeze([
+    { id: 'ba-dinh-water-ao-sen', x: 1760, y: 508, width: 250, height: 132, label: 'Ao sen', kind: 'pond' },
+    { id: 'ba-dinh-water-ho-van', x: 760, y: 1510, width: 250, height: 88, label: 'Hồ Văn', kind: 'pond' }
+  ]),
+
+  groundPatches: Object.freeze([
+    { id: 'ba-dinh-ground-paving-base', x: 0, y: 0, width: 3000, height: 2200, kind: 'paving' },
+    { id: 'ba-dinh-ground-plaza-main', x: 520, y: 106, width: 1710, height: 840, kind: 'plaza' },
+    { id: 'ba-dinh-ground-grass-01', x: 680, y: 500, width: 780, height: 82, kind: 'grass' },
+    { id: 'ba-dinh-ground-grass-02', x: 680, y: 612, width: 780, height: 70, kind: 'grass' },
+    { id: 'ba-dinh-ground-van-mieu-brick', x: 586, y: 1240, width: 1044, height: 748, kind: 'brick' },
+    { id: 'ba-dinh-ground-hoang-thanh-paving', x: 1870, y: 1010, width: 830, height: 770, kind: 'paving' },
+    { id: 'ba-dinh-ground-one-pillar-plaza', x: 1700, y: 320, width: 470, height: 390, kind: 'plaza' }
+  ]),
+
+  collisionBlocks: Object.freeze([
+    { id: 'ba-dinh-collision-ao-sen', x: 1760, y: 508, width: 250, height: 132 },
+    { id: 'ba-dinh-collision-ho-van', x: 760, y: 1510, width: 250, height: 88 }
+  ]),
+
+  buildings: Object.freeze([
+    { id: 'ba-dinh-building-admin-01', kind: 'admin', x: 1030, y: 110, width: 500, height: 112, color: '#d8d0a8', roof: '#9f4b3f' },
+    { id: 'ba-dinh-building-admin-02', kind: 'admin', x: 1780, y: 170, width: 380, height: 110, color: '#d6c57a', roof: '#8a3f32' },
+    { id: 'ba-dinh-wall-van-mieu-north', kind: 'wall', x: 605, y: 1260, width: 1010, height: 34, color: '#b76d43' },
+    { id: 'ba-dinh-wall-van-mieu-south', kind: 'wall', x: 604, y: 1930, width: 1010, height: 34, color: '#b76d43' },
+    { id: 'ba-dinh-wall-van-mieu-west', kind: 'wall', x: 604, y: 1260, width: 34, height: 704, color: '#b76d43' },
+    { id: 'ba-dinh-wall-van-mieu-east', kind: 'wall', x: 1580, y: 1260, width: 34, height: 704, color: '#b76d43' },
+    { id: 'ba-dinh-wall-hoang-thanh-north', kind: 'wall', x: 1910, y: 1040, width: 640, height: 34, color: '#b76d43' },
+    { id: 'ba-dinh-wall-hoang-thanh-south', kind: 'wall', x: 1910, y: 1410, width: 640, height: 34, color: '#b76d43' },
+    { id: 'ba-dinh-building-tube-house-01', kind: 'tubeHouse', x: 2080, y: 1518, width: 92, height: 118, color: '#e7c067', roof: '#315f8f', door: '#5d3b28' },
+    { id: 'ba-dinh-building-tube-house-east-01', kind: 'tubeHouse', x: 2150, y: 1736, width: 78, height: 106, color: '#d8b95e', roof: '#9f3e35', door: '#27647d', sign: 'PHỞ', facadeVariant: 0, balconySide: 'left', hasAwning: true, hasAirConditioner: true, hasWaterTank: true },
+    { id: 'ba-dinh-building-tube-house-east-02', kind: 'tubeHouse', x: 2238, y: 1736, width: 78, height: 118, color: '#efc66e', roof: '#315f8f', door: '#5d3b28', sign: 'BÁNH', facadeVariant: 1, balconySide: 'right', hasAwning: false, hasAirConditioner: true, hasWaterTank: false },
+    { id: 'ba-dinh-building-tube-house-east-03', kind: 'tubeHouse', x: 2326, y: 1736, width: 78, height: 130, color: '#d9d477', roof: '#8f4a2f', door: '#2d6b58', sign: 'TRÀ', facadeVariant: 2, balconySide: 'left', hasAwning: true, hasAirConditioner: false, hasWaterTank: false },
+    { id: 'ba-dinh-building-tube-house-east-04', kind: 'tubeHouse', x: 2414, y: 1736, width: 78, height: 106, color: '#e8a866', roof: '#734a91', door: '#5b3726', sign: 'SÁCH', facadeVariant: 3, balconySide: 'right', hasAwning: true, hasAirConditioner: true, hasWaterTank: true },
+    { id: 'ba-dinh-building-tube-house-east-05', kind: 'tubeHouse', x: 2502, y: 1736, width: 78, height: 118, color: '#91c2b4', roof: '#9d4138', door: '#304a72', sign: 'CAFE', facadeVariant: 4, balconySide: 'left', hasAwning: false, hasAirConditioner: true, hasWaterTank: false },
+    { id: 'ba-dinh-building-tube-house-west-01', kind: 'tubeHouse', x: 170, y: 1540, width: 72, height: 112, color: '#d8b95e', roof: '#9f3e35', door: '#27647d', sign: 'PHỐ', facadeVariant: 0, balconySide: 'left', hasAwning: true, hasAirConditioner: true, hasWaterTank: true },
+    { id: 'ba-dinh-building-tube-house-west-02', kind: 'tubeHouse', x: 252, y: 1540, width: 72, height: 124, color: '#efc66e', roof: '#315f8f', door: '#5d3b28', sign: 'NƯỚC', facadeVariant: 1, balconySide: 'right', hasAwning: false, hasAirConditioner: true, hasWaterTank: false },
+    { id: 'ba-dinh-building-tube-house-west-03', kind: 'tubeHouse', x: 334, y: 1540, width: 72, height: 136, color: '#d9d477', roof: '#8f4a2f', door: '#2d6b58', sign: 'BÚN', facadeVariant: 2, balconySide: 'left', hasAwning: true, hasAirConditioner: false, hasWaterTank: false },
+    { id: 'ba-dinh-building-collective-west-01', kind: 'collective', x: 170, y: 1326, width: 118, height: 142, color: '#c8b58b', roof: '#8c4a35', facadeVariant: 0 },
+    { id: 'ba-dinh-building-apartment-west-01', kind: 'apartment', x: 302, y: 1326, width: 118, height: 162, color: '#aeb3aa', roof: '#5e646a', facadeVariant: 1 },
+    { id: 'ba-dinh-building-collective-west-02', kind: 'collective', x: 434, y: 1326, width: 118, height: 142, color: '#c8b58b', roof: '#8c4a35', facadeVariant: 2 },
+    { id: 'ba-dinh-building-collective-east-01', kind: 'collective', x: 2260, y: 1280, width: 126, height: 150, color: '#c8b58b', roof: '#8c4a35', facadeVariant: 0 },
+    { id: 'ba-dinh-building-apartment-east-01', kind: 'apartment', x: 2404, y: 1280, width: 126, height: 170, color: '#aeb3aa', roof: '#5e646a', facadeVariant: 1 },
+    { id: 'ba-dinh-building-collective-east-02', kind: 'collective', x: 2548, y: 1280, width: 126, height: 150, color: '#c8b58b', roof: '#8c4a35', facadeVariant: 2 },
+    { id: 'ba-dinh-building-cafe-front-01', kind: 'cafeFront', x: 2250, y: 1530, width: 112, height: 92, color: '#d8b35f', roof: '#88443d', sign: 'CAFE' }
+  ]),
+
+  landmarks: Object.freeze([
+    {
+      id: 'quangTruongBaDinh',
+      name: 'Quảng trường Ba Đình',
+      kind: 'plazaLabel',
+      x: 640,
+      y: 300,
+      width: 820,
+      height: 490,
+      solid: false,
+      priority: 7,
+      range: 90,
+      interactionPoint: { x: 760, y: 748, radius: 50, visibleRange: 240, labelOffsetY: -34 },
+      quizId: 'quangTruongBaDinh',
+      stamp: 'Tem Quảng trường Ba Đình',
+      description: 'Không gian quảng trường rộng lớn trước Lăng Bác.'
+    },
+    {
+      id: 'langBac',
+      name: 'Lăng Bác',
+      kind: 'mausoleum',
+      x: 930,
+      y: 250,
+      width: 430,
+      height: 184,
+      solid: true,
+      range: 118,
+      interactionPoint: { x: 1145, y: 462, radius: 50, visibleRange: 240, labelOffsetY: -36 },
+      quizId: 'langBac',
+      stamp: 'Tem Lăng Bác',
+      description: 'Công trình trang nghiêm tại Quảng trường Ba Đình.'
+    },
+    {
+      id: 'chuaMotCot',
+      name: 'Chùa Một Cột',
+      kind: 'onePillar',
+      x: 1810,
+      y: 396,
+      width: 190,
+      height: 178,
+      solid: true,
+      range: 105,
+      interactionPoint: { x: 1718, y: 600, radius: 48, visibleRange: 220, labelOffsetY: -34 },
+      quizId: 'chuaMotCot',
+      stamp: 'Tem Chùa Một Cột',
+      description: 'Ngôi chùa có kiến trúc như bông sen trên một cột.'
+    },
+    {
+      id: 'hoangThanh',
+      name: 'Hoàng Thành Thăng Long',
+      kind: 'citadel',
+      x: 1978,
+      y: 1102,
+      width: 500,
+      height: 238,
+      solid: true,
+      range: 120,
+      interactionPoint: { x: 2040, y: 1370, radius: 50, visibleRange: 230, labelOffsetY: -34 },
+      quizId: 'hoangThanh',
+      stamp: 'Tem Hoàng Thành Thăng Long',
+      description: 'Di sản văn hóa gắn với lịch sử kinh đô Thăng Long.'
+    },
+    {
+      id: 'vanMieu',
+      name: 'Văn Miếu - Quốc Tử Giám',
+      kind: 'gate',
+      x: 690,
+      y: 1348,
+      width: 820,
+      height: 520,
+      solid: false,
+      range: 120,
+      interactionPoint: { x: 1100, y: 1422, radius: 52, visibleRange: 240, labelOffsetY: -36 },
+      quizId: 'vanMieu',
+      stamp: 'Tem Văn Miếu',
+      description: 'Không gian văn hóa tôn vinh truyền thống hiếu học.'
+    }
+  ]),
+
+  shops: Object.freeze([
+    { id: 'shopPhoHaNoi', foodId: 'phoHaNoi', x: 2126, y: 1640, width: 166, height: 80 },
+    { id: 'shopBanhCuon', foodId: 'banhCuon', x: 2360, y: 1640, width: 174, height: 80 }
+  ]),
+
+  exits: Object.freeze([
+    {
+      id: 'busBackHoanKiem',
+      name: 'Xe buýt Hoàn Kiếm',
+      kind: 'bus',
+      x: 270,
+      y: 1818,
+      width: 128,
+      height: 76,
+      targetMap: 'hoanKiem',
+      targetX: 2450,
+      targetY: 1540,
+      message: 'Bạn đã đi xe buýt về khu Hoàn Kiếm - Phố Cổ.'
+    },
+    {
+      id: 'busToLongBien',
+      name: 'Xe buýt Long Biên',
+      kind: 'bus',
+      x: 2550,
+      y: 960,
+      width: 128,
+      height: 76,
+      targetMap: 'longBien',
+      targetX: 1420,
+      targetY: 1320,
+      message: 'Bạn đã đi xe buýt đến khu Long Biên - Đồng Xuân.'
+    }
+  ]),
+
+  decorations: Object.freeze([
+    { id: 'ba-dinh-decor-skyline-01', type: 'skyline', x: 120, y: 48, width: 520, height: 126 },
+    { id: 'ba-dinh-decor-skyline-02', type: 'skyline', x: 2260, y: 610, width: 520, height: 130 },
+    { id: 'ba-dinh-decor-pocket-parking-01', type: 'pocketParking', x: 180, y: 1240, width: 148, height: 112 },
+    { id: 'ba-dinh-decor-pocket-parking-02', type: 'pocketParking', x: 2660, y: 1490, width: 220, height: 104 },
+    { id: 'ba-dinh-decor-alley-mouth-01', type: 'alleyMouth', x: 2020, y: 1518, width: 124, text: 'NGÕ VĂN MIẾU' },
+    { id: 'ba-dinh-decor-flag-01', type: 'flag', x: 922, y: 230 },
+    { id: 'ba-dinh-decor-flag-02', type: 'flag', x: 976, y: 230 },
+    { id: 'ba-dinh-decor-flag-03', type: 'flag', x: 1030, y: 230 },
+    { id: 'ba-dinh-decor-flag-04', type: 'flag', x: 1084, y: 230 },
+    { id: 'ba-dinh-decor-flag-05', type: 'flag', x: 1138, y: 230 },
+    { id: 'ba-dinh-decor-tree-01', type: 'tree', x: 560, y: 320 },
+    { id: 'ba-dinh-decor-tree-02', type: 'tree', x: 560, y: 470 },
+    { id: 'ba-dinh-decor-tree-03', type: 'tree', x: 560, y: 620 },
+    { id: 'ba-dinh-decor-tree-04', type: 'tree', x: 560, y: 730 },
+    { id: 'ba-dinh-decor-tree-05', type: 'tree', x: 1495, y: 320 },
+    { id: 'ba-dinh-decor-tree-06', type: 'tree', x: 1495, y: 470 },
+    { id: 'ba-dinh-decor-tree-07', type: 'tree', x: 1495, y: 620 },
+    { id: 'ba-dinh-decor-tree-08', type: 'tree', x: 1495, y: 730 },
+    { id: 'ba-dinh-decor-tree-09', type: 'tree', x: 1710, y: 340 },
+    { id: 'ba-dinh-decor-tree-10', type: 'tree', x: 2140, y: 690 },
+    { id: 'ba-dinh-decor-tree-11', type: 'tree', x: 690, y: 1308 },
+    { id: 'ba-dinh-decor-tree-12', type: 'tree', x: 1490, y: 1308 },
+    { id: 'ba-dinh-decor-tree-13', type: 'tree', x: 690, y: 1888 },
+    { id: 'ba-dinh-decor-tree-14', type: 'tree', x: 1490, y: 1888 },
+    { id: 'ba-dinh-decor-lamp-01', type: 'lamp', x: 610, y: 812 },
+    { id: 'ba-dinh-decor-lamp-02', type: 'lamp', x: 760, y: 812 },
+    { id: 'ba-dinh-decor-lamp-03', type: 'lamp', x: 910, y: 812 },
+    { id: 'ba-dinh-decor-lamp-04', type: 'lamp', x: 1060, y: 812 },
+    { id: 'ba-dinh-decor-lamp-05', type: 'lamp', x: 1210, y: 812 },
+    { id: 'ba-dinh-decor-lamp-06', type: 'lamp', x: 1360, y: 812 },
+    { id: 'ba-dinh-decor-lamp-07', type: 'lamp', x: 1580, y: 945 },
+    { id: 'ba-dinh-decor-lamp-08', type: 'lamp', x: 370, y: 1680 },
+    { id: 'ba-dinh-decor-lamp-09', type: 'lamp', x: 2500, y: 1540 },
+    { id: 'ba-dinh-decor-bench-01', type: 'bench', x: 760, y: 748 },
+    { id: 'ba-dinh-decor-bench-02', type: 'bench', x: 920, y: 748 },
+    { id: 'ba-dinh-decor-bench-03', type: 'bench', x: 1080, y: 748 },
+    { id: 'ba-dinh-decor-bench-04', type: 'bench', x: 1240, y: 748 },
+    { id: 'ba-dinh-decor-bench-05', type: 'bench', x: 1780, y: 670 },
+    { id: 'ba-dinh-decor-bench-06', type: 'bench', x: 840, y: 1810 },
+    { id: 'ba-dinh-decor-bench-07', type: 'bench', x: 1160, y: 1810 },
+    { id: 'ba-dinh-decor-lotus-01', type: 'lotus', x: 1790, y: 560 },
+    { id: 'ba-dinh-decor-lotus-02', type: 'lotus', x: 1850, y: 606 },
+    { id: 'ba-dinh-decor-lotus-03', type: 'lotus', x: 1950, y: 560 },
+    { id: 'ba-dinh-decor-lotus-04', type: 'lotus', x: 835, y: 1548 },
+    { id: 'ba-dinh-decor-lotus-05', type: 'lotus', x: 940, y: 1562 },
+    { id: 'ba-dinh-decor-stele-01', type: 'stele', x: 980, y: 1604 },
+    { id: 'ba-dinh-decor-stele-02', type: 'stele', x: 1060, y: 1604 },
+    { id: 'ba-dinh-decor-stele-03', type: 'stele', x: 1140, y: 1604 },
+    { id: 'ba-dinh-decor-stele-04', type: 'stele', x: 1220, y: 1604 },
+    { id: 'ba-dinh-decor-street-sign-01', type: 'streetSign', x: 372, y: 1510, text: 'PHỐ' },
+    { id: 'ba-dinh-decor-street-sign-02', type: 'streetSign', x: 2100, y: 1580, text: 'PHỐ' },
+    { id: 'ba-dinh-decor-bicycle-01', type: 'bicycle', x: 2240, y: 1712 },
+    { id: 'ba-dinh-decor-bicycle-02', type: 'bicycle', x: 330, y: 1720 },
+    { id: 'ba-dinh-decor-trash-bin-01', type: 'trashBin', x: 1420, y: 814 },
+    { id: 'ba-dinh-decor-trash-bin-02', type: 'trashBin', x: 1530, y: 1300 },
+    { id: 'ba-dinh-decor-trash-bin-03', type: 'trashBin', x: 2500, y: 1718 },
+    { id: 'ba-dinh-decor-electric-box-01', type: 'electricBox', x: 2140, y: 1508 },
+    { id: 'ba-dinh-decor-electric-box-02', type: 'electricBox', x: 420, y: 1540 },
+    { id: 'ba-dinh-decor-motorbike-01', type: 'motorbike', x: 2040, y: 1718 },
+    { id: 'ba-dinh-decor-motorbike-02', type: 'motorbike', x: 2100, y: 1718 },
+    { id: 'ba-dinh-decor-motorbike-03', type: 'motorbike', x: 2670, y: 1622 },
+    { id: 'ba-dinh-decor-motorbike-04', type: 'motorbike', x: 2740, y: 1622 },
+    { id: 'ba-dinh-decor-planter-01', type: 'planter', x: 660, y: 1400 },
+    { id: 'ba-dinh-decor-planter-02', type: 'planter', x: 1530, y: 1400 },
+    { id: 'ba-dinh-decor-planter-03', type: 'planter', x: 660, y: 1740 },
+    { id: 'ba-dinh-decor-planter-04', type: 'planter', x: 1530, y: 1740 },
+    { id: 'ba-dinh-decor-planter-05', type: 'planter', x: 1960, y: 1510 },
+    { id: 'ba-dinh-decor-khue-van-cac-01', type: 'khueVanCac', x: 1068, y: 1450 },
+    { id: 'ba-dinh-decor-zebra-01', type: 'zebra', x: 348, y: 1768, width: 140, height: 138, direction: 'vertical' },
+    { id: 'ba-dinh-decor-zebra-02', type: 'zebra', x: 2488, y: 946, width: 146, height: 140, direction: 'vertical' },
+    { id: 'ba-dinh-decor-sign-01', type: 'sign', x: 324, y: 1768, text: 'XE' },
+    { id: 'ba-dinh-decor-sign-02', type: 'sign', x: 2616, y: 910, text: 'XE' },
+    { id: 'ba-dinh-decor-traffic-sign-01', type: 'trafficSign', x: 330, y: 1438, direction: 'right' },
+    { id: 'ba-dinh-decor-traffic-sign-02', type: 'trafficSign', x: 2460, y: 1518, direction: 'left' },
+    { id: 'ba-dinh-decor-plastic-stools-01', type: 'plasticStools', x: 500, y: 1682 },
+    { id: 'ba-dinh-decor-street-vendor-01', type: 'streetVendor', x: 1940, y: 1660, text: 'NƯỚC' },
+    { id: 'ba-dinh-decor-banner-01', type: 'banner', x: 724, y: 250, color: '#d63131' }
+  ]),
+
+  // The source geometry draws paths across both side walls, but the source
+  // collision rectangles remain continuous. Consumers may subtract these
+  // openings when constructing colliders; the 24 source buildings stay intact.
+  navigationRepairs: Object.freeze([
+    {
+      id: 'ba-dinh-repair-van-mieu-west-gate',
+      kind: 'colliderOpening',
+      targetId: 'ba-dinh-wall-van-mieu-west',
+      opening: { x: 604, y: 1508, width: 34, height: 90 },
+      alignsWithWalkZoneId: 'ba-dinh-walk-courtyard-03',
+      reason: 'Khoét cổng phía tây để nối sidewalk bên ngoài với sân Văn Miếu.'
+    },
+    {
+      id: 'ba-dinh-repair-van-mieu-east-gate',
+      kind: 'colliderOpening',
+      targetId: 'ba-dinh-wall-van-mieu-east',
+      opening: { x: 1580, y: 1508, width: 34, height: 90 },
+      alignsWithWalkZoneId: 'ba-dinh-walk-courtyard-04',
+      reason: 'Khoét cổng phía đông để nối trục đường giữa với sân Văn Miếu.'
+    }
+  ])
+})
+
+export default baDinhMapData

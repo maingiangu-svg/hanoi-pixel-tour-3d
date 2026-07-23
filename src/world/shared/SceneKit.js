@@ -48,13 +48,55 @@ export class SceneKit {
     sidewalkTexture.repeat.set(24, 5)
     const roadTexture = this.#createRoadTexture()
     roadTexture.repeat.set(20, 5)
+    const weatheredStoneTexture = this.#createStoneTexture({
+      seed: 1886,
+      base: [143, 142, 134],
+      variation: 18,
+      streakStrength: 0.12,
+      mossStrength: 0.025,
+      repeat: [3, 4],
+    })
+    const agedStoneTexture = this.#createStoneTexture({
+      seed: 2022,
+      base: [108, 109, 103],
+      variation: 25,
+      streakStrength: 0.27,
+      mossStrength: 0.07,
+      repeat: [3, 4],
+    })
+    const trimStoneTexture = this.#createStoneTexture({
+      seed: 315,
+      base: [177, 174, 163],
+      variation: 12,
+      streakStrength: 0.06,
+      mossStrength: 0.01,
+      repeat: [4, 3],
+    })
+    const churchRoofTexture = this.#createRoofTileTexture(645, 128)
+    churchRoofTexture.repeat.set(5, 10)
 
     this.#standard('stone', COLORS.stone)
     this.#standard('stoneLight', COLORS.stoneLight)
     this.#standard('stoneDark', COLORS.stoneDark)
     this.#standard('stoneWarm', 0xada693)
+    this.#standard('stoneWeathered', 0xffffff, {
+      map: weatheredStoneTexture,
+      roughness: 0.98,
+    })
+    this.#standard('stoneAged', 0xffffff, {
+      map: agedStoneTexture,
+      roughness: 1,
+    })
+    this.#standard('stoneTrim', 0xffffff, {
+      map: trimStoneTexture,
+      roughness: 0.94,
+    })
     this.#standard('soot', COLORS.soot)
     this.#standard('roof', COLORS.roof, { roughness: 0.82 })
+    this.#standard('churchRoofTile', 0xffffff, {
+      map: churchRoofTexture,
+      roughness: 0.96,
+    })
     this.#standard('brick', COLORS.brick)
     this.#standard('oldYellow', COLORS.oldYellow)
     this.#standard('plaster', COLORS.plaster)
@@ -344,6 +386,106 @@ export class SceneKit {
     })
     geometry.translate(0, 0, -0.5)
     return geometry
+  }
+
+  #createStoneTexture({
+    seed,
+    base,
+    variation,
+    streakStrength,
+    mossStrength,
+    repeat,
+    size = 128,
+  }) {
+    const data = new Uint8Array(size * size * 4)
+    const clampByte = (value) => Math.max(0, Math.min(255, Math.round(value)))
+
+    for (let y = 0; y < size; y += 1) {
+      const vertical = y / (size - 1)
+      for (let x = 0; x < size; x += 1) {
+        const fine = this.#surfaceNoise(x, y, seed) - 0.5
+        const coarse = this.#surfaceNoise(Math.floor(x / 9), Math.floor(y / 9), seed + 17) - 0.5
+        const column = this.#surfaceNoise(Math.floor(x / 3), 0, seed + 41)
+        const streak = Math.max(0, (column - 0.79) / 0.21)
+          * streakStrength
+          * (0.25 + vertical * 0.75)
+        const dampNoise = this.#surfaceNoise(Math.floor(x / 7), Math.floor(y / 5), seed + 83)
+        const damp = Math.max(0, (vertical - 0.72) / 0.28)
+          * Math.max(0, (dampNoise - 0.58) / 0.42)
+          * mossStrength
+        const shade = fine * variation * 0.65
+          + coarse * variation * 1.35
+          - streak * 52
+          - damp * 26
+        const offset = (y * size + x) * 4
+
+        data[offset] = clampByte(base[0] + shade - damp * 9)
+        data[offset + 1] = clampByte(base[1] + shade + damp * 7)
+        data[offset + 2] = clampByte(base[2] + shade - damp * 4)
+        data[offset + 3] = 255
+      }
+    }
+
+    const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
+    texture.name = `Procedural stone ${seed}`
+    texture.wrapS = THREE.RepeatWrapping
+    texture.wrapT = THREE.RepeatWrapping
+    texture.repeat.set(repeat[0], repeat[1])
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.minFilter = THREE.LinearMipmapLinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.generateMipmaps = true
+    texture.needsUpdate = true
+    this.textures.push(texture)
+    return texture
+  }
+
+  #createRoofTileTexture(seed, size) {
+    const data = new Uint8Array(size * size * 4)
+    const tileWidth = 24
+    const tileHeight = 12
+    const clampByte = (value) => Math.max(0, Math.min(255, Math.round(value)))
+
+    for (let y = 0; y < size; y += 1) {
+      const row = Math.floor(y / tileHeight)
+      const rowY = y % tileHeight
+      const rowOffset = row % 2 === 0 ? 0 : tileWidth / 2
+      for (let x = 0; x < size; x += 1) {
+        const tileX = (x + rowOffset) % tileWidth
+        const mortar = rowY < 1 || tileX < 1
+        const grain = this.#surfaceNoise(x, y, seed) - 0.5
+        const patch = this.#surfaceNoise(Math.floor(x / 8), Math.floor(y / 6), seed + 29) - 0.5
+        const shade = mortar ? -30 : grain * 13 + patch * 18
+        const offset = (y * size + x) * 4
+
+        data[offset] = clampByte(103 + shade)
+        data[offset + 1] = clampByte(60 + shade * 0.65)
+        data[offset + 2] = clampByte(52 + shade * 0.58)
+        data[offset + 3] = 255
+      }
+    }
+
+    const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
+    texture.name = `Procedural roof tile ${seed}`
+    texture.wrapS = THREE.RepeatWrapping
+    texture.wrapT = THREE.RepeatWrapping
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.minFilter = THREE.LinearMipmapLinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.generateMipmaps = true
+    texture.needsUpdate = true
+    this.textures.push(texture)
+    return texture
+  }
+
+  #surfaceNoise(x, y, seed) {
+    let value = Math.imul(x + seed, 0x1f123bb5) ^ Math.imul(y - seed, 0x5f356495)
+    value ^= value >>> 15
+    value = Math.imul(value, 0x2c1b3c6d)
+    value ^= value >>> 12
+    value = Math.imul(value, 0x297a2d39)
+    value ^= value >>> 15
+    return (value >>> 0) / 0xffffffff
   }
 
   #createPavingTexture(fill, line, size, brickWidth, brickHeight) {

@@ -11,8 +11,13 @@ import { StartOverlay } from '../ui/StartOverlay.js'
 import { DialogueUI } from '../ui/DialogueUI.js'
 import { DebugPanel } from '../ui/DebugPanel.js'
 import { GameClockUI } from '../ui/GameClockUI.js'
+import { MapOverlay, getMapHotkeyAction } from '../ui/MapOverlay.js'
 import { GameClock } from '../time/GameClock.js'
 import { DayNightCycle } from '../lighting/DayNightCycle.js'
+import {
+  MAP_INSPECTION_TARGETS,
+  createMapInspectionTarget,
+} from '../world/map/MapInspection.js'
 
 export class Game {
   constructor(container, uiRoot) {
@@ -40,6 +45,11 @@ export class Game {
     this.ui = new StartOverlay(uiRoot, () => this.player.lock())
     this.clockUi = new GameClockUI(this.ui.shell)
     this.clockUi.update(this.clock)
+    this.mapUi = new MapOverlay(this.ui.shell, {
+      onRequestClose: () => this.#closeMap(true),
+    })
+    this.mapDirection = new THREE.Vector3()
+    this.resumePointerLockAfterMap = false
     this.dialogueUi = new DialogueUI(
       this.ui.shell,
       this.assets,
@@ -91,10 +101,12 @@ export class Game {
       this.input.setEnabled(false)
       this.ui.setLocked(false)
     }
+    this.handleMapKeyDown = this.handleMapKeyDown.bind(this)
     this.tick = this.tick.bind(this)
 
     this.player.controls.addEventListener('lock', this.handleLock)
     this.player.controls.addEventListener('unlock', this.handleUnlock)
+    window.addEventListener('keydown', this.handleMapKeyDown)
     this.renderer.instance.setAnimationLoop(this.tick)
   }
 
@@ -103,13 +115,73 @@ export class Game {
     const deltaTime = this.timer.getDelta()
     this.clock.update(deltaTime)
     this.dayNight.update(this.world.activeAreaName)
-    this.player.update(deltaTime)
-    this.dialogue.update(deltaTime)
-    this.world.update(deltaTime, this.clock)
-    this.interactions.update()
+    if (this.mapUi.isOpen) {
+      this.player.camera.getWorldDirection(this.mapDirection)
+      this.mapUi.updatePosition(
+        this.world.activeMapId,
+        this.player.camera.position,
+        this.mapDirection,
+      )
+    } else {
+      this.player.update(deltaTime)
+      this.dialogue.update(deltaTime)
+      this.world.update(deltaTime, this.clock)
+      this.interactions.update()
+    }
     this.clockUi.update(this.clock)
     this.debug?.update(deltaTime)
     this.renderer.render()
+  }
+
+  handleMapKeyDown(event) {
+    const action = getMapHotkeyAction(event, this.mapUi.isOpen)
+    if (!action) return
+    if (action === 'open') {
+      if (this.dialogue.isActive() || this.interactions.transitioning) return
+      event.preventDefault()
+      this.#openMap()
+      return
+    }
+
+    event.preventDefault()
+    this.#closeMap(action === 'close-resume')
+  }
+
+  #openMap() {
+    if (this.mapUi.isOpen) return
+    this.resumePointerLockAfterMap = this.player.controls.isLocked
+    this.ui.setMapActive(true)
+    this.input.setEnabled(false)
+    this.ui.setInteraction(null)
+    this.clock.pause('map-overlay')
+    this.player.camera.getWorldDirection(this.mapDirection)
+    this.mapUi.open(
+      this.world.activeMapId,
+      this.player.camera.position,
+      this.mapDirection,
+    )
+    if (this.player.controls.isLocked) this.player.controls.unlock()
+  }
+
+  #closeMap(resumePointerLock) {
+    if (!this.mapUi.isOpen) return
+    const shouldRelock = resumePointerLock && this.resumePointerLockAfterMap
+    this.mapUi.close()
+    this.ui.setMapActive(false)
+    this.clock.resume('map-overlay')
+    this.resumePointerLockAfterMap = false
+
+    if (!shouldRelock) {
+      this.input.setEnabled(false)
+      this.ui.setResumeMode(true)
+      return
+    }
+    if (this.player.controls.isLocked) {
+      this.input.setEnabled(true)
+      this.ui.setLocked(true)
+    } else {
+      this.player.lock()
+    }
   }
 
   #applyInspectionView() {
@@ -123,10 +195,8 @@ export class Game {
     }
     if (!inspection) return
 
-    if (inspection === 'interior') {
-      const destination = this.world.transition('interior')
-      this.collision.setWorld(destination)
-      this.player.teleport(destination.spawn, destination.spawn.yaw)
+    if (MAP_INSPECTION_TARGETS[inspection]) {
+      this.#teleportToMapInspection(MAP_INSPECTION_TARGETS[inspection])
     } else if (inspection === 'street') {
       this.player.teleport({ x: 0, z: 9.5 }, Math.PI)
     } else if (inspection === 'crowd') {
@@ -169,15 +239,28 @@ export class Game {
     this.ui.setLocked(!this.dialogue.isActive())
   }
 
+  #teleportToMapInspection(inspection) {
+    const area = Object.values(this.world.areas).find(
+      (candidate) => candidate.mapId === inspection.mapId,
+    )
+    const target = createMapInspectionTarget(inspection, area)
+    const destination = this.world.transition(target)
+    this.collision.setWorld(destination)
+    this.player.teleport(destination.spawn, destination.spawn.yaw)
+    this.dayNight.update(this.world.activeAreaName)
+  }
+
   dispose() {
     this.disposed = true
     this.renderer.instance.setAnimationLoop(null)
     this.player.controls.removeEventListener('lock', this.handleLock)
     this.player.controls.removeEventListener('unlock', this.handleUnlock)
+    window.removeEventListener('keydown', this.handleMapKeyDown)
     this.dialogue.dispose()
     this.interactions.dispose()
     this.player.dispose()
     this.dialogueUi.dispose()
+    this.mapUi.dispose()
     this.clockUi.dispose()
     this.clock.dispose()
     this.timer.dispose()
