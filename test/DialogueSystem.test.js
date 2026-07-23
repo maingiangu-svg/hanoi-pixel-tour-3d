@@ -104,6 +104,20 @@ test('Escape safely closes dialogue during its camera focus transition', () => {
   harness.system.dispose()
 })
 
+test('debug cleanup can cancel dialogue without restoring over the teleport camera', () => {
+  const harness = createHarness()
+  harness.system.start(harness.npc)
+  runFrames(harness.system, 2)
+  const focusedPosition = harness.camera.position.clone()
+
+  assert.equal(harness.system.cancel({ restoreCamera: false }), true)
+  assert.equal(harness.system.isActive(), false)
+  assert.ok(harness.camera.position.distanceTo(focusedPosition) < 0.000001)
+  assert.deepEqual(harness.calls.npcActive, [true, false])
+  assert.equal(harness.calls.open.at(-1), false)
+  harness.system.dispose()
+})
+
 test('an ambient NPC can supply portraitless dialogue without changing Mơ defaults', () => {
   const harness = createHarness()
   harness.npc.dialogueName = 'Cô trà đá'

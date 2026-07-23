@@ -109,6 +109,19 @@ test('held E does not trigger a transition', () => {
   harness.system.dispose()
 })
 
+test('a debug teleport can cancel a pending portal transition without firing its timer', () => {
+  const harness = createHarness()
+  harness.system.update()
+  dispatchInteraction(harness.target)
+
+  assert.equal(harness.system.transitioning, true)
+  assert.equal(harness.system.cancelTransition(), true)
+  assert.equal(harness.system.transitioning, false)
+  assert.equal(harness.system.timer, null)
+  assert.equal(harness.calls.fade.at(-1), false)
+  harness.system.dispose()
+})
+
 test('nearest NPC interaction uses E without triggering the church portal', () => {
   const target = new EventTarget()
   const npc = { name: 'Mơ' }

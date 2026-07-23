@@ -55,6 +55,10 @@ export class DialogueSystem {
     return this.phase !== 'idle'
   }
 
+  isChoosingAnswer() {
+    return this.isActive() && Boolean(this.dialogueUi.isChoosingAnswer?.())
+  }
+
   start(npc) {
     const npcLines = npc?.getDialogueLines?.() ?? npc?.dialogueLines ?? this.lines
     if (
@@ -169,6 +173,26 @@ export class DialogueSystem {
     if (this.reducedMotion) this.#completeReturn()
   }
 
+  cancel({ restoreCamera = true } = {}) {
+    if (!this.isActive()) return false
+    if (restoreCamera) {
+      this.camera.position.copy(this.savedPosition)
+      this.camera.quaternion.copy(this.savedQuaternion)
+    }
+    this.npc?.setDialogueActive(false)
+    this.npc = null
+    this.activeLines = this.lines
+    this.dialogueContext = { speaker: 'Mơ', portrait: true }
+    this.phase = 'idle'
+    this.phaseElapsed = 0
+    this.dialogueUi.setOpen(false)
+    this.dialogueUi.setTransitioning(false)
+    this.gameUi.setDialogueActive(false)
+    this.gameUi.setResumeMode(true)
+    this.input.setEnabled(false)
+    return true
+  }
+
   handleKeyDown(event) {
     if (!this.isActive() || event.repeat) return
     if (event.code === 'Escape') {
@@ -199,12 +223,7 @@ export class DialogueSystem {
 
   dispose() {
     this.eventTarget.removeEventListener('keydown', this.handleKeyDown)
-    if (this.isActive()) {
-      this.camera.position.copy(this.savedPosition)
-      this.camera.quaternion.copy(this.savedQuaternion)
-      this.npc?.setDialogueActive(false)
-    }
+    this.cancel()
     this.dialogueUi.setOpen(false)
-    this.phase = 'idle'
   }
 }

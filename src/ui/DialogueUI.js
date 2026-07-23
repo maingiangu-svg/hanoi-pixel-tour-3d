@@ -87,6 +87,12 @@ export class DialogueUI {
     this.advanceButton.disabled = transitioning
   }
 
+  isChoosingAnswer() {
+    return Boolean(this.element.querySelector(
+      '.dialogue-choices:not([hidden]), [data-dialogue-choices]:not([hidden])',
+    ))
+  }
+
   #usePortraitFallback() {
     const idleUrl = this.assetLoader.getPortraitUrl('idle')
     if (!this.fallbackAttempted && idleUrl && this.portrait.src !== idleUrl) {

@@ -112,8 +112,21 @@ export class InteractionSystem {
     }, 190)
   }
 
+  cancelTransition() {
+    const wasTransitioning = this.transitioning || this.timer !== null
+    if (this.timer !== null) this.clearTimer(this.timer)
+    this.timer = null
+    this.transitioning = false
+    this.availablePortal = null
+    this.availableInteraction = null
+    this.ui.setInteraction(null)
+    this.ui.setFading(false)
+    this.input.setEnabled(this.player.controls.isLocked)
+    return wasTransitioning
+  }
+
   dispose() {
     this.eventTarget.removeEventListener('keydown', this.handleKeyDown)
-    if (this.timer !== null) this.clearTimer(this.timer)
+    this.cancelTransition()
   }
 }

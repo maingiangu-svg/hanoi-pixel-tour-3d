@@ -18,6 +18,13 @@ import {
   MAP_INSPECTION_TARGETS,
   createMapInspectionTarget,
 } from '../world/map/MapInspection.js'
+import {
+  CHURCH_FACADE_LOOK_AT,
+  CHURCH_PLAZA_SPAWN,
+  ENABLE_DEBUG_CHURCH_TELEPORT,
+  isDebugChurchTeleportHotkey,
+  performChurchDebugTeleport,
+} from '../debug/DebugTeleport.js'
 
 export class Game {
   constructor(container, uiRoot) {
@@ -43,8 +50,9 @@ export class Game {
       domElement: this.renderer.instance.domElement,
       input: this.input,
       collision: this.collision,
-      spawn: new THREE.Vector3(this.world.spawn.x, 0, this.world.spawn.z),
+      spawn: new THREE.Vector3(CHURCH_PLAZA_SPAWN.x, 0, CHURCH_PLAZA_SPAWN.z),
     })
+    this.player.lookAt(CHURCH_FACADE_LOOK_AT)
     this.ui = new StartOverlay(uiRoot, () => this.player.lock())
     this.clockUi = new GameClockUI(this.ui.shell)
     this.clockUi.update(this.clock)
@@ -105,11 +113,15 @@ export class Game {
       this.ui.setLocked(false)
     }
     this.handleMapKeyDown = this.handleMapKeyDown.bind(this)
+    this.handleDebugKeyDown = this.handleDebugKeyDown.bind(this)
     this.tick = this.tick.bind(this)
 
     this.player.controls.addEventListener('lock', this.handleLock)
     this.player.controls.addEventListener('unlock', this.handleUnlock)
     window.addEventListener('keydown', this.handleMapKeyDown)
+    if (ENABLE_DEBUG_CHURCH_TELEPORT) {
+      window.addEventListener('keydown', this.handleDebugKeyDown)
+    }
     this.renderer.instance.setAnimationLoop(this.tick)
   }
 
@@ -148,6 +160,27 @@ export class Game {
 
     event.preventDefault()
     this.#closeMap(action === 'close-resume')
+  }
+
+  handleDebugKeyDown(event) {
+    if (!isDebugChurchTeleportHotkey(event, {
+      choosingDialogueAnswer: this.dialogue.isChoosingAnswer(),
+    })) return
+
+    event.preventDefault()
+    performChurchDebugTeleport({
+      player: this.player,
+      input: this.input,
+      collision: this.collision,
+      world: this.world,
+      ui: this.ui,
+      dialogue: this.dialogue,
+      interactions: this.interactions,
+      mapUi: this.mapUi,
+      closeMap: () => this.#closeMap(false),
+      dayNight: this.dayNight,
+      clock: this.clock,
+    })
   }
 
   #openMap() {
@@ -268,6 +301,9 @@ export class Game {
     this.player.controls.removeEventListener('lock', this.handleLock)
     this.player.controls.removeEventListener('unlock', this.handleUnlock)
     window.removeEventListener('keydown', this.handleMapKeyDown)
+    if (ENABLE_DEBUG_CHURCH_TELEPORT) {
+      window.removeEventListener('keydown', this.handleDebugKeyDown)
+    }
     this.dialogue.dispose()
     this.interactions.dispose()
     this.player.dispose()
