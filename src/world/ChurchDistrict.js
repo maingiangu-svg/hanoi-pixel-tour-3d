@@ -15,6 +15,7 @@ import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
 import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
 import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
+import { disposeSharedSpecialNpcResources } from '../npcs/SpecialNpcResources.js'
 import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 
@@ -106,11 +107,10 @@ export class ChurchDistrict {
       parent: this.root,
     })
     this.longBienDistrict.group.visible = false
-    this.mo = camera && assetLoader
+    this.mo = camera
       ? new MoNpc({
           parent: this.outdoor,
           camera,
-          assetLoader,
           colliders: outdoorColliders,
         })
       : null
@@ -784,8 +784,9 @@ export class ChurchDistrict {
     this.crowd?.dispose()
     this.hoanKiemCrowd?.dispose()
     this.shops.dispose()
-    disposeSharedNpcResources()
     this.mo?.dispose()
+    disposeSharedNpcResources()
+    disposeSharedSpecialNpcResources()
     this.props.dispose()
     this.staticBatches.forEach((batch) => batch.dispose())
     this.kit.dispose()

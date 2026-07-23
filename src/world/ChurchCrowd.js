@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { NpcActor } from '../npcs/NpcActor.js'
 import { NpcManager } from '../npcs/NpcManager.js'
+import { SpecialNpcActor } from '../npcs/SpecialNpcActor.js'
 import {
   getAmbientDensity,
   getChurchCrowdState,
@@ -50,6 +51,7 @@ export class ChurchCrowd {
 
     this.#buildTeaStall()
     this.#buildAmbientCast()
+    this.#buildSpecialCast()
     this.#buildChurchCast()
   }
 
@@ -64,6 +66,9 @@ export class ChurchCrowd {
       this.playerPosition.x,
       this.playerPosition.z,
     ) < 55
+    if (nearChurch !== this.lastNearChurch) {
+      this.manager.setRoleActive('special', nearChurch, { stagger: 0 })
+    }
     const ambientDensity = getAmbientDensity(clock.minutes)
     if (ambientDensity !== this.lastAmbientDensity || nearChurch !== this.lastNearChurch) {
       if (nearChurch) this.#applyAmbientDensity(ambientDensity)
@@ -126,6 +131,16 @@ export class ChurchCrowd {
       ...options,
     })
     return this.manager.add(actor, { area, role, active: false })
+  }
+
+  #specialActor(options, role = 'special') {
+    const actor = new SpecialNpcActor({
+      parent: this.outdoorGroup,
+      colliders: this.outdoorColliders,
+      active: false,
+      ...options,
+    })
+    return this.manager.add(actor, { area: 'outdoor', role, active: false })
   }
 
   #buildTeaStall() {
@@ -309,6 +324,23 @@ export class ChurchCrowd {
       castShadow: true,
       colliderRadius: 0.2,
     }, { role: 'driver' })
+  }
+
+  #buildSpecialCast() {
+    this.#specialActor({
+      profile: 'gymmer',
+      name: 'Anh kính cười',
+      position: [-1.35, 0, 0.35],
+      rotationY: 0,
+      animationOffset: 0.8,
+    })
+    this.#specialActor({
+      profile: 'basketball',
+      name: 'Cầu thủ bóng rổ Elite',
+      position: [1.45, 0, 0.35],
+      rotationY: 0,
+      animationOffset: 2.2,
+    })
   }
 
   #buildChurchCast() {

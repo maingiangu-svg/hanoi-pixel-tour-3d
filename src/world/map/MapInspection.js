@@ -19,6 +19,11 @@ export const MAP_INSPECTION_TARGETS = Object.freeze({
   }),
   'old-quarter': Object.freeze({ mapId: 'hoanKiem', landmarkId: 'phoCo' }),
   church: Object.freeze({ mapId: 'hoanKiem', landmarkId: 'nhaThoLon' }),
+  'special-npcs': Object.freeze({
+    mapId: 'hoanKiem',
+    sourcePoint: Object.freeze({ x: 2484, y: 891 }),
+    lookAtSource: Object.freeze({ x: 2484, y: 859 }),
+  }),
   interior: Object.freeze({
     mapId: 'churchInterior',
     sourcePoint: Object.freeze({ x: 700, y: 866 }),

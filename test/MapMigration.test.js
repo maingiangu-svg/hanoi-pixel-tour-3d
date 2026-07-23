@@ -824,7 +824,7 @@ test('ChurchInterior instantiates the exact migrated fixture and collision layou
 })
 
 test('all inspection aliases resolve to clear positions facing their intended landmark', () => {
-  assert.equal(Object.keys(MAP_INSPECTION_TARGETS).length, 12)
+  assert.equal(Object.keys(MAP_INSPECTION_TARGETS).length, 13)
   const expectedMapViews = {
     'hoan-kiem': { x: 610, y: 1370 },
     interior: { x: 688, y: 850 },

@@ -249,6 +249,10 @@ export class Game {
       this.world.update(0, this.clock)
     }
     if (!inspection) return
+    if (this.#applySpecialNpcInspection(inspection)) {
+      this.ui.setLocked(true)
+      return
+    }
 
     if (MAP_INSPECTION_TARGETS[inspection]) {
       this.#teleportToMapInspection(MAP_INSPECTION_TARGETS[inspection])
@@ -305,6 +309,53 @@ export class Game {
       }
     }
     this.ui.setLocked(!this.dialogue.isActive())
+  }
+
+  #applySpecialNpcInspection(inspection) {
+    const match = /^npc-(gymmer|basketball|mo)-(front|three-quarter|side|back)$/.exec(
+      inspection,
+    )
+    if (!match) return false
+    const [, profileId, view] = match
+    const target = profileId === 'mo'
+      ? this.world.mo
+      : this.world.crowd?.manager.entries.find(
+          (entry) => entry.actor.profile?.id === profileId,
+        )?.actor
+    if (!target) return false
+
+    const visualActor = target.actor ?? target
+    for (const crowd of [this.world.crowd, this.world.hoanKiemCrowd]) {
+      crowd?.manager.entries.forEach((entry) => {
+        crowd.manager.setEntryActive(entry, entry.actor === target)
+      })
+    }
+    this.world.mo?.setDebugHidden(profileId !== 'mo')
+    target.setActive?.(true)
+    visualActor.setActive?.(true)
+    target.setDebugLookFrozen?.(true)
+    visualActor.setDebugLookFrozen?.(true)
+    target.group.rotation.y = 0
+    if (profileId === 'mo') {
+      target.lastActiveAreaName = target.areaName
+      target.group.visible = true
+    }
+
+    const focus = target.getFocusPoint(new THREE.Vector3())
+    const distance = Math.max(2.2, visualActor.profile.height * 1.45)
+    const offsets = {
+      front: [0, distance],
+      'three-quarter': [distance * 0.72, distance * 0.72],
+      side: [distance, 0],
+      back: [0, -distance],
+    }
+    const [offsetX, offsetZ] = offsets[view]
+    this.player.teleport(
+      { x: target.position.x + offsetX, z: target.position.z + offsetZ },
+      0,
+    )
+    this.player.lookAt(focus)
+    return true
   }
 
   #teleportToMapInspection(inspection) {

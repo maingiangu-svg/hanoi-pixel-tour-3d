@@ -1,10 +1,10 @@
 import * as THREE from 'three'
+import { SpecialNpcActor } from '../../npcs/SpecialNpcActor.js'
 
-const NPC_HEIGHT = 1.72
 const TALK_RADIUS = 2.35
 const WALK_SPEED = 0.92
 const OUTFIT_IDS = Object.freeze(['idle', 'church'])
-const MAX_BILLBOARD_YAW = Math.PI * 0.42
+const MAX_MODEL_YAW = Math.PI * 0.42
 
 const OUTDOOR_POSITIONS = Object.freeze({
   courtyardIdle: [6.2, 0.07, -4.2],
@@ -16,65 +16,9 @@ const OUTDOOR_POSITIONS = Object.freeze({
 
 const INTERIOR_POSITION = [4.75, 0.02, -11.5]
 
-function textureAspect(texture) {
-  const image = texture?.image
-  const width = image?.naturalWidth ?? image?.videoWidth ?? image?.width
-  const height = image?.naturalHeight ?? image?.videoHeight ?? image?.height
-  return width && height ? width / height : 2 / 3
-}
-
-function billboardMetrics(texture) {
-  const image = texture?.image
-  const imageHeight = image?.naturalHeight ?? image?.videoHeight ?? image?.height ?? 1
-  const metadata = texture?.userData?.moBillboard
-  const contentHeight = metadata?.contentHeight ?? imageHeight
-  const planeHeight = NPC_HEIGHT / Math.max(contentHeight / imageHeight, 0.01)
-  return {
-    planeHeight,
-    planeWidth: planeHeight * textureAspect(texture),
-    footOffset: planeHeight * ((metadata?.bottomPadding ?? 0) / imageHeight),
-  }
-}
-
-function createContactShadow() {
-  const geometry = new THREE.PlaneGeometry(0.86, 0.5)
-  const material = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    toneMapped: false,
-    uniforms: {
-      shadowColor: { value: new THREE.Color(0x101311) },
-      shadowOpacity: { value: 0.3 },
-    },
-    vertexShader: `
-      varying vec2 shadowUv;
-      void main() {
-        shadowUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 shadowColor;
-      uniform float shadowOpacity;
-      varying vec2 shadowUv;
-      void main() {
-        vec2 centered = (shadowUv - 0.5) * vec2(1.0, 1.7);
-        float contact = 1.0 - smoothstep(0.08, 0.5, length(centered));
-        gl_FragColor = vec4(shadowColor, contact * shadowOpacity);
-      }
-    `,
-  })
-  const shadow = new THREE.Mesh(geometry, material)
-  shadow.name = 'Contact shadow Mơ'
-  shadow.rotation.x = -Math.PI / 2
-  shadow.position.y = 0.008
-  return shadow
-}
-
 export class MoNpc {
-  constructor({ parent, camera, assetLoader, colliders, position = [6.2, 0.07, -4.2] }) {
+  constructor({ parent, camera, colliders, position = [6.2, 0.07, -4.2] }) {
     this.camera = camera
-    this.assetLoader = assetLoader
     this.outdoorColliders = colliders
     this.interiorColliders = null
     this.outdoorParent = parent
@@ -86,6 +30,7 @@ export class MoNpc {
     this.walkElapsed = 0
     this.position = new THREE.Vector3(...position)
     this.targetPosition = this.position.clone()
+
     this.group = new THREE.Group()
     this.group.name = 'NPC Mơ'
     this.group.position.copy(this.position)
@@ -93,22 +38,39 @@ export class MoNpc {
     parent.add(this.group)
 
     this.pose = new THREE.Group()
-    this.pose.name = 'Idle Mơ'
+    this.pose.name = 'Model 3D Mơ'
     this.group.add(this.pose)
 
-    this.billboard = null
+    this.actor = new SpecialNpcActor({
+      parent: this.pose,
+      profile: 'mo',
+      name: 'Mơ visual',
+      position: [0, 0, 0],
+      colliders: null,
+      active: true,
+      dialogueLines: null,
+      castShadow: true,
+    })
+    this.actor.interaction.target = this
+    this.visual = this.actor.visual
+    this.headRoot = this.actor.headRoot
+    this.headMesh = this.actor.headMesh
+    this.contactShadow = this.actor.contactShadow
+
     this.elapsed = 0
     this.ready = false
     this.disabled = false
     this.dialogueActive = false
+    this.debugLookFrozen = false
+    this.debugHidden = false
     this.disposed = false
     this.currentOutfit = null
     this.desiredOutfit = 'idle'
     this.pendingOutfit = null
     this.outfitRequestVersion = 0
     this.outfitPromise = Promise.resolve(false)
-    this.billboardBaseMetrics = null
     this.baseYaw = 0
+    this.movementYaw = 0
     this.interaction = {
       type: 'dialogue',
       position: this.position,
@@ -134,84 +96,73 @@ export class MoNpc {
     this.collider = this.outdoorCollider
     this.outdoorColliders.push(this.outdoorCollider)
 
-    this.readyPromise = this.#loadBillboard()
+    this.readyPromise = this.#finishModelLoad()
   }
 
-  async #loadBillboard() {
-    let outfitId
-    let texture
-    do {
-      outfitId = this.desiredOutfit
-      texture = await this.assetLoader.getFullbody(outfitId)
-    } while (!this.disposed && outfitId !== this.desiredOutfit)
-
-    if (this.disposed || !texture) {
-      this.disabled = true
-      return
-    }
-
-    const metrics = billboardMetrics(texture)
-    this.billboardBaseMetrics = metrics
-    const geometry = new THREE.PlaneGeometry(metrics.planeWidth, metrics.planeHeight)
-    geometry.translate(0, metrics.planeHeight / 2, 0)
-    const material = new THREE.MeshLambertMaterial({
-      map: texture,
-      transparent: true,
-      alphaTest: 0.08,
-      depthWrite: true,
-      side: THREE.DoubleSide,
-      toneMapped: true,
-      emissive: 0x15120f,
-      emissiveIntensity: 0.12,
-    })
-    this.billboard = new THREE.Mesh(geometry, material)
-    this.billboard.name = 'Billboard Mơ'
-    this.billboard.position.y = -metrics.footOffset
-    this.billboard.renderOrder = 1
-    this.pose.add(this.billboard)
-
-    this.contactShadow = createContactShadow()
-    this.group.add(this.contactShadow)
-
-    this.currentOutfit = outfitId
-    this.ready = true
+  async #finishModelLoad() {
+    await this.actor.readyPromise
+    if (this.disposed) return false
+    this.ready = this.actor.ready
+    this.disabled = this.actor.disabled
+    this.currentOutfit = this.desiredOutfit
+    this.actor.setOutfit(this.currentOutfit)
     this.#syncColliderState()
-    this.group.visible = this.areaName === this.lastActiveAreaName && !this.dialogueActive
+    this.group.visible = (
+      this.ready &&
+      !this.disabled &&
+      this.areaName === this.lastActiveAreaName &&
+      !this.dialogueActive &&
+      !this.debugHidden
+    )
+    return this.ready
   }
 
   update(deltaTime, activeAreaName) {
     this.lastActiveAreaName = activeAreaName
-    const clampedDelta = Math.min(deltaTime, 0.05)
-    if (!this.dialogueActive) this.#updateScheduledMovement(clampedDelta)
-    const visible = this.ready && activeAreaName === this.areaName && !this.dialogueActive
+    const clampedDelta = Math.min(Math.max(deltaTime, 0), 0.05)
+    const walking = !this.dialogueActive && this.#updateScheduledMovement(clampedDelta)
+    this.actor.setWalking(walking)
+    const visible = (
+      this.ready &&
+      !this.disabled &&
+      activeAreaName === this.areaName &&
+      !this.dialogueActive &&
+      !this.debugHidden
+    )
     this.group.visible = visible
     if (!visible) return
 
     this.elapsed += clampedDelta
-    const offsetX = this.camera.position.x - this.position.x
-    const offsetZ = this.camera.position.z - this.position.z
-    const distanceSquared = offsetX * offsetX + offsetZ * offsetZ
-    const near = distanceSquared <= TALK_RADIUS * TALK_RADIUS * 2.3
-    const requestedYaw = Math.atan2(offsetX, offsetZ)
-    const requestedFromBase = Math.atan2(
-      Math.sin(requestedYaw - this.baseYaw),
-      Math.cos(requestedYaw - this.baseYaw),
-    )
-    const targetYaw = this.baseYaw + THREE.MathUtils.clamp(
-      requestedFromBase,
-      -MAX_BILLBOARD_YAW,
-      MAX_BILLBOARD_YAW,
-    )
-    const turnRate = near ? 4.2 : 1.35
-    const yawDelta = Math.atan2(
-      Math.sin(targetYaw - this.group.rotation.y),
-      Math.cos(targetYaw - this.group.rotation.y),
-    )
-    this.group.rotation.y += yawDelta * (1 - Math.exp(-turnRate * clampedDelta))
+    if (!this.debugLookFrozen) {
+      if (walking) {
+        this.group.rotation.y = this.movementYaw
+      } else {
+        const offsetX = this.camera.position.x - this.position.x
+        const offsetZ = this.camera.position.z - this.position.z
+        const distanceSquared = offsetX * offsetX + offsetZ * offsetZ
+        const near = distanceSquared <= TALK_RADIUS * TALK_RADIUS * 2.3
+        const requestedYaw = Math.atan2(offsetX, offsetZ)
+        const requestedFromBase = Math.atan2(
+          Math.sin(requestedYaw - this.baseYaw),
+          Math.cos(requestedYaw - this.baseYaw),
+        )
+        const targetYaw = this.baseYaw + THREE.MathUtils.clamp(
+          requestedFromBase,
+          -MAX_MODEL_YAW,
+          MAX_MODEL_YAW,
+        )
+        const turnRate = near ? 4.2 : 1.35
+        const yawDelta = Math.atan2(
+          Math.sin(targetYaw - this.group.rotation.y),
+          Math.cos(targetYaw - this.group.rotation.y),
+        )
+        this.group.rotation.y += yawDelta * (1 - Math.exp(-turnRate * clampedDelta))
+      }
+    }
 
-    const breath = Math.sin(this.elapsed * 1.45) * 0.006
-    this.pose.scale.set(1 + breath * 0.28, 1 + breath, 1)
-
+    // SpecialNpcActor accepts a Vector3 directly. Passing the existing camera
+    // position avoids allocating a short-lived context object every frame.
+    this.actor.update(clampedDelta, this.camera.position)
     this.pose.rotation.z = 0
   }
 
@@ -225,8 +176,23 @@ export class MoNpc {
     return this.interaction
   }
 
+  setDebugLookFrozen(frozen) {
+    this.debugLookFrozen = Boolean(frozen)
+    this.actor.setDebugLookFrozen(frozen)
+    if (this.debugLookFrozen) this.group.rotation.y = this.baseYaw
+  }
+
+  setDebugHidden(hidden) {
+    this.debugHidden = Boolean(hidden)
+    if (this.debugHidden) this.group.visible = false
+  }
+
   getFocusPoint(target = new THREE.Vector3()) {
-    return target.set(this.position.x, this.position.y + 1.38, this.position.z)
+    return target.set(
+      this.position.x,
+      this.position.y + this.actor.profile.height * this.actor.profile.focusRatio,
+      this.position.z,
+    )
   }
 
   setDialogueActive(active) {
@@ -243,8 +209,15 @@ export class MoNpc {
     }
 
     this.dialogueActive = nextActive
+    this.actor.setDialogueActive(nextActive)
     this.#syncColliderState()
-    this.group.visible = this.ready && !nextActive && this.areaName === this.lastActiveAreaName
+    this.group.visible = (
+      this.ready &&
+      !this.disabled &&
+      !nextActive &&
+      this.areaName === this.lastActiveAreaName &&
+      !this.debugHidden
+    )
     if (!nextActive && this.pendingScheduleState) {
       const pending = this.pendingScheduleState
       this.pendingScheduleState = null
@@ -267,17 +240,18 @@ export class MoNpc {
     }
 
     this.pendingOutfit = null
-    if (outfitId === this.desiredOutfit && outfitId === this.currentOutfit) {
-      return this.outfitPromise
-    }
-
     this.desiredOutfit = outfitId
-    if (!this.billboard) {
-      this.outfitPromise = this.readyPromise.then(() => this.currentOutfit === outfitId)
-      return this.outfitPromise
-    }
-
-    this.outfitPromise = this.#applyOutfitTexture(outfitId)
+    const requestVersion = ++this.outfitRequestVersion
+    this.outfitPromise = this.readyPromise.then(() => {
+      if (
+        this.disposed ||
+        requestVersion !== this.outfitRequestVersion ||
+        outfitId !== this.desiredOutfit
+      ) return false
+      this.actor.setOutfit(outfitId)
+      this.currentOutfit = outfitId
+      return true
+    })
     return this.outfitPromise
   }
 
@@ -328,7 +302,7 @@ export class MoNpc {
   }
 
   #updateScheduledMovement(deltaTime) {
-    if (this.areaName !== 'outdoor') return
+    if (this.areaName !== 'outdoor') return false
     this.walkElapsed += deltaTime
 
     if (this.scheduleState === 'dayStroll' && this.walkElapsed > 12) {
@@ -344,21 +318,31 @@ export class MoNpc {
     const offsetX = this.targetPosition.x - this.position.x
     const offsetZ = this.targetPosition.z - this.position.z
     const distance = Math.hypot(offsetX, offsetZ)
-    if (distance < 0.025) return
+    if (distance < 0.025) return false
+    this.movementYaw = Math.atan2(offsetX, offsetZ)
     const step = Math.min(distance, WALK_SPEED * deltaTime)
     this.position.x += (offsetX / distance) * step
     this.position.z += (offsetZ / distance) * step
     this.group.position.copy(this.position)
     this.#updateCollider()
+    return true
   }
 
   #updateCollider() {
-    for (const collider of [this.outdoorCollider, this.interiorCollider]) {
-      collider.minX = this.position.x - 0.3
-      collider.maxX = this.position.x + 0.3
-      collider.minZ = this.position.z - 0.22
-      collider.maxZ = this.position.z + 0.22
-    }
+    const minX = this.position.x - 0.3
+    const maxX = this.position.x + 0.3
+    const minZ = this.position.z - 0.22
+    const maxZ = this.position.z + 0.22
+
+    this.outdoorCollider.minX = minX
+    this.outdoorCollider.maxX = maxX
+    this.outdoorCollider.minZ = minZ
+    this.outdoorCollider.maxZ = maxZ
+
+    this.interiorCollider.minX = minX
+    this.interiorCollider.maxX = maxX
+    this.interiorCollider.minZ = minZ
+    this.interiorCollider.maxZ = maxZ
   }
 
   #syncColliderState() {
@@ -368,31 +352,8 @@ export class MoNpc {
     this.#updateCollider()
   }
 
-  async #applyOutfitTexture(outfitId) {
-    const requestVersion = ++this.outfitRequestVersion
-    const texture = await this.assetLoader.getFullbody(outfitId)
-    if (
-      this.disposed ||
-      !texture ||
-      requestVersion !== this.outfitRequestVersion ||
-      outfitId !== this.desiredOutfit ||
-      !this.billboard
-    ) return false
-
-    const metrics = billboardMetrics(texture)
-    this.billboard.material.map = texture
-    this.billboard.material.needsUpdate = true
-    this.billboard.scale.set(
-      metrics.planeWidth / this.billboardBaseMetrics.planeWidth,
-      metrics.planeHeight / this.billboardBaseMetrics.planeHeight,
-      1,
-    )
-    this.billboard.position.y = -metrics.footOffset
-    this.currentOutfit = outfitId
-    return true
-  }
-
   dispose() {
+    if (this.disposed) return
     this.disposed = true
     for (const [list, collider] of [
       [this.outdoorColliders, this.outdoorCollider],
@@ -401,11 +362,7 @@ export class MoNpc {
       const index = list?.indexOf(collider) ?? -1
       if (index >= 0) list.splice(index, 1)
     }
-    this.group.traverse((object) => {
-      if (!object.isMesh) return
-      object.geometry.dispose()
-      object.material.dispose()
-    })
+    this.actor.dispose()
     this.group.removeFromParent()
   }
 }
