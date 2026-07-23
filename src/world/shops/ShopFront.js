@@ -64,8 +64,10 @@ export class ShopFront {
 
     this.openGroup = new THREE.Group()
     this.openGroup.name = 'Cửa hàng đang mở'
+    this.openGroup.userData.dynamicVisibility = true
     this.closedGroup = new THREE.Group()
     this.closedGroup.name = 'Cửa hàng đang đóng'
+    this.closedGroup.userData.dynamicVisibility = true
     this.group.add(this.openGroup, this.closedGroup)
 
     this.#buildArchitecture()

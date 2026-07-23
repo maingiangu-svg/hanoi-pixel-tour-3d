@@ -1,4 +1,5 @@
 const EPSILON = 0.0001
+const COLLISION_CELL_SIZE = 6
 
 export class PlayerCollision {
   constructor({
@@ -18,6 +19,18 @@ export class PlayerCollision {
     this.ceilingHeight = ceilingHeight
     this.groundSampler = groundSampler
     this.ceilingSampler = ceilingSampler
+    this.profiler = null
+    this.lastColliderChecks = 0
+    this.lastNearbyColliderCount = 0
+    this.staticGrid = new Map()
+    this.dynamicColliders = []
+    this.nearbyColliders = []
+    this.seenColliders = new Set()
+    this.#rebuildSpatialIndex()
+  }
+
+  setProfiler(profiler) {
+    this.profiler = profiler
   }
 
   setWorld({
@@ -34,9 +47,13 @@ export class PlayerCollision {
     this.ceilingHeight = ceilingHeight
     this.groundSampler = groundSampler
     this.ceilingSampler = ceilingSampler
+    this.#rebuildSpatialIndex()
   }
 
   move(position, displacement) {
+    const profileStartedAt = this.profiler?.begin() ?? 0
+    this.lastColliderChecks = 0
+    this.lastNearbyColliderCount = 0
     const distance = Math.hypot(displacement.x, displacement.z)
     const stepCount = Math.max(1, Math.ceil(distance / this.maxStep))
     const stepX = displacement.x / stepCount
@@ -50,6 +67,9 @@ export class PlayerCollision {
       this.#clampToBounds(position)
     }
 
+    this.profiler?.addCount('colliderChecks', this.lastColliderChecks)
+    this.profiler?.addCount('nearbyColliders', this.lastNearbyColliderCount)
+    this.profiler?.end('collision', profileStartedAt)
     return position
   }
 
@@ -95,10 +115,12 @@ export class PlayerCollision {
   }
 
   #resolveObstacles(position) {
+    const candidates = this.#queryNearby(position)
     for (let iteration = 0; iteration < 5; iteration += 1) {
       let resolvedCollision = false
 
-      for (const box of this.colliders) {
+      for (const box of candidates) {
+        this.lastColliderChecks += 1
         if (box.disabled) continue
         const closestX = Math.max(box.minX, Math.min(position.x, box.maxX))
         const closestZ = Math.max(box.minZ, Math.min(position.z, box.maxZ))
@@ -122,6 +144,67 @@ export class PlayerCollision {
 
       if (!resolvedCollision) break
     }
+  }
+
+  #rebuildSpatialIndex() {
+    this.staticGrid.clear()
+    this.dynamicColliders.length = 0
+    for (const box of this.colliders) {
+      if (box.dynamic) {
+        this.dynamicColliders.push(box)
+        continue
+      }
+      const minCellX = Math.floor((box.minX - this.radius) / COLLISION_CELL_SIZE)
+      const maxCellX = Math.floor((box.maxX + this.radius) / COLLISION_CELL_SIZE)
+      const minCellZ = Math.floor((box.minZ - this.radius) / COLLISION_CELL_SIZE)
+      const maxCellZ = Math.floor((box.maxZ + this.radius) / COLLISION_CELL_SIZE)
+      for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+        for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ += 1) {
+          const key = `${cellX}:${cellZ}`
+          let cell = this.staticGrid.get(key)
+          if (!cell) {
+            cell = []
+            this.staticGrid.set(key, cell)
+          }
+          cell.push(box)
+        }
+      }
+    }
+  }
+
+  #queryNearby(position) {
+    this.nearbyColliders.length = 0
+    this.seenColliders.clear()
+    const cellX = Math.floor(position.x / COLLISION_CELL_SIZE)
+    const cellZ = Math.floor(position.z / COLLISION_CELL_SIZE)
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+      for (let offsetZ = -1; offsetZ <= 1; offsetZ += 1) {
+        const cell = this.staticGrid.get(`${cellX + offsetX}:${cellZ + offsetZ}`)
+        if (!cell) continue
+        for (const box of cell) {
+          if (this.seenColliders.has(box)) continue
+          this.seenColliders.add(box)
+          this.nearbyColliders.push(box)
+        }
+      }
+    }
+    for (const box of this.dynamicColliders) {
+      if (box.disabled || this.seenColliders.has(box)) continue
+      const dynamicRange = COLLISION_CELL_SIZE + this.radius
+      if (
+        position.x < box.minX - dynamicRange
+        || position.x > box.maxX + dynamicRange
+        || position.z < box.minZ - dynamicRange
+        || position.z > box.maxZ + dynamicRange
+      ) continue
+      this.seenColliders.add(box)
+      this.nearbyColliders.push(box)
+    }
+    this.lastNearbyColliderCount = Math.max(
+      this.lastNearbyColliderCount,
+      this.nearbyColliders.length,
+    )
+    return this.nearbyColliders
   }
 
   #pushOutFromInside(position, box) {

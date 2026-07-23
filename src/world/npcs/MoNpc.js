@@ -120,6 +120,7 @@ export class MoNpc {
     this.dialoguePortrait = true
     this.outdoorCollider = {
       name: 'NPC Mơ',
+      dynamic: true,
       minX: this.position.x - 0.3,
       maxX: this.position.x + 0.3,
       minZ: this.position.z - 0.22,

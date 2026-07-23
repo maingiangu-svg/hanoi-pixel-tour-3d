@@ -19,6 +19,7 @@ export class InteractionSystem {
     this.eventTarget = eventTarget
     this.setTimer = setTimer
     this.clearTimer = clearTimer
+    this.profiler = null
     this.availablePortal = null
     this.availableInteraction = null
     this.transitioning = false
@@ -27,16 +28,23 @@ export class InteractionSystem {
     this.eventTarget.addEventListener('keydown', this.handleKeyDown)
   }
 
+  setProfiler(profiler) {
+    this.profiler = profiler
+  }
+
   update() {
+    const startedAt = this.profiler?.begin() ?? 0
     if (this.transitioning || this.dialogue?.isActive() || !this.player.controls.isLocked) {
       this.availablePortal = null
       this.availableInteraction = null
       this.ui.setInteraction(null)
+      this.profiler?.end('interaction', startedAt)
       return
     }
 
     const position = this.player.camera.position
-    const interactions = this.world.getActiveInteractions?.() ?? [this.world.getActivePortal()]
+    const interactions = this.world.getActiveInteractions?.(position, 5)
+      ?? [this.world.getActivePortal()]
     let nearest = null
     let nearestDistanceSquared = Infinity
 
@@ -56,6 +64,7 @@ export class InteractionSystem {
     this.availableInteraction = nearest
     this.availablePortal = nearest?.type === 'portal' || !nearest?.type ? nearest : null
     this.ui.setInteraction(nearest?.label ?? null)
+    this.profiler?.end('interaction', startedAt)
   }
 
   handleKeyDown(event) {

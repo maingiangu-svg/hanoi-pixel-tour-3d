@@ -16,6 +16,7 @@ import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
 import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
 import { ShopManager } from './shops/ShopManager.js'
+import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
@@ -139,6 +140,35 @@ export class ChurchDistrict {
         })
       : null
 
+    this.staticBatches = [
+      batchStaticMeshes(this.church.group, {
+        name: 'Nhà thờ · mesh tĩnh đã gộp',
+      }),
+      batchStaticMeshes(this.hoanKiemCoverageDistrict.group, {
+        cellSize: 60,
+        name: 'Hoàn Kiếm coverage · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.oldQuarterConnector.group, {
+        cellSize: 36,
+        name: 'Phố nối · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.props.group, {
+        cellSize: 36,
+        name: 'Props Nhà Chung · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.hoanKiemDistrict.group, {
+        cellSize: 48,
+        name: 'Hồ Gươm · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.ngocSonBranch.group, {
+        cellSize: 36,
+        name: 'Ngọc Sơn · mesh tĩnh theo ô',
+      }),
+      ...this.streetBuildingGroups.map((group, index) => batchStaticMeshes(group, {
+        name: `Nhà phố ${index + 1} · mesh tĩnh đã gộp`,
+      })),
+    ]
+
     this.districts = Object.freeze({
       churchDistrict: { center: new THREE.Vector2(0, -28), activationRadius: 75 },
       oldQuarterConnector: { center: new THREE.Vector2(50, 19), activationRadius: 43 },
@@ -212,6 +242,11 @@ export class ChurchDistrict {
     }
     this.activeAreaName = 'outdoor'
     this.activeMapId = MAP_REGISTRY.hoanKiem.id
+    this.profiler = null
+    this.practicalLightsByArea = null
+    this.practicalLightAreaNames = []
+    this.activePracticalLightArea = null
+    this.lightWorldPosition = new THREE.Vector3()
     this.colliders = this.areas.outdoor.colliders
     this.bounds = this.areas.outdoor.bounds
     this.spawn = this.areas.outdoor.spawn
@@ -219,22 +254,54 @@ export class ChurchDistrict {
     this.#applyAtmosphere('outdoor')
   }
 
+  setProfiler(profiler) {
+    this.profiler = profiler
+    this.crowd?.setProfiler(profiler)
+    this.hoanKiemCrowd?.setProfiler(profiler)
+    this.shops.setProfiler(profiler)
+  }
+
   getActivePortal() {
     return this.areas[this.activeAreaName].portals[0] ?? null
   }
 
-  getActiveInteractions() {
-    const interactions = [...this.areas[this.activeAreaName].portals]
-    interactions.push(this.mo?.getInteraction())
-    interactions.push(...(this.crowd?.getInteractions(this.activeAreaName) ?? []))
-    interactions.push(...this.shops.getInteractions(this.activeAreaName))
-    if (this.activeAreaName === 'outdoor') {
-      interactions.push(...this.oldQuarterConnector.interactions)
-      interactions.push(...this.hoanKiemDistrict.interactions)
-      interactions.push(...this.ngocSonBranch.interactions)
-      interactions.push(...(this.hoanKiemCrowd?.getInteractions('outdoor') ?? []))
+  getActiveInteractions(position = null, maxDistance = Infinity) {
+    const interactions = []
+    const appendNearby = (candidates) => {
+      for (const interaction of candidates) {
+        if (!interaction) continue
+        if (position) {
+          const dx = position.x - interaction.position.x
+          const dz = position.z - interaction.position.z
+          const range = maxDistance + (interaction.radius ?? 0)
+          if (dx * dx + dz * dz > range * range) continue
+        }
+        interactions.push(interaction)
+      }
     }
-    return interactions.filter(Boolean)
+    appendNearby(this.areas[this.activeAreaName].portals)
+    appendNearby([this.mo?.getInteraction()])
+    appendNearby(this.crowd?.getInteractions(
+      this.activeAreaName,
+      position,
+      maxDistance,
+    ) ?? [])
+    appendNearby(this.shops.getInteractions(
+      this.activeAreaName,
+      position,
+      maxDistance,
+    ))
+    if (this.activeAreaName === 'outdoor') {
+      appendNearby(this.oldQuarterConnector.interactions)
+      appendNearby(this.hoanKiemDistrict.interactions)
+      appendNearby(this.ngocSonBranch.interactions)
+      appendNearby(this.hoanKiemCrowd?.getInteractions(
+        'outdoor',
+        position,
+        maxDistance,
+      ) ?? [])
+    }
+    return interactions
   }
 
   update(deltaTime, clock = null) {
@@ -242,7 +309,55 @@ export class ChurchDistrict {
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
+    const moStartedAt = this.profiler?.begin() ?? 0
     this.mo?.update(deltaTime, this.activeAreaName)
+    if (this.mo?.ready && this.mo.areaName === this.activeAreaName) {
+      this.profiler?.addCount('npcUpdates', 1)
+    }
+    this.profiler?.end('npc', moStartedAt)
+  }
+
+  getPerformanceStats() {
+    const countMeshes = (root) => {
+      let total = 0
+      let shadowCasters = 0
+      let ancestor = root
+      while (ancestor) {
+        if (!ancestor.visible) return { total, shadowCasters }
+        ancestor = ancestor.parent
+      }
+      root?.traverseVisible((object) => {
+        if (!object.isMesh && !object.isSprite && !object.isInstancedMesh) return
+        total += 1
+        if (object.castShadow) shadowCasters += 1
+      })
+      return { total, shadowCasters }
+    }
+    return {
+      activeNpc: this.getActiveNpcCount(),
+      npcPool: (this.crowd?.manager.entries.length ?? 0)
+        + (this.hoanKiemCrowd?.manager.entries.length ?? 0)
+        + (this.mo ? 1 : 0),
+      npcUpdated: (this.crowd?.manager.lastUpdatedCount ?? 0)
+        + (this.hoanKiemCrowd?.manager.lastUpdatedCount ?? 0)
+        + (this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0),
+      npcUpdatedOutsideArea: (this.crowd?.manager.lastSkippedAreaCount ?? 0)
+        + (this.hoanKiemCrowd?.manager.lastSkippedAreaCount ?? 0),
+      shopsTotal: this.shops.shops.length,
+      shopsUpdated: this.shops.lastUpdatedShopCount,
+      customersUpdated: this.shops.lastUpdatedCustomerCount,
+      customerPoolCreated: this.shops.shops.reduce((total, shop) => (
+        total + (shop.customerPool?.customers.length ?? 0)
+      ), 0),
+      colliderPool: this.colliders.length,
+      groups: {
+        church: countMeshes(this.church.group),
+        street: countMeshes(this.oldQuarterConnector.group),
+        lake: countMeshes(this.hoanKiemDistrict.group),
+        coverage: countMeshes(this.hoanKiemCoverageDistrict.group),
+        interior: countMeshes(this.interior.group),
+      },
+    }
   }
 
   getLightingContext() {
@@ -269,7 +384,7 @@ export class ChurchDistrict {
       emissiveMaterials,
     })
 
-    return {
+    const contexts = {
       outdoor: outdoorContext(
         [
           ...this.props.streetLights,
@@ -292,6 +407,16 @@ export class ChurchDistrict {
         emissiveMaterials,
       },
     }
+    this.practicalLightsByArea = Object.fromEntries(
+      Object.entries(contexts).map(([areaName, context]) => [
+        areaName,
+        [...(context.pointLights ?? []), ...(context.spotLights ?? [])]
+          .map((entry) => entry?.light ?? entry)
+          .filter(Boolean),
+      ]),
+    )
+    this.practicalLightAreaNames = Object.keys(this.practicalLightsByArea)
+    return contexts
   }
 
   getActiveNpcCount() {
@@ -348,7 +473,7 @@ export class ChurchDistrict {
     sun.position.set(-18, 26, -7)
     sun.target.position.set(0, 5, -41)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(1024, 1024)
     sun.shadow.camera.left = -70
     sun.shadow.camera.right = 70
     sun.shadow.camera.top = 70
@@ -613,16 +738,38 @@ export class ChurchDistrict {
   }
 
   #updateDistrictVisibility() {
-    if (!this.playerPosition || this.activeAreaName !== 'outdoor') return
+    if (!this.playerPosition) return
+    this.#updatePracticalLightVisibility()
+    if (this.activeAreaName !== 'outdoor') return
     const { x, z } = this.playerPosition
     this.church.group.visible = x < 37
     this.props.group.visible = x < 51
     this.streetBuildingGroups?.forEach((group) => {
       group.visible = x < 64 && Math.abs(x - group.userData.centerX) < 46
     })
-    this.oldQuarterConnector.group.visible = x < 106
+    this.oldQuarterConnector.group.visible = x > 24 && x < 106
     this.hoanKiemDistrict.group.visible = x > 52.5
     this.ngocSonBranch.group.visible = x > 60 || z > 28
+  }
+
+  #updatePracticalLightVisibility() {
+    if (!this.practicalLightsByArea) return
+    if (this.activePracticalLightArea !== this.activeAreaName) {
+      for (const areaName of this.practicalLightAreaNames) {
+        for (const light of this.practicalLightsByArea[areaName]) light.visible = false
+      }
+      this.activePracticalLightArea = this.activeAreaName
+    }
+    const lights = this.practicalLightsByArea[this.activeAreaName] ?? []
+    for (const light of lights) {
+      light.getWorldPosition(this.lightWorldPosition)
+      const dx = this.playerPosition.x - this.lightWorldPosition.x
+      const dz = this.playerPosition.z - this.lightWorldPosition.z
+      const effectiveDistance = light.distance > 0
+        ? light.distance + 6
+        : light.isSpotLight ? 54 : 38
+      light.visible = dx * dx + dz * dz <= effectiveDistance * effectiveDistance
+    }
   }
 
   #applyAtmosphere(areaName) {
@@ -640,6 +787,7 @@ export class ChurchDistrict {
     disposeSharedNpcResources()
     this.mo?.dispose()
     this.props.dispose()
+    this.staticBatches.forEach((batch) => batch.dispose())
     this.kit.dispose()
     this.scene.remove(this.root)
   }

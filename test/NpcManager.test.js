@@ -43,3 +43,19 @@ test('deactivation cancels pending scheduled activations', () => {
   assert.equal(actor.active, false)
   manager.dispose()
 })
+
+test('actors in a hidden area stay active for schedules but stop per-frame animation', () => {
+  const manager = new NpcManager({ x: 0, z: 0 })
+  const outdoorActor = actorStub()
+  const interiorActor = actorStub()
+  manager.add(outdoorActor, { area: 'outdoor', active: true })
+  manager.add(interiorActor, { area: 'interior', active: true })
+
+  manager.update(0.016, 'interior')
+
+  assert.equal(outdoorActor.active, true)
+  assert.equal(outdoorActor.updateCalls, 0)
+  assert.equal(interiorActor.updateCalls, 1)
+  assert.equal(manager.lastSkippedAreaCount, 1)
+  manager.dispose()
+})

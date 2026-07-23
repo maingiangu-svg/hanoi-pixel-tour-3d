@@ -105,3 +105,33 @@ test('head collision stops ascent at a low ceiling', () => {
   assert.equal(state.hitCeiling, true)
   assert.ok(Math.abs(position.y - 1.91) < 0.0001)
 })
+
+test('spatial collision only checks nearby static colliders and keeps dynamic actors', () => {
+  const farColliders = Array.from({ length: 200 }, (_, index) => ({
+    minX: 20 + index * 2,
+    maxX: 21 + index * 2,
+    minZ: 20,
+    maxZ: 21,
+  }))
+  const localWall = { minX: 1, maxX: 2, minZ: -2, maxZ: 2 }
+  const dynamicNpc = {
+    dynamic: true,
+    disabled: true,
+    minX: -1,
+    maxX: -0.5,
+    minZ: -1,
+    maxZ: -0.5,
+  }
+  const collision = new PlayerCollision({
+    colliders: [...farColliders, localWall, dynamicNpc],
+    bounds: { minX: -5, maxX: 500, minZ: -5, maxZ: 30 },
+    radius: 0.5,
+  })
+  const position = { x: 0, z: 0 }
+
+  collision.move(position, { x: 2, z: 0 })
+
+  assert.ok(position.x <= 0.5001)
+  assert.ok(collision.lastNearbyColliderCount < 10)
+  assert.ok(collision.lastColliderChecks < 150)
+})

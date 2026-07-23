@@ -46,13 +46,20 @@ export class ChurchCrowd {
     this.lastMoState = null
     this.lastMoOutfit = null
     this.lastNearChurch = null
+    this.profiler = null
 
     this.#buildTeaStall()
     this.#buildAmbientCast()
     this.#buildChurchCast()
   }
 
+  setProfiler(profiler) {
+    this.profiler = profiler
+    this.manager.setProfiler(profiler)
+  }
+
   update(deltaTime, clock, activeAreaName) {
+    const scheduleStartedAt = this.profiler?.begin() ?? 0
     const nearChurch = activeAreaName === 'interior' || Math.hypot(
       this.playerPosition.x,
       this.playerPosition.z,
@@ -87,11 +94,12 @@ export class ChurchCrowd {
     }
 
     this.lastNearChurch = nearChurch
+    this.profiler?.end('schedule', scheduleStartedAt)
     this.manager.update(deltaTime, activeAreaName)
   }
 
-  getInteractions(areaName) {
-    return this.manager.getInteractions(areaName)
+  getInteractions(areaName, position = null, maxDistance = Infinity) {
+    return this.manager.getInteractions(areaName, position, maxDistance)
   }
 
   getActiveCount(areaName) {

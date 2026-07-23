@@ -1,14 +1,17 @@
-import * as THREE from 'three'
-
-const FAR_AWAY = new THREE.Vector3(100000, 0, 100000)
-
 export class NpcManager {
   constructor(playerPosition) {
     this.playerPosition = playerPosition
     this.entries = []
     this.elapsed = 0
     this.activationQueue = []
-    this.context = { playerPosition: FAR_AWAY }
+    this.context = { playerPosition }
+    this.profiler = null
+    this.lastUpdatedCount = 0
+    this.lastSkippedAreaCount = 0
+  }
+
+  setProfiler(profiler) {
+    this.profiler = profiler
   }
 
   add(actor, { area = 'outdoor', role = 'ambient', active = false } = {}) {
@@ -55,23 +58,37 @@ export class NpcManager {
   }
 
   update(deltaTime, activeAreaName) {
+    const startedAt = this.profiler?.begin() ?? 0
     const delta = Math.min(Math.max(deltaTime, 0), 0.05)
     this.elapsed += delta
     this.#flushActivationQueue()
+    this.lastUpdatedCount = 0
+    this.lastSkippedAreaCount = 0
 
     for (const entry of this.entries) {
       if (!entry.actor.active) continue
-      this.context.playerPosition = entry.area === activeAreaName
-        ? this.playerPosition
-        : FAR_AWAY
+      if (entry.area !== activeAreaName) {
+        this.lastSkippedAreaCount += 1
+        continue
+      }
+      this.context.playerPosition = this.playerPosition
       entry.actor.update(delta, this.context)
+      this.lastUpdatedCount += 1
     }
+    this.profiler?.addCount('npcUpdates', this.lastUpdatedCount)
+    this.profiler?.end('npc', startedAt)
   }
 
-  getInteractions(areaName) {
+  getInteractions(areaName, position = null, maxDistance = Infinity) {
     const interactions = []
+    const maxDistanceSquared = maxDistance * maxDistance
     for (const entry of this.entries) {
       if (entry.area !== areaName) continue
+      if (position) {
+        const dx = position.x - entry.actor.position.x
+        const dz = position.z - entry.actor.position.z
+        if (dx * dx + dz * dz > maxDistanceSquared) continue
+      }
       const interaction = entry.actor.getInteraction()
       if (interaction) interactions.push(interaction)
     }

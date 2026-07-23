@@ -25,11 +25,16 @@ import {
   isDebugChurchTeleportHotkey,
   performChurchDebugTeleport,
 } from '../debug/DebugTeleport.js'
+import { PerformanceProfiler } from '../debug/PerformanceProfiler.js'
 
 export class Game {
   constructor(container, uiRoot) {
     this.disposed = false
     this.renderer = new Renderer(container)
+    this.profiler = import.meta.env.DEV ? new PerformanceProfiler() : null
+    this.profileCollisionProbe = import.meta.env.DEV
+      && new URLSearchParams(window.location.search).has('profile-collision')
+    this.profileStressTimer = null
     this.input = new Input()
     this.clock = new GameClock({ initialHour: 17, initialMinute: 30 })
     this.assets = new MoAssetLoader()
@@ -45,6 +50,8 @@ export class Game {
       ceilingHeight: this.world.areas.outdoor.ceilingHeight,
       groundSampler: this.world.areas.outdoor.groundSampler,
     })
+    this.collision.setProfiler(this.profiler)
+    this.world.setProfiler(this.profiler)
     this.player = new FirstPersonPlayer({
       camera: this.renderer.camera,
       domElement: this.renderer.instance.domElement,
@@ -80,6 +87,7 @@ export class Game {
       ui: this.ui,
       dialogue: this.dialogue,
     })
+    this.interactions.setProfiler(this.profiler)
     this.dayNight = new DayNightCycle({
       scene: this.renderer.scene,
       clock: this.clock,
@@ -94,6 +102,7 @@ export class Game {
           this.world,
           this.clock,
           this.dayNight,
+          this.profiler,
         )
       : null
     if (import.meta.env.DEV) this.#applyInspectionView()
@@ -123,13 +132,17 @@ export class Game {
       window.addEventListener('keydown', this.handleDebugKeyDown)
     }
     this.renderer.instance.setAnimationLoop(this.tick)
+    if (import.meta.env.DEV) this.#startAreaStressInspection()
   }
 
   tick() {
     this.timer.update()
     const deltaTime = this.timer.getDelta()
+    this.profiler?.beginFrame()
     this.clock.update(deltaTime)
+    const dayNightStartedAt = this.profiler?.begin() ?? 0
     this.dayNight.update(this.world.activeAreaName)
+    this.profiler?.end('dayNight', dayNightStartedAt)
     if (this.mapUi.isOpen) {
       this.player.camera.getWorldDirection(this.mapDirection)
       this.mapUi.updatePosition(
@@ -139,13 +152,19 @@ export class Game {
       )
     } else {
       this.player.update(deltaTime)
+      if (this.profileCollisionProbe && !this.player.controls.isLocked) {
+        this.collision.move(this.player.camera.position, { x: 0, z: 0 })
+      }
       this.dialogue.update(deltaTime)
       this.world.update(deltaTime, this.clock)
       this.interactions.update()
     }
     this.clockUi.update(this.clock)
-    this.debug?.update(deltaTime)
+    const renderStartedAt = this.profiler?.begin() ?? 0
     this.renderer.render()
+    this.profiler?.end('render', renderStartedAt)
+    this.profiler?.endFrame(deltaTime)
+    this.debug?.update(deltaTime)
   }
 
   handleMapKeyDown(event) {
@@ -244,6 +263,10 @@ export class Game {
       }
     } else if (inspection === 'street') {
       this.player.teleport({ x: 0, z: 9.5 }, Math.PI)
+    } else if (inspection === 'church-plaza') {
+      this.player.teleport({ x: 0, z: 2.5 }, Math.PI)
+    } else if (inspection === 'church-door') {
+      this.player.teleport({ x: 0, z: -11.2 }, Math.PI)
     } else if (inspection === 'crowd') {
       this.player.teleport({ x: 0, z: 9.5 }, 0)
     } else if (inspection === 'cafe') {
@@ -295,8 +318,36 @@ export class Game {
     this.dayNight.update(this.world.activeAreaName)
   }
 
+  #startAreaStressInspection() {
+    const requestedCycles = Number.parseInt(
+      new URLSearchParams(window.location.search).get('stress-area-cycles') ?? '',
+      10,
+    )
+    if (!Number.isFinite(requestedCycles) || requestedCycles <= 0) return
+    const totalTransitions = Math.min(requestedCycles, 20) * 2
+    let completedTransitions = 0
+    const transition = () => {
+      if (this.disposed) return
+      const inspection = completedTransitions % 2 === 0
+        ? MAP_INSPECTION_TARGETS.interior
+        : MAP_INSPECTION_TARGETS.church
+      this.#teleportToMapInspection(inspection)
+      completedTransitions += 1
+      if (completedTransitions < totalTransitions) {
+        this.profileStressTimer = window.setTimeout(transition, 260)
+      } else {
+        this.profileStressTimer = null
+      }
+    }
+    this.profileStressTimer = window.setTimeout(transition, 260)
+  }
+
   dispose() {
     this.disposed = true
+    if (this.profileStressTimer !== null) {
+      window.clearTimeout(this.profileStressTimer)
+      this.profileStressTimer = null
+    }
     this.renderer.instance.setAnimationLoop(null)
     this.player.controls.removeEventListener('lock', this.handleLock)
     this.player.controls.removeEventListener('unlock', this.handleUnlock)

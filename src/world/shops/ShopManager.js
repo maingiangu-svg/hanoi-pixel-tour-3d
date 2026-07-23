@@ -32,10 +32,17 @@ export class ShopManager {
     this.shopsById = new Map()
     this.profileCounts = new Map()
     this.lights = []
+    this.profiler = null
+    this.lastUpdatedShopCount = 0
+    this.lastUpdatedCustomerCount = 0
 
     this.actorRoot = new THREE.Group()
     this.actorRoot.name = 'Người bán và khách cửa hàng'
     parent.add(this.actorRoot)
+  }
+
+  setProfiler(profiler) {
+    this.profiler = profiler
   }
 
   addShop({
@@ -76,8 +83,11 @@ export class ShopManager {
   }
 
   update(deltaTime, clock, activeAreaName = 'outdoor') {
+    const startedAt = this.profiler?.begin() ?? 0
     const minutes = clock?.minutes
     const outdoor = activeAreaName === 'outdoor'
+    this.lastUpdatedShopCount = 0
+    this.lastUpdatedCustomerCount = 0
 
     this.shops.forEach((shop) => {
       const open = isShopOpen(shop.profile.scheduleId, minutes)
@@ -92,14 +102,37 @@ export class ShopManager {
         && dx * dx + dz * dz <= CUSTOMER_DETAIL_DISTANCE_SQUARED
         && shop.visibleInWorld
       )
+      const wasCustomerDetailed = shop.customerDetailed
       shop.setActorsActive(active, { customerDetailed })
-      shop.updateActors(deltaTime, this.playerPosition, minutes)
+      if (active || wasCustomerDetailed || shop.isDialogueActive) {
+        shop.updateActors(deltaTime, this.playerPosition, minutes)
+        this.lastUpdatedShopCount += 1
+        this.lastUpdatedCustomerCount += shop.customerPool?.activeCount ?? 0
+      }
     })
+    this.profiler?.addCount('shopUpdates', this.lastUpdatedShopCount)
+    this.profiler?.addCount('customerUpdates', this.lastUpdatedCustomerCount)
+    this.profiler?.end('shop', startedAt)
   }
 
-  getInteractions(activeAreaName = 'outdoor') {
+  getInteractions(
+    activeAreaName = 'outdoor',
+    position = null,
+    maxDistance = Infinity,
+  ) {
     if (activeAreaName !== 'outdoor') return []
-    return this.shops.map((shop) => shop.getInteraction()).filter(Boolean)
+    const maxDistanceSquared = maxDistance * maxDistance
+    const interactions = []
+    for (const shop of this.shops) {
+      if (position) {
+        const dx = position.x - shop.interactionPosition.x
+        const dz = position.z - shop.interactionPosition.z
+        if (dx * dx + dz * dz > maxDistanceSquared) continue
+      }
+      const interaction = shop.getInteraction()
+      if (interaction) interactions.push(interaction)
+    }
+    return interactions
   }
 
   getActiveCount() {

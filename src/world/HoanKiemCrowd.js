@@ -27,12 +27,19 @@ export class HoanKiemCrowd {
     parent.add(this.group)
     this.manager = new NpcManager(playerPosition)
     this.lastActivationKey = null
+    this.profiler = null
 
     this.#buildTeaCorner()
     this.#buildActors()
   }
 
+  setProfiler(profiler) {
+    this.profiler = profiler
+    this.manager.setProfiler(profiler)
+  }
+
   update(deltaTime, clock, activeAreaName) {
+    const scheduleStartedAt = this.profiler?.begin() ?? 0
     const outdoor = activeAreaName === 'outdoor'
     const lakeDistance = Math.hypot(this.playerPosition.x - 92, this.playerPosition.z)
     const oldQuarterDistance = Math.hypot(this.playerPosition.x - 56, this.playerPosition.z - 36)
@@ -56,11 +63,12 @@ export class HoanKiemCrowd {
       this.manager.setRoleActive('temple', nearLake && daytime, { stagger: 0.16 })
       this.lastActivationKey = activationKey
     }
+    this.profiler?.end('schedule', scheduleStartedAt)
     this.manager.update(deltaTime, activeAreaName)
   }
 
-  getInteractions(areaName) {
-    return this.manager.getInteractions(areaName)
+  getInteractions(areaName, position = null, maxDistance = Infinity) {
+    return this.manager.getInteractions(areaName, position, maxDistance)
   }
 
   getActiveCount(areaName) {
