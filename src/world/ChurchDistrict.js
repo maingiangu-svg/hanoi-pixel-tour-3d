@@ -15,9 +15,22 @@ import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
 import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
 import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
+import { ShopManager } from './shops/ShopManager.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
+
+export function getOutdoorGroundHeight(position) {
+  const { x, z } = position
+  const onTheHucBridge = x >= 117.2 && x <= 120.8 && z >= 33.1 && z <= 45.25
+  if (onTheHucBridge) {
+    const progress = THREE.MathUtils.clamp((z - 33.7) / 11.3, 0, 1)
+    return 0.23 + Math.sin(progress * Math.PI) * 0.24
+  }
+
+  const onNgocSonIsland = x >= 109.8 && x <= 128.2 && z >= 44 && z <= 59.2
+  return onNgocSonIsland ? 0.16 : 0
+}
 
 export class ChurchDistrict {
   constructor(scene, { camera = null, assetLoader = null } = {}) {
@@ -32,6 +45,12 @@ export class ChurchDistrict {
     scene.add(this.root)
 
     const outdoorColliders = []
+    this.shops = new ShopManager({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+      playerPosition: this.playerPosition,
+    })
     this.streetBuildingLights = []
     this.#buildOutdoorLighting()
     this.#buildGround(outdoorColliders)
@@ -50,11 +69,20 @@ export class ChurchDistrict {
       kit: this.kit,
       parent: this.outdoor,
       colliders: outdoorColliders,
+      shopManager: this.shops,
     })
     this.hoanKiemDistrict = new HoanKiemDistrict({
       kit: this.kit,
       parent: this.outdoor,
       colliders: outdoorColliders,
+    })
+    this.shops.addShop({
+      id: 'cafe-bo-ho',
+      parent: this.hoanKiemDistrict.group,
+      sign: 'CÀ PHÊ BỜ HỒ',
+      width: 5.9,
+      position: [64.36, 0, -27],
+      rotationY: -Math.PI / 2,
     })
     this.ngocSonBranch = new NgocSonBranch({
       kit: this.kit,
@@ -134,6 +162,9 @@ export class ChurchDistrict {
         group: this.outdoor,
         colliders: outdoorColliders,
         bounds: this.hoanKiemCoverageDistrict.bounds,
+        groundHeight: 0,
+        ceilingHeight: Infinity,
+        groundSampler: getOutdoorGroundHeight,
         spawn: this.hoanKiemCoverageDistrict.spawn,
         portals: this.hoanKiemCoverageDistrict.interactions,
         portal: this.hoanKiemCoverageDistrict.interactions[0],
@@ -145,6 +176,8 @@ export class ChurchDistrict {
         group: this.baDinhDistrict.group,
         colliders: this.baDinhDistrict.colliders,
         bounds: this.baDinhDistrict.bounds,
+        groundHeight: 0,
+        ceilingHeight: Infinity,
         spawn: this.baDinhDistrict.spawn,
         portals: this.baDinhDistrict.interactions,
         portal: this.baDinhDistrict.interactions[0],
@@ -156,6 +189,8 @@ export class ChurchDistrict {
         group: this.longBienDistrict.group,
         colliders: this.longBienDistrict.colliders,
         bounds: this.longBienDistrict.bounds,
+        groundHeight: 0,
+        ceilingHeight: Infinity,
         spawn: this.longBienDistrict.spawn,
         portals: this.longBienDistrict.interactions,
         portal: this.longBienDistrict.interactions[0],
@@ -167,6 +202,8 @@ export class ChurchDistrict {
         group: this.interior.group,
         colliders: this.interior.colliders,
         bounds: this.interior.bounds,
+        groundHeight: 0,
+        ceilingHeight: 10.4,
         spawn: this.interior.spawn,
         portals: interiorPortals,
         portal: interiorPortals[0],
@@ -190,6 +227,7 @@ export class ChurchDistrict {
     const interactions = [...this.areas[this.activeAreaName].portals]
     interactions.push(this.mo?.getInteraction())
     interactions.push(...(this.crowd?.getInteractions(this.activeAreaName) ?? []))
+    interactions.push(...this.shops.getInteractions(this.activeAreaName))
     if (this.activeAreaName === 'outdoor') {
       interactions.push(...this.oldQuarterConnector.interactions)
       interactions.push(...this.hoanKiemDistrict.interactions)
@@ -203,6 +241,7 @@ export class ChurchDistrict {
     this.#updateDistrictVisibility()
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
+    if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
     this.mo?.update(deltaTime, this.activeAreaName)
   }
 
@@ -217,6 +256,8 @@ export class ChurchDistrict {
       'lampGlow',
       'lakeWater',
       'waterReflection',
+      'shopInterior',
+      'shopGlass',
     ].map((name) => this.kit.material(name))
     const outdoorContext = (pointLights, spotLights = []) => ({
       ambient: this.outdoorLighting.ambient,
@@ -238,6 +279,7 @@ export class ChurchDistrict {
           ...this.hoanKiemDistrict.lights,
           ...this.ngocSonBranch.lights,
           ...this.hoanKiemCoverageDistrict.lights,
+          ...this.shops.lights,
         ],
         this.church.facadeLights,
       ),
@@ -256,6 +298,7 @@ export class ChurchDistrict {
     return (this.crowd?.getActiveCount(this.activeAreaName) ?? 0) + (
       this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0
     ) + (this.hoanKiemCrowd?.getActiveCount(this.activeAreaName) ?? 0)
+      + (this.activeAreaName === 'outdoor' ? this.shops.getActiveCount() : 0)
   }
 
   getActiveDistrictNames(position) {
@@ -494,10 +537,17 @@ export class ChurchDistrict {
             text: segment.sign,
             width: Math.min(3.9, segment.depth * 0.55),
             height: 0.62,
-            position: [frontX - side * 0.09, 2.2, segment.z],
+            position: [frontX - side * 0.09, 3.75, segment.z],
             rotation: [0, -side * Math.PI / 2, 0],
             background: index % 2 === 0 ? '#80443c' : '#315c55',
             foreground: '#f4e3bd',
+          })
+          this.shops.addShop({
+            parent: this.outdoor,
+            sign: segment.sign,
+            width: Math.min(6.2, segment.depth * 0.7),
+            position: [frontX - side * 0.17, 0, segment.z],
+            rotationY: side < 0 ? -Math.PI / 2 : Math.PI / 2,
           })
         }
       }
@@ -538,6 +588,7 @@ export class ChurchDistrict {
           detailSeed: index,
           signColor: index % 2 === 0 ? '#315c55' : '#80443c',
         },
+        shopManager: this.shops,
       })
       streetBuilding.group.userData.centerX = building.x
       this.streetBuildingGroups.push(streetBuilding.group)
@@ -585,6 +636,7 @@ export class ChurchDistrict {
   dispose() {
     this.crowd?.dispose()
     this.hoanKiemCrowd?.dispose()
+    this.shops.dispose()
     disposeSharedNpcResources()
     this.mo?.dispose()
     this.props.dispose()

@@ -415,6 +415,15 @@ export class NpcActor {
         collar.scale.set(0.16, 0.07, 0.05)
         break
       }
+      case 'apron': {
+        const apron = this.#mesh('Tạp dề người bán', 'box', this.preset.accent, this.visual)
+        apron.position.set(0, 0.98, 0.275)
+        apron.scale.set(0.43, 0.61, 0.035)
+        const waistband = this.#mesh('Dây tạp dề', 'box', this.preset.accent, this.visual)
+        waistband.position.set(0, 1.17, 0.29)
+        waistband.scale.set(0.55, 0.07, 0.035)
+        break
+      }
       default:
         break
     }

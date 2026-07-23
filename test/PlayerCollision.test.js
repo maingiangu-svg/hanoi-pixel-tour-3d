@@ -74,3 +74,34 @@ test('disabled dynamic NPC colliders do not block the player', () => {
 
   assert.ok(position.x > 2.5)
 })
+
+test('vertical collision clamps the player to sampled ground without flicker', () => {
+  const collision = new PlayerCollision({
+    colliders: [],
+    bounds,
+    groundSampler: ({ z }) => z > 1 ? 0.42 : 0,
+  })
+  const position = { x: 0, y: 1.7, z: 2 }
+
+  const state = collision.moveVertical(position, -0.2, { eyeHeight: 1.68 })
+
+  assert.equal(state.grounded, true)
+  assert.ok(Math.abs(position.y - 2.1) < 0.0001)
+})
+
+test('head collision stops ascent at a low ceiling', () => {
+  const collision = new PlayerCollision({
+    colliders: [],
+    bounds,
+    ceilingHeight: 2.05,
+  })
+  const position = { x: 0, y: 1.8, z: 0 }
+
+  const state = collision.moveVertical(position, 0.5, {
+    eyeHeight: 1.68,
+    headClearance: 0.14,
+  })
+
+  assert.equal(state.hitCeiling, true)
+  assert.ok(Math.abs(position.y - 1.91) < 0.0001)
+})

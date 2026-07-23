@@ -110,6 +110,20 @@ export class SceneKit {
       emissiveIntensity: 0.55,
       roughness: 0.45,
     })
+    this.#standard('shopInterior', 0x6f4b34, {
+      emissive: 0xc67c3f,
+      emissiveIntensity: 0.48,
+      roughness: 0.86,
+    })
+    this.#standard('shopGlass', 0x806b58, {
+      emissive: 0xc17b42,
+      emissiveIntensity: 0.28,
+      roughness: 0.32,
+      metalness: 0.04,
+      transparent: true,
+      opacity: 0.76,
+    })
+    this.#standard('creamPaint', 0xe4d7bc)
     this.#standard('asphalt', 0xffffff, { map: roadTexture, roughness: 1 })
     this.#standard('sidewalk', 0xffffff, { map: sidewalkTexture, roughness: 1 })
     this.#standard('plaza', 0xffffff, { map: plazaTexture, roughness: 1 })

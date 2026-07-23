@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 export class StreetBuilding {
-  constructor({ kit, parent, colliders, config }) {
+  constructor({ kit, parent, colliders, config, shopManager = null }) {
     this.kit = kit
     this.config = config
     this.lights = []
@@ -13,6 +13,16 @@ export class StreetBuilding {
     this.#buildFrontage()
     this.#buildUpperFloors()
     this.#buildRoofline()
+
+    this.shop = config.sign
+      ? shopManager?.addShop({
+          parent: this.group,
+          sign: config.sign,
+          width: Math.min(config.width - 0.4, 6.2),
+          position: [config.x, 0, config.z - config.depth / 2 - 0.16],
+          rotationY: 0,
+        })
+      : null
   }
 
   #buildBody(colliders) {

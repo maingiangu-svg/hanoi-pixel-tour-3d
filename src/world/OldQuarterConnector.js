@@ -5,9 +5,10 @@ const HOUSE_MATERIALS = ['oldYellow', 'plaster', 'brick', 'sage']
 const SHOP_SIGNS = ['BÚN CHẢ', 'CÀ PHÊ NGÕ', 'ĐỒ THỦ CÔNG', 'HIỆU ẢNH', 'TẠP HÓA']
 
 export class OldQuarterConnector {
-  constructor({ kit, parent, colliders }) {
+  constructor({ kit, parent, colliders, shopManager = null }) {
     this.kit = kit
     this.colliders = colliders
+    this.shopManager = shopManager
     this.group = new THREE.Group()
     this.group.name = 'Phố Nhà Chung và nhánh Phố Cổ'
     parent.add(this.group)
@@ -77,7 +78,7 @@ export class OldQuarterConnector {
     const houses = [
       { x: 38, z: 24, w: 6.2, d: 11.5, h: 10.5, side: -1, sign: 'BÚN CHẢ' },
       { x: 51, z: 25, w: 6.5, d: 12.5, h: 13.4, side: -1, sign: 'CÀ PHÊ NGÕ' },
-      { x: 38.5, z: 2, w: 6.7, d: 10.5, h: 9.3, side: 1, sign: 'TẠP HÓA' },
+      { x: 38.5, z: 2, w: 6.7, d: 10.5, h: 9.3, side: 1, sign: 'CƠM BÌNH DÂN' },
       { x: 45.5, z: 1.2, w: 6.5, d: 12, h: 11.8, side: 1, sign: null },
       { x: 59.5, z: 6.4, w: 7, d: 12.5, h: 13.8, side: 'west', sign: 'HIỆU ẢNH' },
       { x: 57.5, z: -14, w: 7.8, d: 11.5, h: 9.8, side: 1, sign: 'PHỞ BÒ' },
@@ -165,12 +166,20 @@ export class OldQuarterConnector {
         height: 0.68,
         position: [
           facade.x + facade.outwardX * 0.12,
-          3.55,
+          3.9,
           facade.z + facade.outwardZ * 0.12,
         ],
         rotation: facade.rotation,
         background: index % 2 === 0 ? '#8a463c' : '#315c55',
         foreground: '#f6e4b9',
+      })
+      const shopRotationY = Math.atan2(-facade.outwardX, -facade.outwardZ)
+      this.shopManager?.addShop({
+        parent: houseGroup,
+        sign,
+        width: Math.min(6.2, (facade.horizontal ? w : d) - 0.45),
+        position: [facade.x + facade.outwardX * 0.08, 0, facade.z + facade.outwardZ * 0.08],
+        rotationY: shopRotationY,
       })
     }
   }

@@ -5,12 +5,14 @@ const MOVEMENT_KEYS = new Set([
   'KeyD',
   'ShiftLeft',
   'ShiftRight',
+  'Space',
 ])
 
 export class Input {
   constructor(eventTarget = window) {
     this.eventTarget = eventTarget
     this.pressed = new Set()
+    this.jumpQueued = false
     this.enabled = false
 
     this.handleKeyDown = this.handleKeyDown.bind(this)
@@ -25,6 +27,9 @@ export class Input {
   handleKeyDown(event) {
     if (!this.enabled || !MOVEMENT_KEYS.has(event.code)) return
     event.preventDefault()
+    if (event.code === 'Space' && !event.repeat && !this.pressed.has('Space')) {
+      this.jumpQueued = true
+    }
     this.pressed.add(event.code)
   }
 
@@ -50,8 +55,15 @@ export class Input {
     }
   }
 
+  consumeJump() {
+    if (!this.enabled || !this.jumpQueued) return false
+    this.jumpQueued = false
+    return true
+  }
+
   reset() {
     this.pressed.clear()
+    this.jumpQueued = false
   }
 
   dispose() {

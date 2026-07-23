@@ -1,16 +1,39 @@
 const EPSILON = 0.0001
 
 export class PlayerCollision {
-  constructor({ colliders, bounds, radius = 0.36 }) {
+  constructor({
+    colliders,
+    bounds,
+    radius = 0.36,
+    groundHeight = 0,
+    ceilingHeight = Infinity,
+    groundSampler = null,
+    ceilingSampler = null,
+  }) {
     this.colliders = colliders
     this.bounds = bounds
     this.radius = radius
     this.maxStep = radius * 0.45
+    this.groundHeight = groundHeight
+    this.ceilingHeight = ceilingHeight
+    this.groundSampler = groundSampler
+    this.ceilingSampler = ceilingSampler
   }
 
-  setWorld({ colliders, bounds }) {
+  setWorld({
+    colliders,
+    bounds,
+    groundHeight = 0,
+    ceilingHeight = Infinity,
+    groundSampler = null,
+    ceilingSampler = null,
+  }) {
     this.colliders = colliders
     this.bounds = bounds
+    this.groundHeight = groundHeight
+    this.ceilingHeight = ceilingHeight
+    this.groundSampler = groundSampler
+    this.ceilingSampler = ceilingSampler
   }
 
   move(position, displacement) {
@@ -28,6 +51,47 @@ export class PlayerCollision {
     }
 
     return position
+  }
+
+  getGroundHeight(position) {
+    const sampled = this.groundSampler?.(position)
+    return Number.isFinite(sampled) ? sampled : this.groundHeight
+  }
+
+  getCeilingHeight(position) {
+    const sampled = this.ceilingSampler?.(position)
+    return Number.isFinite(sampled) ? sampled : this.ceilingHeight
+  }
+
+  moveVertical(position, displacementY, {
+    eyeHeight,
+    headClearance = 0.14,
+    groundTolerance = 0.025,
+  }) {
+    const groundEyeY = this.getGroundHeight(position) + eyeHeight
+    const ceilingEyeY = this.getCeilingHeight(position) - headClearance
+    let nextY = position.y + displacementY
+    let grounded = false
+    let hitCeiling = false
+
+    if (displacementY > 0 && nextY >= ceilingEyeY) {
+      nextY = Math.max(groundEyeY, ceilingEyeY)
+      hitCeiling = true
+    }
+
+    if (
+      displacementY <= 0
+      && nextY <= groundEyeY + groundTolerance
+    ) {
+      nextY = groundEyeY
+      grounded = true
+    } else if (nextY < groundEyeY) {
+      nextY = groundEyeY
+      grounded = true
+    }
+
+    position.y = nextY
+    return { grounded, hitCeiling, groundEyeY, ceilingEyeY }
   }
 
   #resolveObstacles(position) {

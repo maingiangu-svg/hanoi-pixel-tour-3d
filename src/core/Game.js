@@ -34,6 +34,9 @@ export class Game {
     this.collision = new PlayerCollision({
       colliders: this.world.colliders,
       bounds: this.world.bounds,
+      groundHeight: this.world.areas.outdoor.groundHeight,
+      ceilingHeight: this.world.areas.outdoor.ceilingHeight,
+      groundSampler: this.world.areas.outdoor.groundSampler,
     })
     this.player = new FirstPersonPlayer({
       camera: this.renderer.camera,
@@ -197,6 +200,15 @@ export class Game {
 
     if (MAP_INSPECTION_TARGETS[inspection]) {
       this.#teleportToMapInspection(MAP_INSPECTION_TARGETS[inspection])
+    } else if (inspection.startsWith('shop-')) {
+      const target = this.world.shops.getInspectionTarget(inspection.slice(5))
+      if (target) {
+        const spawn = target.position.clone()
+        const outward = spawn.clone().sub(target.lookAt).setY(0).normalize()
+        spawn.addScaledVector(outward, 3.4)
+        this.player.teleport({ x: spawn.x, z: spawn.z }, 0)
+        this.player.lookAt(target.lookAt)
+      }
     } else if (inspection === 'street') {
       this.player.teleport({ x: 0, z: 9.5 }, Math.PI)
     } else if (inspection === 'crowd') {
