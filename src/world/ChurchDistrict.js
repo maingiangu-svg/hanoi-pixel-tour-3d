@@ -829,7 +829,10 @@ export class ChurchDistrict {
       setDistanceVisibility(group, this.playerPosition, group.userData.centerX, 25.5, 52)
     })
     setDistanceVisibility(this.oldQuarterConnector.group, this.playerPosition, 48, 13, 85)
-    setDistanceVisibility(this.hoanKiemDistrict.group, this.playerPosition, 103, 5, 60)
+    // The north-shore composition is about 96 m from this group center.
+    // Keep its landmark alive until just beyond that authored sightline so
+    // Tháp Rùa cannot pop in while the lake and far shore are already visible.
+    setDistanceVisibility(this.hoanKiemDistrict.group, this.playerPosition, 103, 5, 98)
     setDistanceVisibility(this.ngocSonBranch.group, this.playerPosition, 119, 48, 66)
     this.hoanKiemUrbanEdgeDistrict.updateVisibility(
       this.playerPosition,

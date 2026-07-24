@@ -295,6 +295,12 @@ export class Game {
       this.player.teleport({ x: 43, z: 13 }, Math.PI / 2)
     } else if (inspection === 'lake') {
       this.player.teleport({ x: 68, z: -3 }, -Math.PI / 2)
+    } else if (inspection === 'pedestrian') {
+      this.player.teleport({ x: 146, z: 113 }, 0)
+      this.player.lookAt({ x: 108, y: 1.4, z: 0 })
+    } else if (inspection === 'turtle-viewpoint') {
+      this.player.teleport({ x: 108, z: -91 }, 0)
+      this.player.lookAt({ x: 103, y: 2.4, z: 0 })
     } else if (inspection === 'old-quarter') {
       this.player.teleport({ x: 55, z: 36.5 }, Math.PI / 2)
     } else if (inspection === 'bridge') {

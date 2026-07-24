@@ -14,6 +14,15 @@ import {
 } from '../world/map/hoanKiemUrbanEdgeLayout.js'
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+const HOAN_KIEM_SUPERSEDED_BUILDING_IDS = new Set([
+  'building-044',
+  'building-045',
+  'building-046',
+  'building-047',
+  'building-048',
+  'building-056',
+  'building-057',
+])
 const HOAN_KIEM_LANDMARK_WORLD_FOOTPRINTS = Object.freeze({
   nhaThoLon: Object.freeze({
     x: 0, z: -47, width: 26, depth: 66, interactionPoint: Object.freeze([0, 2.5]),
@@ -60,7 +69,11 @@ export function createMapViewModel(mapId) {
     groundPatches: data.groundPatches ?? [],
     water: expansion ? [] : data.water ?? [],
     walkZones: data.walkZones ?? [],
-    buildings: data.buildings ?? [],
+    buildings: mapId === 'hoanKiem'
+      ? (data.buildings ?? []).filter(
+          (building) => !HOAN_KIEM_SUPERSEDED_BUILDING_IDS.has(building.id),
+        )
+      : data.buildings ?? [],
     shops: [...(data.shops ?? []), ...(data.vehicleShops ?? [])],
     landmarks: expansion?.landmarks ?? data.landmarks ?? [],
     exits: data.exits ?? [],

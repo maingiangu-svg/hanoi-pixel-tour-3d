@@ -21,13 +21,33 @@ const SUPERSEDED_LEGACY_GEOMETRY = new Set([
   'Nhà ống tuyến Hồ Gươm 7',
 ])
 
-const SUPERSEDED_SOURCE_GEOMETRY = new Set([
-  'hoanKiem:decoration-007',
-  'hoanKiem:building-056',
-  'hoanKiem:building-057',
+const SUPERSEDED_SOURCE_GEOMETRY = new Map([
+  ['hoanKiem:decoration-007', {
+    supersededBy: 'Tháp Rùa vertical slice',
+    reason: 'Custom Tháp Rùa is the retained composition authority',
+  }],
+  ...['044', '045', '046', '047', '048'].map((suffix) => [
+    `hoanKiem:building-${suffix}`,
+    {
+      supersededBy: 'Dãy shopfront phố Nhà Chung',
+      reason: 'Source row overlaps the continuous first-person Nhà thờ–Hồ Gươm route',
+    },
+  ]),
+  ...['056', '057'].map((suffix) => [
+    `hoanKiem:building-${suffix}`,
+    {
+      supersededBy: 'Mặt bằng Hồ Gươm mở rộng',
+      reason: 'Source wall overlaps the expanded lake boundary',
+    },
+  ]),
 ])
 
 const SUPERSEDED_SOURCE_COLLIDER_IDS = Object.freeze([
+  'building-044',
+  'building-045',
+  'building-046',
+  'building-047',
+  'building-048',
   'building-056',
   'building-057',
 ])
@@ -58,10 +78,11 @@ export class HoanKiemCoverageDistrict extends ProceduralMapDistrict {
     this.group.name = 'Hoàn Kiếm - Phố Cổ · coverage đầy đủ'
     this.group.traverse((object) => {
       object.castShadow = false
-      if (!SUPERSEDED_SOURCE_GEOMETRY.has(object.userData?.sourceRef)) return
+      const replacement = SUPERSEDED_SOURCE_GEOMETRY.get(object.userData?.sourceRef)
+      if (!replacement) return
       object.visible = false
-      object.userData.supersededBy = 'Tháp Rùa vertical slice'
-      object.userData.hiddenReason = 'Custom Tháp Rùa is the retained composition authority'
+      object.userData.supersededBy = replacement.supersededBy
+      object.userData.hiddenReason = replacement.reason
     })
     const bounds = new THREE.Box3()
     const sphere = new THREE.Sphere()
@@ -82,7 +103,7 @@ export class HoanKiemCoverageDistrict extends ProceduralMapDistrict {
     ))
     this.disabledSourceColliders.forEach((collider) => {
       collider.disabled = true
-      collider.disabledReason = 'Superseded by the expanded natural lake boundary'
+      collider.disabledReason = 'Superseded by the retained first-person layout'
     })
     this.disabledLegacyColliders = disabledLegacyColliders
     this.hiddenLegacyGroups = hiddenLegacyGroups

@@ -32,7 +32,10 @@ test('map overlay view models expose the complete current-map topology', () => {
       data.water.length,
     )
     assert.equal(view.walkZones.length, data.walkZones.length)
-    assert.equal(view.buildings.length, data.buildings.length)
+    assert.equal(
+      view.buildings.length,
+      data.buildings.length - (mapId === 'hoanKiem' ? 7 : 0),
+    )
     assert.equal(
       view.shops.length,
       data.shops.length + (data.vehicleShops?.length ?? 0),
@@ -56,6 +59,17 @@ test('map overlay view models expose the complete current-map topology', () => {
       const templePoint = mapCoordinates.worldToSource('hoanKiem', { x: 119, z: 48.5 })
       approximately(temple.interactionPoint.x, templePoint.x)
       approximately(temple.interactionPoint.y, templePoint.y)
+      for (const id of [
+        'building-044',
+        'building-045',
+        'building-046',
+        'building-047',
+        'building-048',
+        'building-056',
+        'building-057',
+      ]) {
+        assert.equal(view.buildings.some((building) => building.id === id), false)
+      }
     }
   }
   assert.throws(() => createMapViewModel('missing-map'), /Unknown map overlay map/)
