@@ -48,6 +48,14 @@ test('map overlay view models expose the complete current-map topology', () => {
       assert.ok(view.expansion.pedestrianZones.length >= 8)
       assert.ok(view.expansion.urbanRoads.length >= 4)
       assert.ok(view.expansion.urbanBuildings.length >= 30)
+      const bridge = view.landmarks.find((landmark) => landmark.sourceId === 'cauTheHuc')
+      const bridgeCenter = mapCoordinates.worldToSource('hoanKiem', { x: 119, z: 39.35 })
+      approximately(bridge.x + bridge.width / 2, bridgeCenter.x)
+      approximately(bridge.y + bridge.height / 2, bridgeCenter.y)
+      const temple = view.landmarks.find((landmark) => landmark.sourceId === 'denNgocSon')
+      const templePoint = mapCoordinates.worldToSource('hoanKiem', { x: 119, z: 48.5 })
+      approximately(temple.interactionPoint.x, templePoint.x)
+      approximately(temple.interactionPoint.y, templePoint.y)
     }
   }
   assert.throws(() => createMapViewModel('missing-map'), /Unknown map overlay map/)

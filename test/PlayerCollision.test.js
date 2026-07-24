@@ -2,6 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PlayerCollision } from '../src/player/PlayerCollision.js'
 
+test('disabled static colliders are excluded from the spatial index', () => {
+  const disabledWall = {
+    minX: -1,
+    maxX: 1,
+    minZ: -1,
+    maxZ: 1,
+    disabled: true,
+  }
+  const collision = new PlayerCollision({
+    colliders: [disabledWall],
+    bounds: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 },
+    radius: 0.5,
+  })
+  const position = { x: 0, z: 0 }
+  collision.move(position, { x: 0.1, z: 0 })
+  assert.equal(collision.lastNearbyColliderCount, 0)
+})
+
 const bounds = { minX: -5, maxX: 5, minZ: -5, maxZ: 5 }
 const wall = { minX: 1, maxX: 2, minZ: -2, maxZ: 2 }
 

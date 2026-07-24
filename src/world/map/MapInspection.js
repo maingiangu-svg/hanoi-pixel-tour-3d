@@ -17,7 +17,12 @@ export const MAP_INSPECTION_TARGETS = Object.freeze({
     sourcePoint: Object.freeze({ x: 622, y: 1386 }),
     lookAtSource: Object.freeze({ x: 1698, y: 724 }),
   }),
-  'old-quarter': Object.freeze({ mapId: 'hoanKiem', landmarkId: 'phoCo' }),
+  'old-quarter': Object.freeze({
+    mapId: 'hoanKiem',
+    landmarkId: 'phoCo',
+    worldPoint: Object.freeze({ x: 252, z: -82 }),
+    lookAtWorld: Object.freeze({ x: 283, z: -86 }),
+  }),
   church: Object.freeze({ mapId: 'hoanKiem', landmarkId: 'nhaThoLon' }),
   'special-npcs': Object.freeze({
     mapId: 'hoanKiem',
@@ -34,8 +39,18 @@ export const MAP_INSPECTION_TARGETS = Object.freeze({
     sourcePoint: Object.freeze({ x: 700, y: 866 }),
     lookAtSource: Object.freeze({ x: 700, y: 131 }),
   }),
-  'ho-guom': Object.freeze({ mapId: 'hoanKiem', landmarkId: 'hoGuom' }),
-  'ngoc-son': Object.freeze({ mapId: 'hoanKiem', landmarkId: 'denNgocSon' }),
+  'ho-guom': Object.freeze({
+    mapId: 'hoanKiem',
+    landmarkId: 'hoGuom',
+    worldPoint: Object.freeze({ x: 68, z: 18 }),
+    lookAtWorld: Object.freeze({ x: 103, z: 0 }),
+  }),
+  'ngoc-son': Object.freeze({
+    mapId: 'hoanKiem',
+    landmarkId: 'denNgocSon',
+    worldPoint: Object.freeze({ x: 119, z: 48.5 }),
+    lookAtWorld: Object.freeze({ x: 119, z: 53.6 }),
+  }),
   'ba-dinh': Object.freeze({ mapId: 'baDinh', landmarkId: 'quangTruongBaDinh' }),
   'van-mieu': Object.freeze({
     mapId: 'baDinh',
@@ -70,15 +85,21 @@ export function createMapInspectionTarget(inspection, area = null) {
     throw new Error(`Unknown inspection landmark: ${inspection.mapId}/${inspection.landmarkId}`)
   }
 
-  const preferredSourcePoint = inspection.sourcePoint ?? landmark?.interactionPoint ?? {
-    x: definition.data.spawn.x + PLAYER_SOURCE_OFFSET.x,
-    y: definition.data.spawn.y + PLAYER_SOURCE_OFFSET.y,
-  }
-  const sourcePoint = findClearInspectionSourcePoint(
-    definition.data,
-    preferredSourcePoint,
-    area,
+  const preferredSourcePoint = inspection.worldPoint
+    ? mapCoordinates.worldToSource(inspection.mapId, inspection.worldPoint)
+    : inspection.sourcePoint ?? landmark?.interactionPoint ?? {
+        x: definition.data.spawn.x + PLAYER_SOURCE_OFFSET.x,
+        y: definition.data.spawn.y + PLAYER_SOURCE_OFFSET.y,
+      }
+  const sourcePoint = inspection.worldPoint && (
+    !area || isWorldPointClear(inspection.mapId, preferredSourcePoint, area)
   )
+    ? preferredSourcePoint
+    : findClearInspectionSourcePoint(
+        definition.data,
+        preferredSourcePoint,
+        area,
+      )
   const playerPoint = mapCoordinates.point(inspection.mapId, sourcePoint)
   const lookAtSource = inspection.lookAtSource ?? (landmark
     ? {
@@ -86,9 +107,9 @@ export function createMapInspectionTarget(inspection, area = null) {
         y: landmark.y + landmark.height / 2,
       }
     : null)
-  const lookAtPoint = lookAtSource
-    ? mapCoordinates.point(inspection.mapId, lookAtSource)
-    : null
+  const lookAtPoint = inspection.lookAtWorld ?? (
+    lookAtSource ? mapCoordinates.point(inspection.mapId, lookAtSource) : null
+  )
   const yaw = Number.isFinite(inspection.yaw)
     ? inspection.yaw
     : lookAtPoint

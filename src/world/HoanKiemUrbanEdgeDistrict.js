@@ -60,7 +60,8 @@ export class HoanKiemUrbanEdgeDistrict {
       }
       const dx = playerPosition.x - entry.center[0]
       const dz = playerPosition.z - entry.center[1]
-      entry.group.visible = dx * dx + dz * dz <= entry.activationRadius ** 2
+      const threshold = entry.activationRadius + (entry.group.visible ? 10 : 0)
+      entry.group.visible = dx * dx + dz * dz <= threshold ** 2
     }
     this.propsGroup.visible = Boolean(active)
     this.roadGroup.visible = Boolean(active)
@@ -143,7 +144,7 @@ export class HoanKiemUrbanEdgeDistrict {
       size: [footprint.width + 0.34, 0.3, footprint.depth + 0.34],
       position: [building.x, building.height + 0.05, building.z],
       material: 'stoneDark',
-      castShadow: true,
+      castShadow: localIndex === 0,
     })
 
     this.#pushFacadeBox(details, 'stoneDark', building, {

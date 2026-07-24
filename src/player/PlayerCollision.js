@@ -150,6 +150,7 @@ export class PlayerCollision {
     this.staticGrid.clear()
     this.dynamicColliders.length = 0
     for (const box of this.colliders) {
+      if (box.disabled) continue
       if (box.dynamic) {
         this.dynamicColliders.push(box)
         continue

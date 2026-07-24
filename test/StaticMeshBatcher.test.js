@@ -37,3 +37,55 @@ test('static batching preserves geometry while reducing draw-bearing meshes', ()
   geometry.dispose()
   material.dispose()
 })
+
+test('distance-culls static cells with hysteresis without rebuilding batches', () => {
+  const root = new THREE.Group()
+  const material = new THREE.MeshStandardMaterial({ color: 0x777777 })
+  const geometry = new THREE.BoxGeometry()
+  for (const x of [0, 1, 40, 41]) {
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.x = x
+    root.add(mesh)
+  }
+
+  const batches = batchStaticMeshes(root, {
+    cellSize: 20,
+    activationDistance: 10,
+    activationHysteresis: 4,
+  })
+  batches.updateVisibility(new THREE.Vector3(0, 0, 0))
+  const nearVisibility = batches.root.children.map((mesh) => mesh.visible)
+  assert.deepEqual(nearVisibility, [true, false])
+
+  batches.updateVisibility(new THREE.Vector3(30, 0, 0))
+  batches.updateVisibility(new THREE.Vector3(27, 0, 0))
+  const hysteresisVisibility = batches.root.children.map((mesh) => mesh.visible)
+  assert.deepEqual(hysteresisVisibility, [false, true])
+  assert.equal(batches.batchCount, 2)
+
+  batches.dispose()
+  geometry.dispose()
+  material.dispose()
+})
+
+test('static batching preserves intentionally hidden composition groups', () => {
+  const root = new THREE.Group()
+  const hidden = new THREE.Group()
+  hidden.visible = false
+  root.add(hidden)
+  const material = new THREE.MeshStandardMaterial()
+  const geometry = new THREE.BoxGeometry()
+  hidden.add(
+    new THREE.Mesh(geometry, material),
+    new THREE.Mesh(geometry, material),
+  )
+
+  const batches = batchStaticMeshes(root)
+  assert.equal(batches.sourceMeshCount, 0)
+  assert.equal(batches.batchCount, 0)
+  assert.equal(hidden.children.length, 2)
+
+  batches.dispose()
+  geometry.dispose()
+  material.dispose()
+})

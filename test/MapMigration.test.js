@@ -851,11 +851,17 @@ test('all inspection aliases resolve to clear positions facing their intended la
       x: target.targetSource.x + 12,
       y: target.targetSource.y + 16,
     }
-    assert.equal(
-      isSourcePointWalkable(data, sourceCenter),
-      true,
-      `${alias} source destination is not walkable`,
-    )
+    if (inspection.worldPoint) {
+      const resolvedWorld = mapCoordinates.point(inspection.mapId, sourceCenter)
+      approximately(resolvedWorld.x, inspection.worldPoint.x)
+      approximately(resolvedWorld.z, inspection.worldPoint.z)
+    } else {
+      assert.equal(
+        isSourcePointWalkable(data, sourceCenter),
+        true,
+        `${alias} source destination is not walkable`,
+      )
+    }
     if (expectedMapViews[alias]) {
       assert.deepEqual(target.targetSource, expectedMapViews[alias])
     }
@@ -871,9 +877,10 @@ test('all inspection aliases resolve to clear positions facing their intended la
     const lookAtSource = inspection.lookAtSource ?? (landmark
       ? { x: landmark.x + landmark.width / 2, y: landmark.y + landmark.height / 2 }
       : null)
-    if (lookAtSource) {
+    if (inspection.lookAtWorld || lookAtSource) {
       const playerWorld = mapCoordinates.point(inspection.mapId, sourceCenter)
-      const lookAtWorld = mapCoordinates.point(inspection.mapId, lookAtSource)
+      const lookAtWorld = inspection.lookAtWorld
+        ?? mapCoordinates.point(inspection.mapId, lookAtSource)
       approximately(
         target.yaw,
         Math.atan2(
@@ -900,6 +907,19 @@ test('ChurchDistrict mounts and transitions through all four registered maps', (
 
   try {
     assert.deepEqual(Object.keys(world.areas), ['outdoor', 'baDinh', 'longBien', 'interior'])
+    for (const sourceId of ['building-056', 'building-057']) {
+      const sourceGroup = world.hoanKiemCoverageDistrict.group.children.find(
+        (object) => object.userData.sourceRef === `hoanKiem:${sourceId}`,
+      )
+      assert.equal(sourceGroup?.visible, false, `${sourceId} geometry must not block the expanded lake`)
+      assert.equal(
+        world.areas.outdoor.colliders
+          .filter((collider) => collider.sourceId?.startsWith(sourceId))
+          .every((collider) => collider.disabled),
+        true,
+        `${sourceId} collision must yield to the expanded lake boundary`,
+      )
+    }
 
     for (const mapId of MAP_IDS) {
       const definition = MAP_REGISTRY[mapId]
