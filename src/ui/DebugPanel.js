@@ -115,8 +115,8 @@ export class DebugPanel {
     let lights = 0
     let shadowLights = 0
     this.projectionView.multiplyMatrices(
-      this.renderer.camera.projectionMatrix,
-      this.renderer.camera.matrixWorldInverse,
+      this.renderer.activeCamera.projectionMatrix,
+      this.renderer.activeCamera.matrixWorldInverse,
     )
     this.frustum.setFromProjectionMatrix(this.projectionView)
     this.renderer.scene.traverseVisible((object) => {

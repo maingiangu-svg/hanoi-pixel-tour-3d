@@ -70,6 +70,7 @@ export class DialogueSystem {
       npc.active === false
     ) return false
 
+    this.player.setMotorbikeMounted?.(false)
     this.npc = npc
     this.activeLines = npcLines
     this.dialogueContext = {

@@ -14,6 +14,7 @@ export class Renderer {
       0.05,
       120,
     )
+    this.activeCamera = this.camera
 
     this.instance = new THREE.WebGLRenderer({ antialias: true })
     this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
@@ -37,12 +38,23 @@ export class Renderer {
 
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
+    if (this.activeCamera !== this.camera) {
+      this.activeCamera.aspect = width / height
+      this.activeCamera.updateProjectionMatrix()
+    }
     this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.instance.setSize(width, height)
   }
 
+  setActiveCamera(camera = this.camera) {
+    this.activeCamera = camera?.isCamera ? camera : this.camera
+    this.activeCamera.aspect = this.camera.aspect
+    this.activeCamera.updateProjectionMatrix()
+    return this.activeCamera
+  }
+
   render() {
-    this.instance.render(this.scene, this.camera)
+    this.instance.render(this.scene, this.activeCamera)
   }
 
   dispose() {

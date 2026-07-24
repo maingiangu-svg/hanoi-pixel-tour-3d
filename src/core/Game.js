@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Renderer } from './Renderer.js'
 import { Input } from './Input.js'
 import { FirstPersonPlayer } from '../player/FirstPersonPlayer.js'
+import { MotorcycleMode } from '../player/MotorcycleMode.js'
 import { PlayerCollision } from '../player/PlayerCollision.js'
 import { ChurchDistrict } from '../world/ChurchDistrict.js'
 import { InteractionSystem } from '../systems/InteractionSystem.js'
@@ -57,6 +58,8 @@ export class Game {
       domElement: this.renderer.instance.domElement,
       input: this.input,
       collision: this.collision,
+      scene: this.renderer.scene,
+      onViewCameraChange: (camera) => this.renderer.setActiveCamera(camera),
       spawn: new THREE.Vector3(CHURCH_PLAZA_SPAWN.x, 0, CHURCH_PLAZA_SPAWN.z),
     })
     this.player.lookAt(CHURCH_FACADE_LOOK_AT)
@@ -86,6 +89,19 @@ export class Game {
       world: this.world,
       ui: this.ui,
       dialogue: this.dialogue,
+    })
+    this.motorcycleMode = new MotorcycleMode({
+      player: this.player,
+      ui: this.ui,
+      canToggle: () => (
+        !this.mapUi.isOpen
+        && !this.dialogue.isActive()
+        && !this.interactions.transitioning
+        && (
+          this.player.isMotorbikeMounted
+          || this.world.activeAreaName !== 'interior'
+        )
+      ),
     })
     this.interactions.setProfiler(this.profiler)
     this.dayNight = new DayNightCycle({
@@ -308,6 +324,12 @@ export class Game {
         if (startDialogue) this.dialogue.start(actor)
       }
     }
+    if (
+      search.get('ride') === 'motorbike'
+      && this.world.activeAreaName !== 'interior'
+    ) {
+      this.player.setMotorbikeMounted(true)
+    }
     this.ui.setLocked(!this.dialogue.isActive())
   }
 
@@ -408,6 +430,7 @@ export class Game {
     }
     this.dialogue.dispose()
     this.interactions.dispose()
+    this.motorcycleMode.dispose()
     this.player.dispose()
     this.dialogueUi.dispose()
     this.mapUi.dispose()

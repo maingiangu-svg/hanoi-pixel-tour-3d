@@ -15,12 +15,14 @@ function createHarness() {
     open: [],
     transitioning: [],
     lines: [],
+    motorbike: [],
   }
   const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 120)
   camera.position.set(1, 1.68, 2)
   camera.rotation.set(0.08, 0.35, 0)
   const player = {
     camera,
+    setMotorbikeMounted: (mounted) => calls.motorbike.push(mounted),
     controls: {
       isLocked: true,
       unlock: () => {
@@ -69,6 +71,7 @@ test('dialogue unlocks controls, eases the camera, then restores it exactly', ()
   assert.equal(harness.system.start(harness.npc), true)
   assert.equal(harness.calls.unlocked, 1)
   assert.deepEqual(harness.calls.input, [false])
+  assert.deepEqual(harness.calls.motorbike, [false])
   assert.deepEqual(harness.calls.dialogueActive, [true])
   assert.deepEqual(harness.calls.npcActive, [true])
 

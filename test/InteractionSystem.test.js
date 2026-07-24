@@ -12,6 +12,7 @@ function createHarness({ playerX = 0, playerZ = 0 } = {}) {
     transitions: 0,
     collisionWorld: null,
     teleport: null,
+    motorbike: [],
   }
   const destination = {
     colliders: [{ minX: 1, maxX: 2, minZ: 1, maxZ: 2 }],
@@ -21,6 +22,7 @@ function createHarness({ playerX = 0, playerZ = 0 } = {}) {
   const player = {
     controls: { isLocked: true },
     camera: { position: { x: playerX, z: playerZ } },
+    setMotorbikeMounted: (mounted) => calls.motorbike.push(mounted),
     teleport: (spawn, yaw) => { calls.teleport = { spawn, yaw } },
   }
   const system = new InteractionSystem({
@@ -81,6 +83,7 @@ test('E fades, swaps collision world and teleports exactly once', () => {
   dispatchInteraction(harness.target)
 
   assert.deepEqual(harness.calls.fade, [true])
+  assert.deepEqual(harness.calls.motorbike, [false])
   assert.equal(harness.calls.transitions, 0)
   assert.equal(harness.timers.length, 1)
 

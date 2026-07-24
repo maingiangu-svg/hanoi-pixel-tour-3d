@@ -101,6 +101,7 @@ export class InteractionSystem {
     }
 
     const portal = interaction
+    this.player.setMotorbikeMounted?.(false)
     this.availablePortal = null
     this.availableInteraction = null
     this.transitioning = true

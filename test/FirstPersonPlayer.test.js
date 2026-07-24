@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import {
   FirstPersonPlayer,
   PLAYER_JUMP_CONFIG,
+  PLAYER_MOVEMENT_CONFIG,
 } from '../src/player/FirstPersonPlayer.js'
 import { PlayerCollision } from '../src/player/PlayerCollision.js'
 
@@ -32,6 +33,31 @@ function createPlayer(running = false) {
   player.forward = new THREE.Vector3()
   player.right = new THREE.Vector3()
   player.displacement = new THREE.Vector3()
+  player.viewForward = new THREE.Vector3()
+  player.thirdPersonTarget = new THREE.Vector3()
+  player.thirdPersonLookAt = new THREE.Vector3()
+  player.thirdPersonDesired = new THREE.Vector3()
+  player.thirdPersonCamera = new THREE.PerspectiveCamera()
+  player.motorbikeHeading = 0
+  player.isMotorbikeMounted = false
+  player.onViewCameraChange = null
+  player.motorbike = {
+    mounted: false,
+    updates: [],
+    setMounted(mounted) {
+      this.mounted = Boolean(mounted)
+    },
+    update(deltaTime, state) {
+      this.updates.push({
+        deltaTime,
+        position: state.position.clone(),
+        groundHeight: state.groundHeight,
+        heading: state.heading,
+        distance: state.distance,
+      })
+    },
+    dispose() {},
+  }
   player.verticalVelocity = 0
   player.grounded = true
   player.groundedDuration = Infinity
@@ -58,6 +84,115 @@ test('Shift run is faster than walking but remains bounded', () => {
   const runDistance = Math.abs(runner.camera.position.z)
   assert.ok(runDistance > walkDistance)
   assert.ok(runDistance < 0.3)
+})
+
+test('motorbike movement is exactly five times normal walking speed', () => {
+  const walker = createPlayer(false)
+  const rider = createPlayer(false)
+  rider.setMotorbikeMounted(true)
+
+  walker.update(0.05)
+  rider.update(0.05)
+
+  const walkDistance = Math.abs(walker.camera.position.z)
+  const motorbikeDistance = Math.abs(rider.camera.position.z)
+  assert.equal(PLAYER_MOVEMENT_CONFIG.motorbikeMultiplier, 5)
+  assert.equal(
+    PLAYER_MOVEMENT_CONFIG.motorbikeSpeed,
+    PLAYER_MOVEMENT_CONFIG.walkSpeed * 5,
+  )
+  assert.ok(Math.abs(motorbikeDistance / walkDistance - 5) < 0.000001)
+})
+
+test('Shift cannot stack running speed on top of the motorbike multiplier', () => {
+  const normalRider = createPlayer(false)
+  const shiftedRider = createPlayer(true)
+  normalRider.setMotorbikeMounted(true)
+  shiftedRider.setMotorbikeMounted(true)
+
+  normalRider.update(0.05)
+  shiftedRider.update(0.05)
+
+  assert.ok(
+    Math.abs(normalRider.camera.position.z - shiftedRider.camera.position.z) < 0.000001,
+  )
+})
+
+test('mounting switches camera and visual state, then restores first person on dismount', () => {
+  const player = createPlayer(false)
+  const cameraChanges = []
+  player.onViewCameraChange = (camera) => cameraChanges.push(camera)
+
+  assert.equal(player.getRenderCamera(), player.camera)
+  assert.equal(player.toggleMotorbike(), true)
+  assert.equal(player.motorbike.mounted, true)
+  assert.equal(player.getRenderCamera(), player.thirdPersonCamera)
+  assert.equal(cameraChanges.at(-1), player.thirdPersonCamera)
+
+  const horizontalCameraOffset = Math.hypot(
+    player.thirdPersonCamera.position.x - player.camera.position.x,
+    player.thirdPersonCamera.position.z - player.camera.position.z,
+  )
+  assert.ok(horizontalCameraOffset > 4.7)
+  assert.ok(player.thirdPersonCamera.position.y > player.camera.position.y)
+  assert.ok(player.motorbike.updates.length >= 1)
+  assert.ok(player.motorbike.updates.at(-1).position.equals(player.camera.position))
+
+  assert.equal(player.toggleMotorbike(), false)
+  assert.equal(player.motorbike.mounted, false)
+  assert.equal(player.getRenderCamera(), player.camera)
+  assert.equal(cameraChanges.at(-1), player.camera)
+})
+
+test('third-person camera retracts before a wall behind the rider', () => {
+  const player = createPlayer(false)
+  player.collision = new PlayerCollision({
+    colliders: [{ minX: -2, maxX: 2, minZ: 1.5, maxZ: 1.8 }],
+    bounds: { minX: -100, maxX: 100, minZ: -100, maxZ: 100 },
+  })
+
+  player.setMotorbikeMounted(true)
+
+  assert.ok(player.thirdPersonCamera.position.z > 0)
+  assert.ok(player.thirdPersonCamera.position.z < 1.28)
+  assert.ok(player.thirdPersonCamera.position.y > player.camera.position.y)
+})
+
+test('third-person camera also retracts before visible geometry without a collider', () => {
+  const player = createPlayer(false)
+  player.scene = new THREE.Scene()
+  player.thirdPersonRayOrigin = new THREE.Vector3()
+  player.thirdPersonRayDirection = new THREE.Vector3()
+  player.cameraRaycaster = new THREE.Raycaster()
+  player.cameraIntersections = []
+  const decorativeWall = new THREE.Mesh(
+    new THREE.BoxGeometry(4, 4, 0.3),
+    new THREE.MeshBasicMaterial(),
+  )
+  decorativeWall.position.set(0, 1.7, 1.55)
+  player.scene.add(decorativeWall)
+  player.scene.updateMatrixWorld(true)
+
+  player.setMotorbikeMounted(true)
+
+  assert.ok(player.thirdPersonCamera.position.z > 0)
+  assert.ok(player.thirdPersonCamera.position.z < 1.35)
+  decorativeWall.geometry.dispose()
+  decorativeWall.material.dispose()
+})
+
+test('Space is consumed but cannot launch the player while riding', () => {
+  const player = createPlayer(false)
+  player.input.getMovement = () => ({ forward: 0, right: 0, running: false })
+  player.setMotorbikeMounted(true)
+  player.input.queueJump()
+
+  player.update(1 / 60)
+
+  assert.equal(player.isMotorbikeMounted, true)
+  assert.equal(player.grounded, true)
+  assert.equal(player.verticalVelocity, 0)
+  assert.ok(Math.abs(player.camera.position.y - 1.68) < 0.0001)
 })
 
 test('large frame gaps are clamped to prevent collision tunnelling', () => {
