@@ -440,14 +440,18 @@ test('central map coordinates preserve anchors, bounds, dimensions, and round tr
 
   for (const mapId of MAP_IDS) {
     const config = MAP_COORDINATE_CONFIG[mapId]
+    const sourceBounds = mapCoordinates.sourceBounds(mapId)
     const anchor = mapCoordinates.point(mapId, config.sourceAnchor)
     approximately(anchor.x, config.worldAnchor.x)
     approximately(anchor.z, config.worldAnchor.z)
 
     const samples = [
-      { x: 0, y: 0 },
+      { x: sourceBounds.x, y: sourceBounds.y },
       config.sourceAnchor,
-      { x: config.width, y: config.height },
+      {
+        x: sourceBounds.x + sourceBounds.width,
+        y: sourceBounds.y + sourceBounds.height,
+      },
       {
         x: MAP_REGISTRY[mapId].data.spawn.x + 12,
         y: MAP_REGISTRY[mapId].data.spawn.y + 16,
@@ -466,21 +470,25 @@ test('central map coordinates preserve anchors, bounds, dimensions, and round tr
     approximately(playerPoint.z, expectedPlayerPoint.z)
 
     const fullRect = mapCoordinates.rect(mapId, {
-      x: 0,
-      y: 0,
-      width: config.width,
-      height: config.height,
+      x: sourceBounds.x,
+      y: sourceBounds.y,
+      width: sourceBounds.width,
+      height: sourceBounds.height,
     })
     const bounds = mapCoordinates.bounds(mapId)
     approximately(fullRect.minX, bounds.minX)
     approximately(fullRect.maxX, bounds.maxX)
     approximately(fullRect.minZ, bounds.minZ)
     approximately(fullRect.maxZ, bounds.maxZ)
-    approximately(fullRect.width, config.width * config.scale)
-    approximately(fullRect.depth, config.height * config.scale)
+    approximately(fullRect.width, sourceBounds.width * config.scale)
+    approximately(fullRect.depth, sourceBounds.height * config.scale)
 
-    const sourceLeft = mapCoordinates.point(mapId, 0, config.sourceAnchor.y)
-    const sourceRight = mapCoordinates.point(mapId, config.width, config.sourceAnchor.y)
+    const sourceLeft = mapCoordinates.point(mapId, sourceBounds.x, config.sourceAnchor.y)
+    const sourceRight = mapCoordinates.point(
+      mapId,
+      sourceBounds.x + sourceBounds.width,
+      config.sourceAnchor.y,
+    )
     assert.ok(sourceLeft.x > sourceRight.x, `${mapId} must consistently mirror source X`)
   }
 

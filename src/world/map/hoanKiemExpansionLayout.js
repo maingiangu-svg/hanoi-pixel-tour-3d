@@ -1,0 +1,327 @@
+export const HOAN_KIEM_EXPANDED_SOURCE_BOUNDS = Object.freeze({
+  x: -516,
+  y: -645,
+  width: 4000,
+  height: 3334,
+})
+
+export const HOAN_KIEM_EXPANDED_WORLD_BOUNDS = Object.freeze({
+  minX: -120,
+  maxX: 360,
+  minZ: -180.05,
+  maxZ: 220.03,
+})
+
+export const HOAN_KIEM_LAKE_OUTLINE = deepFreeze([
+  [82, -75],
+  [105, -82],
+  [132, -72],
+  [149, -50],
+  [155, -20],
+  [154, 10],
+  [148, 31],
+  [138, 38],
+  [138, 68],
+  [130, 80],
+  [109, 82],
+  [101, 70],
+  [101, 42],
+  [91, 38],
+  [83, 33],
+  [78, 20],
+  [76, 0],
+  [77, -25],
+  [80, -53],
+])
+
+export const HOAN_KIEM_PROMENADE_OUTLINE = deepFreeze([
+  [65, -90],
+  [108, -98],
+  [143, -85],
+  [162, -60],
+  [169, -24],
+  [167, 18],
+  [159, 38],
+  [150, 46],
+  [151, 76],
+  [140, 94],
+  [108, 99],
+  [91, 82],
+  [89, 51],
+  [75, 47],
+  [61, 36],
+  [54, 17],
+  [53, -8],
+  [56, -38],
+  [62, -67],
+])
+
+export const HOAN_KIEM_EXPANSION_ROADS = deepFreeze([
+  {
+    id: 'expansion-road-north',
+    kind: 'road',
+    name: 'Đại lộ phía bắc Hồ Gươm',
+    x: 116,
+    z: -132,
+    width: 284,
+    depth: 18,
+  },
+  {
+    id: 'expansion-road-south',
+    kind: 'road',
+    name: 'Đại lộ phía nam Hồ Gươm',
+    x: 118,
+    z: 148,
+    width: 304,
+    depth: 20,
+  },
+  {
+    id: 'expansion-road-east',
+    kind: 'road',
+    name: 'Đường phía đông khu Nhà thờ',
+    x: -72,
+    z: 18,
+    width: 18,
+    depth: 264,
+  },
+  {
+    id: 'expansion-road-west',
+    kind: 'road',
+    name: 'Trục Phố Cổ mở rộng',
+    x: 252,
+    z: -4,
+    width: 20,
+    depth: 256,
+  },
+  {
+    id: 'expansion-road-church-link',
+    kind: 'road',
+    name: 'Đường nối phía đông Nhà thờ',
+    x: -69,
+    z: 13,
+    width: 72,
+    depth: 14,
+  },
+  {
+    id: 'expansion-road-old-quarter-link',
+    kind: 'road',
+    name: 'Đường ngang Phố Cổ',
+    x: 272,
+    z: 63,
+    width: 176,
+    depth: 14,
+  },
+  {
+    id: 'expansion-road-north-feeder',
+    kind: 'road',
+    name: 'Đường dẫn phố đi bộ phía bắc',
+    x: 108,
+    z: -110,
+    width: 18,
+    depth: 54,
+  },
+  {
+    id: 'expansion-road-south-feeder',
+    kind: 'road',
+    name: 'Đường dẫn quảng trường phía nam',
+    x: 108,
+    z: 121,
+    width: 18,
+    depth: 54,
+  },
+])
+
+export const HOAN_KIEM_EXPANSION_PLAZAS = deepFreeze([
+  {
+    id: 'expansion-plaza-the-huc',
+    kind: 'plaza',
+    name: 'Quảng trường Cầu Thê Húc',
+    x: 119,
+    z: 25,
+    width: 58,
+    depth: 20,
+  },
+  {
+    id: 'expansion-plaza-south',
+    kind: 'plaza',
+    name: 'Không gian phố đi bộ phía nam',
+    x: 108,
+    z: 112,
+    width: 154,
+    depth: 34,
+  },
+  {
+    id: 'expansion-plaza-old-quarter',
+    kind: 'plaza',
+    name: 'Giao lộ Phố Cổ',
+    x: 238,
+    z: -96,
+    width: 92,
+    depth: 30,
+  },
+  {
+    id: 'expansion-west-loop-south',
+    kind: 'sidewalk',
+    name: 'Lối đi bộ vòng hồ · bờ tây nam',
+    x: 72,
+    z: -9.5,
+    width: 16,
+    depth: 4,
+  },
+  {
+    id: 'expansion-west-loop-turn',
+    kind: 'sidewalk',
+    name: 'Lối đi bộ vòng hồ · khúc nối bờ tây',
+    x: 79,
+    z: -16.5,
+    width: 4,
+    depth: 17,
+  },
+  {
+    id: 'expansion-west-loop-north',
+    kind: 'sidewalk',
+    name: 'Lối đi bộ vòng hồ · bờ tây bắc',
+    x: 72,
+    z: -23.5,
+    width: 16,
+    depth: 4,
+  },
+])
+
+export const HOAN_KIEM_LAKE_COLLISION_OPENINGS = deepFreeze([
+  {
+    id: 'legacy-west-promenade',
+    minX: 63.7,
+    maxX: 72.4,
+    minZ: -38,
+    maxZ: 38,
+  },
+  {
+    id: 'legacy-east-promenade',
+    minX: 131.4,
+    maxX: 139.7,
+    minZ: -38,
+    maxZ: 33,
+  },
+  {
+    id: 'legacy-south-promenade',
+    minX: 67.5,
+    maxX: 137,
+    minZ: 32.5,
+    maxZ: 40.5,
+  },
+  {
+    id: 'legacy-north-promenade',
+    minX: 67.5,
+    maxX: 137,
+    minZ: -40.5,
+    maxZ: -32.5,
+  },
+  {
+    id: 'legacy-the-huc-bridge',
+    minX: 116.8,
+    maxX: 121.2,
+    minZ: 32.8,
+    maxZ: 45.7,
+  },
+  {
+    id: 'legacy-ngoc-son-island',
+    minX: 109.3,
+    maxX: 128.7,
+    minZ: 43.5,
+    maxZ: 59.8,
+  },
+  {
+    id: 'source-the-huc-bridge',
+    minX: 40.8,
+    maxX: 76.8,
+    minZ: -20.3,
+    maxZ: -12.9,
+  },
+  {
+    id: 'west-loop-south',
+    minX: 63.5,
+    maxX: 80.5,
+    minZ: -12,
+    maxZ: -7,
+  },
+  {
+    id: 'west-loop-turn',
+    minX: 76.5,
+    maxX: 81.5,
+    minZ: -26,
+    maxZ: -7,
+  },
+  {
+    id: 'west-loop-north',
+    minX: 63.5,
+    maxX: 80.5,
+    minZ: -26,
+    maxZ: -21,
+  },
+  {
+    id: 'source-north-promenade',
+    minX: 33.5,
+    maxX: 159.3,
+    minZ: -84.8,
+    maxZ: -68.5,
+  },
+  {
+    id: 'source-south-promenade',
+    minX: 27.6,
+    maxX: 160.5,
+    minZ: 39.5,
+    maxZ: 54.2,
+  },
+])
+
+export const HOAN_KIEM_BOUNDARY_OPENINGS = deepFreeze([
+  {
+    id: 'lake-promenade-opening',
+    minX: 45,
+    maxX: 175,
+    minZ: -108,
+    maxZ: 112,
+  },
+  {
+    id: 'north-expansion-opening',
+    minX: 42,
+    maxX: 178,
+    minZ: -104,
+    maxZ: -85,
+  },
+  {
+    id: 'south-expansion-opening',
+    minX: -30,
+    maxX: 280,
+    minZ: 100,
+    maxZ: 127,
+  },
+])
+
+export const HOAN_KIEM_LOOP_TEST_POINTS = deepFreeze([
+  [60, -4],
+  [70, -9.5],
+  [79, -9.5],
+  [79, -23.5],
+  [70, -23.5],
+  [65, -72],
+  [108, -91],
+  [153, -66],
+  [160, 2],
+  [158, 43],
+  [153, 76],
+  [144, 82],
+  [108, 92],
+  [93, 72],
+  [71, 42],
+])
+
+function deepFreeze(value) {
+  if (Array.isArray(value)) {
+    value.forEach(deepFreeze)
+  } else if (value && typeof value === 'object') {
+    Object.values(value).forEach(deepFreeze)
+  }
+  return Object.freeze(value)
+}

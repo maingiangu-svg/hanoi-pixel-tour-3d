@@ -1,3 +1,5 @@
+import { HOAN_KIEM_EXPANDED_SOURCE_BOUNDS } from './hoanKiemExpansionLayout.js'
+
 const OUTDOOR_WORLD_UNITS_PER_PIXEL = 0.12
 const INTERIOR_WORLD_UNITS_PER_PIXEL = 0.025
 
@@ -5,6 +7,7 @@ export const MAP_COORDINATE_CONFIG = deepFreeze({
   hoanKiem: {
     width: 2800,
     height: 1900,
+    sourceBounds: HOAN_KIEM_EXPANDED_SOURCE_BOUNDS,
     scale: OUTDOOR_WORLD_UNITS_PER_PIXEL,
     flipX: true,
     sourceAnchor: { x: 2484, y: 750 },
@@ -126,17 +129,28 @@ export class MapCoordinateSystem {
 
   bounds(mapId) {
     const config = this.get(mapId)
+    const sourceBounds = this.sourceBounds(mapId)
     const rect = this.rect(mapId, {
-      x: 0,
-      y: 0,
-      width: config.width,
-      height: config.height,
+      x: sourceBounds.x,
+      y: sourceBounds.y,
+      width: sourceBounds.width,
+      height: sourceBounds.height,
     })
     return {
       minX: rect.minX,
       maxX: rect.maxX,
       minZ: rect.minZ,
       maxZ: rect.maxZ,
+    }
+  }
+
+  sourceBounds(mapId) {
+    const config = this.get(mapId)
+    return config.sourceBounds ?? {
+      x: 0,
+      y: 0,
+      width: config.width,
+      height: config.height,
     }
   }
 

@@ -1,5 +1,17 @@
 import { mapCoordinates } from '../world/map/MapCoordinateSystem.js'
 import { MAP_REGISTRY } from '../world/map/MapRegistry.js'
+import {
+  HOAN_KIEM_EXPANSION_PLAZAS,
+  HOAN_KIEM_EXPANSION_ROADS,
+  HOAN_KIEM_LAKE_OUTLINE,
+  HOAN_KIEM_PROMENADE_OUTLINE,
+} from '../world/map/hoanKiemExpansionLayout.js'
+import { HOAN_KIEM_PEDESTRIAN_ZONES } from '../world/map/hoanKiemPedestrianLayout.js'
+import {
+  getUrbanBuildingFootprint,
+  HOAN_KIEM_URBAN_CLUSTERS,
+  HOAN_KIEM_URBAN_SIDE_ROADS,
+} from '../world/map/hoanKiemUrbanEdgeLayout.js'
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 
@@ -7,13 +19,19 @@ export function createMapViewModel(mapId) {
   const definition = MAP_REGISTRY[mapId]
   if (!definition) throw new Error(`Unknown map overlay map: ${mapId}`)
   const data = definition.data
+  const sourceBounds = mapCoordinates.sourceBounds(mapId)
+  const expansion = mapId === 'hoanKiem'
+    ? createHoanKiemExpansionViewModel()
+    : null
   return {
     mapId,
     name: definition.name,
-    width: data.width,
-    height: data.height,
+    minX: sourceBounds.x,
+    minY: sourceBounds.y,
+    width: sourceBounds.width,
+    height: sourceBounds.height,
     groundPatches: data.groundPatches ?? [],
-    water: data.water ?? [],
+    water: expansion ? [] : data.water ?? [],
     walkZones: data.walkZones ?? [],
     buildings: data.buildings ?? [],
     shops: [...(data.shops ?? []), ...(data.vehicleShops ?? [])],
@@ -21,6 +39,7 @@ export function createMapViewModel(mapId) {
     exits: data.exits ?? [],
     parkingSpots: data.parkingSpots ?? [],
     fixtures: data.interiorFixtures ?? [],
+    expansion,
   }
 }
 
@@ -48,16 +67,19 @@ export function projectWorldPositionToMap(
   const heading = Math.hypot(deltaX, deltaY) > 1e-9
     ? normalizeDegrees(Math.atan2(deltaY, deltaX) * 180 / Math.PI + 90)
     : 0
-  const width = definition.data.width
-  const height = definition.data.height
+  const sourceBounds = coordinates.sourceBounds(mapId)
+  const minX = sourceBounds.x
+  const minY = sourceBounds.y
+  const maxX = minX + sourceBounds.width
+  const maxY = minY + sourceBounds.height
 
   return {
-    x: clamp(source.x, 0, width),
-    y: clamp(source.y, 0, height),
+    x: clamp(source.x, minX, maxX),
+    y: clamp(source.y, minY, maxY),
     rawX: source.x,
     rawY: source.y,
     heading,
-    inside: source.x >= 0 && source.x <= width && source.y >= 0 && source.y <= height,
+    inside: source.x >= minX && source.x <= maxX && source.y >= minY && source.y <= maxY,
   }
 }
 
@@ -186,7 +208,7 @@ export class MapOverlay {
     const view = createMapViewModel(mapId)
     this.mapId = mapId
     this.title.textContent = view.name
-    this.svg.setAttribute('viewBox', `0 0 ${view.width} ${view.height}`)
+    this.svg.setAttribute('viewBox', `${view.minX} ${view.minY} ${view.width} ${view.height}`)
     this.svg.setAttribute('aria-label', `Bản đồ ${view.name} và vị trí hiện tại của bạn`)
     this.svg.style.setProperty('--map-stroke', String(Math.max(3, view.width / 620)))
     this.svg.style.setProperty('--map-label-size', `${Math.max(22, view.width / 64)}px`)
@@ -196,15 +218,37 @@ export class MapOverlay {
       this.#svg('title', {}, `Bản đồ ${view.name}`),
       this.#svg('desc', {}, 'Bản đồ khu vực hiện tại với đường, công trình, landmark, lối chuyển khu và vị trí người chơi.'),
       this.#svg('rect', {
-        class: 'map-shape map-base', x: 0, y: 0, width: view.width, height: view.height,
+        class: 'map-shape map-base',
+        x: view.minX,
+        y: view.minY,
+        width: view.width,
+        height: view.height,
       }),
     )
 
     view.groundPatches.forEach((entry) => this.#appendRect(entry, `map-ground map-ground--${entry.kind}`))
+    view.expansion?.roads.forEach((entry) => this.#appendRect(entry, 'map-zone map-zone--road'))
+    view.expansion?.urbanRoads.forEach((entry) => this.#appendRect(entry, 'map-zone map-zone--road'))
+    view.expansion?.plazas.filter((entry) => entry.kind !== 'sidewalk').forEach(
+      (entry) => this.#appendRect(entry, `map-zone map-zone--${entry.kind}`),
+    )
+    view.expansion?.promenadePolygons.forEach(
+      (entry) => this.#appendPolygon(entry, 'map-zone map-zone--sidewalk'),
+    )
     view.water.forEach((entry) => this.#appendRect(entry, 'map-water'))
+    view.expansion?.waterPolygons.forEach((entry) => this.#appendPolygon(entry, 'map-water'))
+    view.expansion?.plazas.filter((entry) => entry.kind === 'sidewalk').forEach(
+      (entry) => this.#appendRect(entry, 'map-zone map-zone--sidewalk'),
+    )
+    view.expansion?.pedestrianZones.forEach(
+      (entry) => this.#appendRect(entry, `map-zone map-zone--${entry.kind}`),
+    )
     view.walkZones.forEach((entry) => this.#appendRect(entry, `map-zone map-zone--${entry.kind}`))
     view.parkingSpots.forEach((entry) => this.#appendRect(entry, 'map-parking'))
     view.buildings.forEach((entry) => this.#appendRect(entry, `map-structure map-structure--${entry.kind}`))
+    view.expansion?.urbanBuildings.forEach(
+      (entry) => this.#appendRect(entry, 'map-structure map-structure--urban'),
+    )
     view.shops.forEach((entry) => this.#appendRect(entry, 'map-structure map-shop'))
     view.fixtures.forEach((entry) => this.#appendFixture(entry))
     view.landmarks.forEach((entry) => this.#appendLandmark(entry, view.width))
@@ -223,6 +267,17 @@ export class MapOverlay {
     })
     rect.append(this.#svg('title', {}, entry.name ?? entry.label ?? entry.id))
     this.svg.append(rect)
+  }
+
+  #appendPolygon(entry, className) {
+    if (!Array.isArray(entry.points) || entry.points.length < 3) return
+    const polygon = this.#svg('polygon', {
+      class: `map-shape ${className}`,
+      points: entry.points.map(([x, y]) => `${x},${y}`).join(' '),
+      'fill-rule': entry.fillRule ?? 'nonzero',
+    })
+    polygon.append(this.#svg('title', {}, entry.name ?? entry.id))
+    this.svg.append(polygon)
   }
 
   #appendFixture(entry) {
@@ -316,4 +371,56 @@ function clamp(value, minimum, maximum) {
 
 function normalizeDegrees(value) {
   return ((value % 360) + 360) % 360
+}
+
+function createHoanKiemExpansionViewModel() {
+  return {
+    roads: HOAN_KIEM_EXPANSION_ROADS.map(worldRectToSourceRect),
+    plazas: HOAN_KIEM_EXPANSION_PLAZAS.map(worldRectToSourceRect),
+    waterPolygons: [{
+      id: 'expanded-hoan-kiem-lake',
+      name: 'Hồ Gươm mở rộng',
+      points: worldPolygonToSource(HOAN_KIEM_LAKE_OUTLINE),
+    }],
+    promenadePolygons: [{
+      id: 'expanded-hoan-kiem-promenade',
+      name: 'Luồng đi bộ chính quanh Hồ Gươm',
+      points: worldPolygonToSource(HOAN_KIEM_PROMENADE_OUTLINE),
+    }],
+    pedestrianZones: HOAN_KIEM_PEDESTRIAN_ZONES.map(worldRectToSourceRect),
+    urbanRoads: HOAN_KIEM_URBAN_SIDE_ROADS.map(worldRectToSourceRect),
+    urbanBuildings: HOAN_KIEM_URBAN_CLUSTERS.flatMap((cluster) => (
+      cluster.buildings.map((building) => worldRectToSourceRect({
+        ...getUrbanBuildingFootprint(building),
+        id: building.id,
+        name: building.name,
+        kind: building.sign ? 'shopHouse' : 'tubeHouse',
+      }))
+    )),
+  }
+}
+
+function worldRectToSourceRect(rect) {
+  const first = mapCoordinates.worldToSource('hoanKiem', {
+    x: rect.x - rect.width / 2,
+    z: rect.z - rect.depth / 2,
+  })
+  const second = mapCoordinates.worldToSource('hoanKiem', {
+    x: rect.x + rect.width / 2,
+    z: rect.z + rect.depth / 2,
+  })
+  return {
+    ...rect,
+    x: Math.min(first.x, second.x),
+    y: Math.min(first.y, second.y),
+    width: Math.abs(second.x - first.x),
+    height: Math.abs(second.y - first.y),
+  }
+}
+
+function worldPolygonToSource(points) {
+  return points.map(([x, z]) => {
+    const source = mapCoordinates.worldToSource('hoanKiem', { x, z })
+    return [source.x, source.y]
+  })
 }

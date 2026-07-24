@@ -523,6 +523,29 @@ kbd {
   fill: #d9cdae;
 }
 
+.map-zone--performance {
+  fill: #b97b62;
+}
+
+.map-zone--crowd {
+  fill: #e0d2aa;
+}
+
+.map-zone--reservedStalls,
+.map-zone--portrait,
+.map-zone--photo,
+.map-zone--iceCream,
+.map-zone--rest {
+  fill: #d4c69d;
+  stroke: #8b7657;
+  stroke-dasharray: calc(var(--map-stroke) * 2.2);
+}
+
+.map-zone--treeGrove {
+  fill: #879474;
+  stroke: #5d7058;
+}
+
 .map-parking {
   fill: #5d6360;
   stroke: #d5ad5e;

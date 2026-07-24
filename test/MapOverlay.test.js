@@ -19,12 +19,18 @@ test('map overlay view models expose the complete current-map topology', () => {
   for (const mapId of MAP_IDS) {
     const data = MAP_REGISTRY[mapId].data
     const view = createMapViewModel(mapId)
+    const sourceBounds = mapCoordinates.sourceBounds(mapId)
     assert.equal(view.mapId, mapId)
     assert.equal(view.name, MAP_REGISTRY[mapId].name)
-    assert.equal(view.width, data.width)
-    assert.equal(view.height, data.height)
+    assert.equal(view.minX, sourceBounds.x)
+    assert.equal(view.minY, sourceBounds.y)
+    assert.equal(view.width, sourceBounds.width)
+    assert.equal(view.height, sourceBounds.height)
     assert.equal(view.groundPatches.length, data.groundPatches.length)
-    assert.equal(view.water.length, data.water.length)
+    assert.equal(
+      view.water.length + (view.expansion?.waterPolygons.length ?? 0),
+      data.water.length,
+    )
     assert.equal(view.walkZones.length, data.walkZones.length)
     assert.equal(view.buildings.length, data.buildings.length)
     assert.equal(
@@ -35,6 +41,14 @@ test('map overlay view models expose the complete current-map topology', () => {
     assert.equal(view.exits.length, data.exits.length)
     assert.equal(view.parkingSpots.length, data.parkingSpots.length)
     assert.equal(view.fixtures.length, data.interiorFixtures?.length ?? 0)
+    if (mapId === 'hoanKiem') {
+      assert.ok(view.expansion.roads.length >= 4)
+      assert.ok(view.expansion.plazas.length >= 2)
+      assert.equal(view.expansion.promenadePolygons.length, 1)
+      assert.ok(view.expansion.pedestrianZones.length >= 8)
+      assert.ok(view.expansion.urbanRoads.length >= 4)
+      assert.ok(view.expansion.urbanBuildings.length >= 30)
+    }
   }
   assert.throws(() => createMapViewModel('missing-map'), /Unknown map overlay map/)
 })
@@ -62,12 +76,17 @@ test('map marker heading follows camera direction through mirrored coordinates',
 
 test('out-of-bounds positions are clamped while retaining their raw source coordinates', () => {
   for (const mapId of MAP_IDS) {
-    const world = mapCoordinates.point(mapId, { x: -100, y: -50 })
+    const sourceBounds = mapCoordinates.sourceBounds(mapId)
+    const outside = {
+      x: sourceBounds.x - 100,
+      y: sourceBounds.y - 50,
+    }
+    const world = mapCoordinates.point(mapId, outside)
     const marker = projectWorldPositionToMap(mapId, world)
-    approximately(marker.rawX, -100)
-    approximately(marker.rawY, -50)
-    assert.equal(marker.x, 0)
-    assert.equal(marker.y, 0)
+    approximately(marker.rawX, outside.x)
+    approximately(marker.rawY, outside.y)
+    assert.equal(marker.x, sourceBounds.x)
+    assert.equal(marker.y, sourceBounds.y)
     assert.equal(marker.inside, false)
   }
   assert.throws(

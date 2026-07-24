@@ -11,6 +11,9 @@ import { HoanKiemDistrict } from './HoanKiemDistrict.js'
 import { NgocSonBranch } from './NgocSonBranch.js'
 import { HoanKiemCrowd } from './HoanKiemCrowd.js'
 import { HoanKiemCoverageDistrict } from './districts/HoanKiemCoverageDistrict.js'
+import { HoanKiemGroundExpansion } from './HoanKiemGroundExpansion.js'
+import { HoanKiemPedestrianDistrict } from './HoanKiemPedestrianDistrict.js'
+import { HoanKiemUrbanEdgeDistrict } from './HoanKiemUrbanEdgeDistrict.js'
 import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
 import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
@@ -97,6 +100,22 @@ export class ChurchDistrict {
       colliders: outdoorColliders,
       existingLandmarks: { nhaThoLon: this.church.group },
     })
+    this.hoanKiemGroundExpansion = new HoanKiemGroundExpansion({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+    })
+    this.hoanKiemPedestrianDistrict = new HoanKiemPedestrianDistrict({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+    })
+    this.hoanKiemUrbanEdgeDistrict = new HoanKiemUrbanEdgeDistrict({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
+      shopManager: this.shops,
+    })
     this.baDinhDistrict = new BaDinhDistrict({
       kit: this.kit,
       parent: this.root,
@@ -166,6 +185,20 @@ export class ChurchDistrict {
         cellSize: 36,
         name: 'Ngọc Sơn · mesh tĩnh theo ô',
       }),
+      batchStaticMeshes(this.hoanKiemPedestrianDistrict.group, {
+        cellSize: 60,
+        name: 'Phố đi bộ Hồ Gươm · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.hoanKiemUrbanEdgeDistrict.roadGroup, {
+        cellSize: 60,
+        name: 'Ngõ Hoàn Kiếm mở rộng · mesh tĩnh theo ô',
+      }),
+      ...this.hoanKiemUrbanEdgeDistrict.clusterGroups.map((entry) => (
+        batchStaticMeshes(entry.group, {
+          cellSize: 42,
+          name: `${entry.name} · mesh tĩnh theo ô`,
+        })
+      )),
       ...this.streetBuildingGroups.map((group, index) => batchStaticMeshes(group, {
         name: `Nhà phố ${index + 1} · mesh tĩnh đã gộp`,
       })),
@@ -357,6 +390,9 @@ export class ChurchDistrict {
         street: countMeshes(this.oldQuarterConnector.group),
         lake: countMeshes(this.hoanKiemDistrict.group),
         coverage: countMeshes(this.hoanKiemCoverageDistrict.group),
+        expansion: countMeshes(this.hoanKiemGroundExpansion.group),
+        pedestrian: countMeshes(this.hoanKiemPedestrianDistrict.group),
+        urbanEdge: countMeshes(this.hoanKiemUrbanEdgeDistrict.group),
         interior: countMeshes(this.interior.group),
       },
     }
@@ -752,6 +788,10 @@ export class ChurchDistrict {
     this.oldQuarterConnector.group.visible = x > 24 && x < 106
     this.hoanKiemDistrict.group.visible = x > 52.5
     this.ngocSonBranch.group.visible = x > 60 || z > 28
+    this.hoanKiemUrbanEdgeDistrict.updateVisibility(
+      this.playerPosition,
+      this.activeAreaName === 'outdoor',
+    )
   }
 
   #updatePracticalLightVisibility() {
@@ -790,6 +830,9 @@ export class ChurchDistrict {
     disposeSharedNpcResources()
     disposeSharedSpecialNpcResources()
     this.props.dispose()
+    this.hoanKiemUrbanEdgeDistrict.dispose()
+    this.hoanKiemPedestrianDistrict.dispose()
+    this.hoanKiemGroundExpansion.dispose()
     this.staticBatches.forEach((batch) => batch.dispose())
     this.kit.dispose()
     this.scene.remove(this.root)
