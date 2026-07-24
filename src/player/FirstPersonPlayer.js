@@ -102,6 +102,7 @@ export class FirstPersonPlayer {
     this.thirdPersonRayDirection = new THREE.Vector3()
     this.cameraRaycaster = new THREE.Raycaster()
     this.cameraIntersections = []
+    this.cameraOccluders = []
     this.motorbikeHeading = 0
     this.isMotorbikeMounted = false
     this.verticalVelocity = 0
@@ -351,16 +352,19 @@ export class FirstPersonPlayer {
     )
     this.cameraRaycaster.near = THIRD_PERSON_RAY_NEAR
     this.cameraRaycaster.far = desiredDistance
+    this.cameraRaycaster.camera = this.thirdPersonCamera
+    this.cameraOccluders.length = 0
+    this.scene.traverseVisible((object) => {
+      if (this._isCameraOccluder(object)) this.cameraOccluders.push(object)
+    })
     this.cameraIntersections.length = 0
     this.cameraRaycaster.intersectObjects(
-      this.scene.children,
-      true,
+      this.cameraOccluders,
+      false,
       this.cameraIntersections,
     )
 
-    const hit = this.cameraIntersections.find(({ object }) =>
-      this._isCameraOccluder(object),
-    )
+    const hit = this.cameraIntersections[0]
     if (!hit) return false
     const safeDistance = Math.max(
       THIRD_PERSON_RAY_NEAR,

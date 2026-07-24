@@ -165,6 +165,7 @@ test('third-person camera also retracts before visible geometry without a collid
   player.thirdPersonRayDirection = new THREE.Vector3()
   player.cameraRaycaster = new THREE.Raycaster()
   player.cameraIntersections = []
+  player.cameraOccluders = []
   const decorativeWall = new THREE.Mesh(
     new THREE.BoxGeometry(4, 4, 0.3),
     new THREE.MeshBasicMaterial(),
@@ -179,6 +180,39 @@ test('third-person camera also retracts before visible geometry without a collid
   assert.ok(player.thirdPersonCamera.position.z < 1.35)
   decorativeWall.geometry.dispose()
   decorativeWall.material.dispose()
+})
+
+test('third-person camera ignores shop sprites without stopping the game loop', () => {
+  const player = createPlayer(false)
+  player.scene = new THREE.Scene()
+  player.thirdPersonRayOrigin = new THREE.Vector3()
+  player.thirdPersonRayDirection = new THREE.Vector3()
+  player.cameraRaycaster = new THREE.Raycaster()
+  player.cameraIntersections = []
+  player.cameraOccluders = []
+  const hiddenRaycastProbe = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial(),
+  )
+  let hiddenRaycastCalls = 0
+  hiddenRaycastProbe.raycast = () => {
+    hiddenRaycastCalls += 1
+  }
+  const hiddenGroup = new THREE.Group()
+  hiddenGroup.visible = false
+  hiddenGroup.add(hiddenRaycastProbe)
+  const shopBubble = new THREE.Sprite(new THREE.SpriteMaterial())
+  shopBubble.position.set(0, 1.7, 1.55)
+  player.scene.add(hiddenGroup, shopBubble)
+  player.scene.updateMatrixWorld(true)
+
+  assert.doesNotThrow(() => player.setMotorbikeMounted(true))
+  assert.equal(hiddenRaycastCalls, 0)
+  assert.equal(player.cameraOccluders.includes(shopBubble), false)
+
+  hiddenRaycastProbe.geometry.dispose()
+  hiddenRaycastProbe.material.dispose()
+  shopBubble.material.dispose()
 })
 
 test('Space is consumed but cannot launch the player while riding', () => {
