@@ -10,7 +10,7 @@ function cellCoordinate(value, cellSize) {
 function canBatch(mesh, root) {
   let ancestor = mesh.parent
   while (ancestor && ancestor !== root) {
-    if (ancestor.userData.dynamicVisibility) return false
+    if (!ancestor.visible || ancestor.userData.dynamicVisibility) return false
     ancestor = ancestor.parent
   }
   return (
@@ -27,6 +27,8 @@ function canBatch(mesh, root) {
 export function batchStaticMeshes(root, {
   cellSize = INFINITE_CELL,
   name = `${root.name} · static batches`,
+  activationDistance = INFINITE_CELL,
+  activationHysteresis = 8,
 } = {}) {
   root.updateWorldMatrix(true, true)
   const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert()
@@ -66,6 +68,8 @@ export function batchStaticMeshes(root, {
   batchRoot.name = name
   root.add(batchRoot)
   const geometries = []
+  const entries = []
+  const localPlayerPosition = new THREE.Vector3()
   let sourceMeshCount = 0
 
   for (const group of groups.values()) {
@@ -91,6 +95,11 @@ export function batchStaticMeshes(root, {
     mesh.matrix.identity()
     batchRoot.add(mesh)
     geometries.push(merged)
+    entries.push({
+      mesh,
+      center: merged.boundingSphere.center.clone(),
+      radius: merged.boundingSphere.radius,
+    })
 
     group.meshes.forEach((source) => {
       source.removeFromParent()
@@ -102,6 +111,22 @@ export function batchStaticMeshes(root, {
     root: batchRoot,
     sourceMeshCount,
     batchCount: geometries.length,
+    updateVisibility(playerPosition, active = true) {
+      batchRoot.visible = active
+      if (!active || activationDistance === INFINITE_CELL || !playerPosition) return
+
+      root.updateWorldMatrix(true, false)
+      localPlayerPosition.copy(playerPosition)
+      root.worldToLocal(localPlayerPosition)
+      for (const entry of entries) {
+        const threshold = activationDistance
+          + entry.radius
+          + (entry.mesh.visible ? activationHysteresis : 0)
+        const dx = localPlayerPosition.x - entry.center.x
+        const dz = localPlayerPosition.z - entry.center.z
+        entry.mesh.visible = dx * dx + dz * dz <= threshold * threshold
+      }
+    },
     dispose() {
       geometries.forEach((geometry) => geometry.dispose())
       batchRoot.removeFromParent()

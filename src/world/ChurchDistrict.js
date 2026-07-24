@@ -14,6 +14,7 @@ import { HoanKiemCoverageDistrict } from './districts/HoanKiemCoverageDistrict.j
 import { HoanKiemGroundExpansion } from './HoanKiemGroundExpansion.js'
 import { HoanKiemPedestrianDistrict } from './HoanKiemPedestrianDistrict.js'
 import { HoanKiemUrbanEdgeDistrict } from './HoanKiemUrbanEdgeDistrict.js'
+import { HoanKiemPhotoCompositions } from './HoanKiemPhotoCompositions.js'
 import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
 import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
@@ -24,6 +25,18 @@ import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
+const DISTRICT_VISIBILITY_HYSTERESIS = 10
+
+function setDistanceVisibility(group, playerPosition, centerX, centerZ, radius) {
+  const initialized = group.userData.distanceVisibilityInitialized === true
+  const threshold = radius + (
+    initialized && group.visible ? DISTRICT_VISIBILITY_HYSTERESIS : 0
+  )
+  const dx = playerPosition.x - centerX
+  const dz = playerPosition.z - centerZ
+  group.visible = dx * dx + dz * dz <= threshold * threshold
+  group.userData.distanceVisibilityInitialized = true
+}
 
 export function getOutdoorGroundHeight(position) {
   const { x, z } = position
@@ -98,7 +111,13 @@ export class ChurchDistrict {
       kit: this.kit,
       parent: this.outdoor,
       colliders: outdoorColliders,
-      existingLandmarks: { nhaThoLon: this.church.group },
+      existingLandmarks: {
+        nhaThoLon: this.church.group,
+        hoGuom: this.hoanKiemDistrict.group,
+        denNgocSon: this.ngocSonBranch.group,
+        cauTheHuc: this.ngocSonBranch.group,
+        phoCo: this.oldQuarterConnector.group,
+      },
     })
     this.hoanKiemGroundExpansion = new HoanKiemGroundExpansion({
       kit: this.kit,
@@ -115,6 +134,11 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
       shopManager: this.shops,
+    })
+    this.hoanKiemPhotoCompositions = new HoanKiemPhotoCompositions({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
     })
     this.baDinhDistrict = new BaDinhDistrict({
       kit: this.kit,
@@ -161,14 +185,16 @@ export class ChurchDistrict {
         })
       : null
 
+    this.coverageStaticBatch = batchStaticMeshes(this.hoanKiemCoverageDistrict.group, {
+      cellSize: 60,
+      activationDistance: 104,
+      name: 'Hoàn Kiếm coverage · mesh tĩnh theo ô',
+    })
     this.staticBatches = [
       batchStaticMeshes(this.church.group, {
         name: 'Nhà thờ · mesh tĩnh đã gộp',
       }),
-      batchStaticMeshes(this.hoanKiemCoverageDistrict.group, {
-        cellSize: 60,
-        name: 'Hoàn Kiếm coverage · mesh tĩnh theo ô',
-      }),
+      this.coverageStaticBatch,
       batchStaticMeshes(this.oldQuarterConnector.group, {
         cellSize: 36,
         name: 'Phố nối · mesh tĩnh theo ô',
@@ -199,9 +225,23 @@ export class ChurchDistrict {
           name: `${entry.name} · mesh tĩnh theo ô`,
         })
       )),
+      ...[...this.hoanKiemPhotoCompositions.clusterGroups.values()].map((entry) => (
+        batchStaticMeshes(entry.group, {
+          cellSize: 42,
+          name: `${entry.name} · mesh tĩnh theo ô`,
+        })
+      )),
       ...this.streetBuildingGroups.map((group, index) => batchStaticMeshes(group, {
         name: `Nhà phố ${index + 1} · mesh tĩnh đã gộp`,
       })),
+      ...this.shops.shops.flatMap((shop, index) => [
+        batchStaticMeshes(shop.openGroup, {
+          name: `Shop ${index + 1} · trạng thái mở đã gộp`,
+        }),
+        batchStaticMeshes(shop.closedGroup, {
+          name: `Shop ${index + 1} · trạng thái đóng đã gộp`,
+        }),
+      ]),
     ]
 
     this.districts = Object.freeze({
@@ -393,6 +433,7 @@ export class ChurchDistrict {
         expansion: countMeshes(this.hoanKiemGroundExpansion.group),
         pedestrian: countMeshes(this.hoanKiemPedestrianDistrict.group),
         urbanEdge: countMeshes(this.hoanKiemUrbanEdgeDistrict.group),
+        photoCompositions: countMeshes(this.hoanKiemPhotoCompositions.group),
         interior: countMeshes(this.interior.group),
       },
     }
@@ -778,17 +819,23 @@ export class ChurchDistrict {
   #updateDistrictVisibility() {
     if (!this.playerPosition) return
     this.#updatePracticalLightVisibility()
-    if (this.activeAreaName !== 'outdoor') return
-    const { x, z } = this.playerPosition
-    this.church.group.visible = x < 37
-    this.props.group.visible = x < 51
+    const outdoorActive = this.activeAreaName === 'outdoor'
+    this.hoanKiemCoverageDistrict.updateVisibility(this.playerPosition, outdoorActive)
+    this.coverageStaticBatch.updateVisibility(this.playerPosition, outdoorActive)
+    if (!outdoorActive) return
+    setDistanceVisibility(this.church.group, this.playerPosition, 0, -35, 60)
+    setDistanceVisibility(this.props.group, this.playerPosition, 0, 0, 54)
     this.streetBuildingGroups?.forEach((group) => {
-      group.visible = x < 64 && Math.abs(x - group.userData.centerX) < 46
+      setDistanceVisibility(group, this.playerPosition, group.userData.centerX, 25.5, 52)
     })
-    this.oldQuarterConnector.group.visible = x > 24 && x < 106
-    this.hoanKiemDistrict.group.visible = x > 52.5
-    this.ngocSonBranch.group.visible = x > 60 || z > 28
+    setDistanceVisibility(this.oldQuarterConnector.group, this.playerPosition, 48, 13, 85)
+    setDistanceVisibility(this.hoanKiemDistrict.group, this.playerPosition, 103, 5, 60)
+    setDistanceVisibility(this.ngocSonBranch.group, this.playerPosition, 119, 48, 66)
     this.hoanKiemUrbanEdgeDistrict.updateVisibility(
+      this.playerPosition,
+      this.activeAreaName === 'outdoor',
+    )
+    this.hoanKiemPhotoCompositions.updateVisibility(
       this.playerPosition,
       this.activeAreaName === 'outdoor',
     )
@@ -810,7 +857,12 @@ export class ChurchDistrict {
       const effectiveDistance = light.distance > 0
         ? light.distance + 6
         : light.isSpotLight ? 54 : 38
-      light.visible = dx * dx + dz * dz <= effectiveDistance * effectiveDistance
+      const landmarkDistance = (
+        light.name === 'Ánh sáng Tháp Rùa'
+        || light.name === 'Ánh sáng Đền Ngọc Sơn'
+      ) ? 82 : effectiveDistance
+      light.visible = light.intensity > 0.01
+        && dx * dx + dz * dz <= landmarkDistance * landmarkDistance
     }
   }
 
@@ -830,6 +882,7 @@ export class ChurchDistrict {
     disposeSharedNpcResources()
     disposeSharedSpecialNpcResources()
     this.props.dispose()
+    this.hoanKiemPhotoCompositions.dispose()
     this.hoanKiemUrbanEdgeDistrict.dispose()
     this.hoanKiemPedestrianDistrict.dispose()
     this.hoanKiemGroundExpansion.dispose()

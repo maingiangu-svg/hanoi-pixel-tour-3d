@@ -14,6 +14,33 @@ import {
 } from '../world/map/hoanKiemUrbanEdgeLayout.js'
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+const HOAN_KIEM_LANDMARK_WORLD_FOOTPRINTS = Object.freeze({
+  nhaThoLon: Object.freeze({
+    x: 0, z: -47, width: 26, depth: 66, interactionPoint: Object.freeze([0, 2.5]),
+  }),
+  hoGuom: Object.freeze({
+    x: 115.5, z: 0, width: 79, depth: 164, interactionPoint: Object.freeze([68, -3]),
+  }),
+  denNgocSon: Object.freeze({
+    x: 119,
+    z: 53.6,
+    width: 11,
+    depth: 12,
+    interactionPoint: Object.freeze([119, 48.5]),
+    labelPoint: Object.freeze([140, 57]),
+  }),
+  cauTheHuc: Object.freeze({
+    x: 119,
+    z: 39.35,
+    width: 3.8,
+    depth: 11.8,
+    interactionPoint: Object.freeze([119, 39]),
+    labelPoint: Object.freeze([139, 34]),
+  }),
+  phoCo: Object.freeze({
+    x: 252, z: -4, width: 84, depth: 256, interactionPoint: Object.freeze([238, -96]),
+  }),
+})
 
 export function createMapViewModel(mapId) {
   const definition = MAP_REGISTRY[mapId]
@@ -35,7 +62,7 @@ export function createMapViewModel(mapId) {
     walkZones: data.walkZones ?? [],
     buildings: data.buildings ?? [],
     shops: [...(data.shops ?? []), ...(data.vehicleShops ?? [])],
-    landmarks: data.landmarks ?? [],
+    landmarks: expansion?.landmarks ?? data.landmarks ?? [],
     exits: data.exits ?? [],
     parkingSpots: data.parkingSpots ?? [],
     fixtures: data.interiorFixtures ?? [],
@@ -296,8 +323,8 @@ export class MapOverlay {
 
   #appendLandmark(entry, mapWidth) {
     this.#appendRect(entry, `map-landmark-zone map-landmark-zone--${entry.kind}`)
-    const x = entry.x + entry.width / 2
-    const y = entry.y + entry.height / 2
+    const x = entry.mapLabelPoint?.x ?? entry.x + entry.width / 2
+    const y = entry.mapLabelPoint?.y ?? entry.y + entry.height / 2
     const label = this.#svg('text', {
       class: 'map-landmark-label',
       x,
@@ -397,6 +424,21 @@ function createHoanKiemExpansionViewModel() {
         kind: building.sign ? 'shopHouse' : 'tubeHouse',
       }))
     )),
+    landmarks: MAP_REGISTRY.hoanKiem.data.landmarks.map((landmark) => {
+      const footprint = HOAN_KIEM_LANDMARK_WORLD_FOOTPRINTS[landmark.sourceId]
+      if (!footprint) return landmark
+      const interactionPoint = worldPointToSourcePoint(...footprint.interactionPoint)
+      return {
+        ...worldRectToSourceRect({ ...landmark, ...footprint }),
+        interactionPoint: {
+          ...landmark.interactionPoint,
+          ...interactionPoint,
+        },
+        mapLabelPoint: footprint.labelPoint
+          ? worldPointToSourcePoint(...footprint.labelPoint)
+          : null,
+      }
+    }),
   }
 }
 
@@ -423,4 +465,8 @@ function worldPolygonToSource(points) {
     const source = mapCoordinates.worldToSource('hoanKiem', { x, z })
     return [source.x, source.y]
   })
+}
+
+function worldPointToSourcePoint(x, z) {
+  return mapCoordinates.worldToSource('hoanKiem', { x, z })
 }

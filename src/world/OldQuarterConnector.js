@@ -130,7 +130,7 @@ export class OldQuarterConnector {
       size: [w + 0.3, 0.3, d + 0.3],
       position: [x, h + 0.04, z],
       material: 'stoneDark',
-      castShadow: true,
+      castShadow: false,
     })
 
     const facade = this.#facadeTransform({ x, z, w, d, side })
@@ -156,7 +156,7 @@ export class OldQuarterConnector {
           facade.z + (facade.horizontal ? facade.outwardZ * 0.32 : 0),
         ],
         material: 'stoneDark',
-        castShadow: true,
+        castShadow: false,
       })
     }
     if (sign) {
