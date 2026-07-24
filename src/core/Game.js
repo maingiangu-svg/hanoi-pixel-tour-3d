@@ -15,6 +15,9 @@ import { GameClockUI } from '../ui/GameClockUI.js'
 import { MapOverlay, getMapHotkeyAction } from '../ui/MapOverlay.js'
 import { GameClock } from '../time/GameClock.js'
 import { DayNightCycle } from '../lighting/DayNightCycle.js'
+import { PhotoCapture } from '../photo/PhotoCapture.js'
+import { PhotoMode } from '../photo/PhotoMode.js'
+import { PhotoModeUI } from '../ui/PhotoModeUI.js'
 import {
   MAP_INSPECTION_TARGETS,
   createMapInspectionTarget,
@@ -97,6 +100,7 @@ export class Game {
         !this.mapUi.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
+        && !this.photoMode?.isActive()
         && (
           this.player.isMotorbikeMounted
           || this.world.activeAreaName !== 'interior'
@@ -109,6 +113,31 @@ export class Game {
       clock: this.clock,
       lighting: this.world.getLightingContext(),
       area: this.world.activeAreaName,
+    })
+    this.photoUi = new PhotoModeUI(this.ui.shell)
+    this.photoCapture = new PhotoCapture({
+      renderer: this.renderer,
+      camera: this.player.camera,
+      clock: this.clock,
+      world: this.world,
+      dayNight: this.dayNight,
+    })
+    this.photoMode = new PhotoMode({
+      camera: this.player.camera,
+      input: this.input,
+      capture: this.photoCapture,
+      photoUi: this.photoUi,
+      gameUi: this.ui,
+      eventTarget: window,
+      wheelTarget: this.renderer.instance.domElement,
+      isPointerLocked: () => this.player.controls.isLocked,
+      canOpen: () => (
+        this.player.controls.isLocked
+        && !this.player.isMotorbikeMounted
+        && !this.mapUi.isOpen
+        && !this.dialogue.isActive()
+        && !this.interactions.transitioning
+      ),
     })
     this.debug = import.meta.env.DEV
       ? new DebugPanel(
@@ -134,6 +163,7 @@ export class Game {
       this.ui.setLocked(true)
     }
     this.handleUnlock = () => {
+      this.photoMode.close({ resumeInput: false })
       this.input.setEnabled(false)
       this.ui.setLocked(false)
     }
@@ -159,6 +189,7 @@ export class Game {
     const dayNightStartedAt = this.profiler?.begin() ?? 0
     this.dayNight.update(this.world.activeAreaName)
     this.profiler?.end('dayNight', dayNightStartedAt)
+    this.photoMode.update(deltaTime)
     if (this.mapUi.isOpen) {
       this.player.camera.getWorldDirection(this.mapDirection)
       this.mapUi.updatePosition(
@@ -184,6 +215,7 @@ export class Game {
   }
 
   handleMapKeyDown(event) {
+    if (this.photoMode.isActive()) return
     const action = getMapHotkeyAction(event, this.mapUi.isOpen)
     if (!action) return
     if (action === 'open') {
@@ -437,6 +469,8 @@ export class Game {
     this.dialogue.dispose()
     this.interactions.dispose()
     this.motorcycleMode.dispose()
+    this.photoMode.dispose()
+    this.photoUi.dispose()
     this.player.dispose()
     this.dialogueUi.dispose()
     this.mapUi.dispose()

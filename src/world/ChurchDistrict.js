@@ -452,7 +452,11 @@ export class ChurchDistrict {
       'waterReflection',
       'shopInterior',
       'shopGlass',
-    ].map((name) => this.kit.material(name))
+    ].map((role) => ({
+      material: this.kit.material(role),
+      role,
+    }))
+    const asRole = (lights, role) => lights.map((light) => ({ light, role }))
     const outdoorContext = (pointLights, spotLights = []) => ({
       ambient: this.outdoorLighting.ambient,
       hemisphere: this.outdoorLighting.hemisphere,
@@ -466,23 +470,23 @@ export class ChurchDistrict {
     const contexts = {
       outdoor: outdoorContext(
         [
-          ...this.props.streetLights,
-          ...this.props.cafeLights,
-          ...this.streetBuildingLights,
-          ...this.oldQuarterConnector.lights,
+          ...asRole(this.props.streetLights, 'street'),
+          ...asRole(this.props.cafeLights, 'shop'),
+          ...asRole(this.streetBuildingLights, 'shop'),
+          ...asRole(this.oldQuarterConnector.lights, 'street'),
           ...this.hoanKiemDistrict.lights,
           ...this.ngocSonBranch.lights,
-          ...this.hoanKiemCoverageDistrict.lights,
-          ...this.shops.lights,
+          ...asRole(this.hoanKiemCoverageDistrict.lights, 'street'),
+          ...asRole(this.shops.lights, 'shop'),
         ],
-        this.church.facadeLights,
+        asRole(this.church.facadeLights, 'church'),
       ),
-      baDinh: outdoorContext(this.baDinhDistrict.lights),
-      longBien: outdoorContext(this.longBienDistrict.lights),
+      baDinh: outdoorContext(asRole(this.baDinhDistrict.lights, 'street')),
+      longBien: outdoorContext(asRole(this.longBienDistrict.lights, 'street')),
       interior: {
         ambient: this.interior.lighting.ambient,
-        pointLights: this.interior.lighting.pendantLights,
-        spotLights: [this.interior.lighting.altarLight],
+        pointLights: asRole(this.interior.lighting.pendantLights, 'interior'),
+        spotLights: asRole([this.interior.lighting.altarLight], 'interior'),
         emissiveMaterials,
       },
     }

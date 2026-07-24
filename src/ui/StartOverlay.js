@@ -13,6 +13,7 @@ export class StartOverlay {
               <span><kbd>Chuột</kbd> quan sát</span>
               <span><kbd>Shift</kbd> chạy</span>
               <span><kbd>Space</kbd> nhảy</span>
+              <span><kbd>C</kbd> máy ảnh</span>
               <span><kbd>2</kbd> xe máy / đi bộ</span>
               <span><kbd>E</kbd> tương tác</span>
               <span><kbd>M</kbd> bản đồ</span>

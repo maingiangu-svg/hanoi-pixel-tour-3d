@@ -88,7 +88,7 @@ test('dawn transition interpolates without replacing scene atmosphere objects', 
   scene.fog = new THREE.Fog(0x000000, 1, 2)
   const originalBackground = scene.background
   const originalFog = scene.fog
-  const clock = { minutes: 5.625 * 60 }
+  const clock = { minutes: 5.375 * 60 }
   const outdoor = createLightSet()
   const cycle = new DayNightCycle({
     scene,
@@ -96,13 +96,14 @@ test('dawn transition interpolates without replacing scene atmosphere objects', 
     lighting: { outdoor: outdoor.context },
   })
 
-  closeTo(outdoor.directional.intensity, (0.42 + 1.1) / 2)
-  closeTo(outdoor.point.intensity, 10 * ((1 + 0.15) / 2))
+  closeTo(outdoor.directional.intensity, (0.42 + 1.18) / 2)
+  closeTo(outdoor.point.intensity, 10 * ((1 + 0.28) / 2))
   assert.equal(scene.background, originalBackground)
   assert.equal(scene.fog, originalFog)
 
-  clock.minutes = 6 * 60
+  clock.minutes = 6.25 * 60
   cycle.update()
+  assert.equal(cycle.getLightingPhase(), 'dawn')
   assert.equal(scene.background, originalBackground)
   assert.equal(scene.fog, originalFog)
 })
@@ -199,4 +200,160 @@ test('directional light orbit remains continuous across dusk and midnight', () =
   clock.minutes = 0.01 * 60
   cycle.update()
   assert.ok(beforeMidnight.distanceTo(outdoor.directional.position) < 0.2)
+})
+
+test('required photo-lighting checkpoints resolve to all six phases', () => {
+  const scene = new THREE.Scene()
+  const clock = { minutes: 0 }
+  const cycle = new DayNightCycle({ scene, clock })
+  const checkpoints = [
+    [5, 30, 'dawn'],
+    [6, 15, 'dawn'],
+    [12, 0, 'day'],
+    [16, 45, 'goldenHour'],
+    [17, 30, 'sunset'],
+    [18, 15, 'blueHour'],
+    [19, 0, 'night'],
+    [22, 0, 'night'],
+  ]
+
+  for (const [hour, minute, expected] of checkpoints) {
+    clock.minutes = hour * 60 + minute
+    cycle.update()
+    assert.equal(cycle.getLightingPhase(), expected, `${hour}:${minute}`)
+  }
+})
+
+test('phase colors and intensities remain continuous at every lighting boundary', () => {
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color()
+  const clock = { minutes: 0 }
+  const outdoor = createLightSet()
+  const cycle = new DayNightCycle({
+    scene,
+    clock,
+    lighting: { outdoor: outdoor.context },
+  })
+  const boundaries = [5.25, 5.5, 6.25, 6.75, 16.25, 16.75, 17.25, 17.5, 18, 18.25, 18.75, 19]
+
+  for (const hour of boundaries) {
+    clock.minutes = (hour - 0.0001) * 60
+    cycle.update()
+    const colorBefore = scene.background.clone()
+    const intensityBefore = outdoor.directional.intensity
+    clock.minutes = (hour + 0.0001) * 60
+    cycle.update()
+    const colorDistance = Math.hypot(
+      colorBefore.r - scene.background.r,
+      colorBefore.g - scene.background.g,
+      colorBefore.b - scene.background.b,
+    )
+    assert.ok(colorDistance < 0.001, `color jump at ${hour}`)
+    assert.ok(
+      Math.abs(intensityBefore - outdoor.directional.intensity) < 0.001,
+      `intensity jump at ${hour}`,
+    )
+  }
+})
+
+test('blue hour and night prioritize landmark lighting without adding lights', () => {
+  const scene = new THREE.Scene()
+  const clock = { minutes: 18.25 * 60 }
+  const street = new THREE.PointLight(0xffffff, 10, 12)
+  const tower = new THREE.PointLight(0xffffff, 10, 12)
+  const church = new THREE.SpotLight(0xffffff, 10, 30)
+  const cycle = new DayNightCycle({
+    scene,
+    clock,
+    lighting: {
+      outdoor: {
+        pointLights: [
+          { light: street, role: 'street' },
+          { light: tower, role: 'tower' },
+        ],
+        spotLights: [{ light: church, role: 'church' }],
+      },
+    },
+  })
+
+  assert.equal(cycle.lighting.outdoor.practicalLights.length, 3)
+  assert.ok(tower.intensity > street.intensity)
+  assert.ok(church.intensity > street.intensity)
+
+  clock.minutes = 22 * 60
+  cycle.update()
+  assert.ok(tower.intensity > street.intensity)
+  assert.ok(church.intensity > tower.intensity)
+})
+
+test('lake reflection and water roughness respond to photographic phases', () => {
+  const scene = new THREE.Scene()
+  const clock = { minutes: 12 * 60 }
+  const reflection = new THREE.MeshStandardMaterial({
+    emissive: 0xffffff,
+    emissiveIntensity: 0.72,
+    transparent: true,
+    opacity: 0.2,
+  })
+  const water = new THREE.MeshStandardMaterial({
+    emissive: 0x111111,
+    emissiveIntensity: 0.18,
+    roughness: 0.36,
+  })
+  const cycle = new DayNightCycle({
+    scene,
+    clock,
+    lighting: {
+      outdoor: {
+        emissiveMaterials: [
+          { material: reflection, role: 'waterReflection' },
+          { material: water, role: 'lakeWater' },
+        ],
+      },
+    },
+  })
+  const dayOpacity = reflection.opacity
+  const dayRoughness = water.roughness
+
+  clock.minutes = 16.75 * 60
+  cycle.update()
+  assert.ok(reflection.opacity > dayOpacity)
+  assert.ok(water.roughness < dayRoughness)
+})
+
+test('photo scoring APIs are normalized, spatial and peak in their intended windows', () => {
+  const scene = new THREE.Scene()
+  const clock = { minutes: 17 * 60 }
+  const practical = new THREE.PointLight(0xffffff, 8, 10)
+  practical.position.set(2, 2, 0)
+  scene.add(practical)
+  const cycle = new DayNightCycle({
+    scene,
+    clock,
+    lighting: {
+      outdoor: {
+        pointLights: [{ light: practical, baseIntensity: 8, role: 'shop' }],
+      },
+    },
+  })
+
+  assert.equal(cycle.getGoldenHourScore(), 1)
+  assert.equal(cycle.getBlueHourScore(), 0)
+  const nearQuality = cycle.getLightQualityAt(new THREE.Vector3(2, 1, 0))
+  const farQuality = cycle.getLightQualityAt(new THREE.Vector3(80, 1, 0))
+  assert.ok(nearQuality >= farQuality)
+  assert.ok(nearQuality >= 0 && nearQuality <= 1)
+
+  const subjectScore = cycle.getSubjectLightingScore(new THREE.Box3(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(4, 4, 1),
+  ))
+  assert.ok(subjectScore >= 0 && subjectScore <= 1)
+
+  clock.minutes = 18.45 * 60
+  cycle.update()
+  assert.equal(cycle.getBlueHourScore(), 1)
+  assert.equal(cycle.getGoldenHourScore(), 0)
+  assert.throws(() => cycle.getLightQualityAt({ x: 0, y: 0 }), TypeError)
+  assert.throws(() => cycle.getSubjectLightingScore({}), TypeError)
 })
