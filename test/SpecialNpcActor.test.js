@@ -4,12 +4,11 @@ import * as THREE from 'three'
 import { SpecialNpcActor } from '../src/npcs/SpecialNpcActor.js'
 import {
   getSpecialNpcProfile,
+  SPECIAL_NPC_CANONICAL_HEIGHT,
   SPECIAL_NPC_PROFILE_NAMES,
 } from '../src/npcs/specialNpcProfiles.js'
 
-const GROUND_TOLERANCE = 0.025
-
-function faceTexture(width = 256, height = 256) {
+function faceTexture(width = 512, height = 512) {
   const texture = new THREE.Texture()
   texture.image = { width, height }
   return texture
@@ -17,393 +16,251 @@ function faceTexture(width = 256, height = 256) {
 
 async function createActor(profile, options = {}) {
   const actor = new SpecialNpcActor({ profile, ...options })
-  await actor.readyPromise
+  const faceLoaded = await actor.readyPromise
   actor.group.updateMatrixWorld(true)
-  return actor
+  return { actor, faceLoaded }
 }
 
-function boundsOf(object) {
-  object.updateWorldMatrix(true, true)
-  return new THREE.Box3().setFromObject(object)
-}
-
-function visibleMeshes(root) {
-  const meshes = []
+function meshNames(root, prefix) {
+  const names = []
   root.traverse((object) => {
-    if (!object.isMesh) return
-    let visible = object.visible
-    for (let parent = object.parent; parent; parent = parent.parent) {
-      visible &&= parent.visible
-    }
-    if (visible) meshes.push(object)
+    if (object.isMesh && object.name.startsWith(prefix)) names.push(object.name)
   })
-  return meshes
+  return names
 }
 
-function triangleCount(meshes) {
-  return meshes.reduce((total, mesh) => {
-    const geometry = mesh.geometry
-    const indexCount = geometry.index?.count ?? geometry.attributes.position.count
-    return total + indexCount / 3
-  }, 0)
-}
-
-function assertProceduralHead(actor) {
-  assert.equal(actor.headRoot?.name, 'Special.HeadRoot')
-  assert.equal(actor.headMesh?.name, 'Special.HeadMesh')
-  assert.equal(actor.headMesh?.isMesh, true)
-  assert.ok(actor.faceDetails?.isGroup)
-  assert.ok(actor.hairGroup?.isGroup)
-  assert.ok(actor.glassesGroup?.isGroup)
-  assert.equal(actor.group.getObjectByName('Special.FaceCard'), undefined)
-
-  actor.headRoot.traverse((object) => {
-    assert.notEqual(object.isSprite, true, `${object.name || 'head child'} must not be a Sprite`)
-    if (object.isMesh) {
-      assert.notEqual(
-        object.geometry?.type,
-        'PlaneGeometry',
-        `${object.name || 'head mesh'} must not use a face plane`,
-      )
-    }
-  })
-}
-
-function assertGroundedAndProportional(actor) {
-  const actorBounds = boundsOf(actor.visual)
-  const height = actorBounds.max.y - actorBounds.min.y
-  assert.ok(
-    Math.abs(actorBounds.min.y - actor.position.y) <= GROUND_TOLERANCE,
-    `${actor.profile.id} feet are not grounded`,
-  )
-  assert.ok(
-    Math.abs(height - actor.profile.height) <= 0.035,
-    `${actor.profile.id} visual height must match its profile`,
-  )
-
-  const headBounds = boundsOf(actor.headMesh)
-  const headRatio = (headBounds.max.y - headBounds.min.y) / height
-  assert.ok(
-    headRatio >= 0.2295 && headRatio <= 0.28,
-    `${actor.profile.id} head proportion ${headRatio.toFixed(3)} is outside the rounded 23-28% range`,
-  )
-}
-
-function headLocalBounds(actor, object) {
-  object.geometry.computeBoundingBox()
-  actor.headRoot.updateWorldMatrix(true, false)
-  object.updateWorldMatrix(true, false)
-  const relativeMatrix = actor.headRoot.matrixWorld
-    .clone()
-    .invert()
-    .multiply(object.matrixWorld)
-  return object.geometry.boundingBox.clone().applyMatrix4(relativeMatrix)
-}
-
-test('special profiles are immutable and character B is only 8-12% taller than A', () => {
+test('special NPC profiles remain immutable and basketball is exactly 1.5x canonical height', () => {
   assert.deepEqual(SPECIAL_NPC_PROFILE_NAMES, ['gymmer', 'basketball', 'mo'])
   SPECIAL_NPC_PROFILE_NAMES.forEach((id) => {
     assert.equal(Object.isFrozen(getSpecialNpcProfile(id)), true)
   })
 
-  const characterA = getSpecialNpcProfile('gymmer')
-  const characterB = getSpecialNpcProfile('basketball')
-  const heightRatio = characterB.height / characterA.height
-  assert.ok(heightRatio >= 1.08 && heightRatio <= 1.12)
-  assert.ok(characterA.bodyWidth > getSpecialNpcProfile('mo').bodyWidth)
-  assert.ok(characterA.limbBulk > getSpecialNpcProfile('mo').limbBulk)
+  const gymmer = getSpecialNpcProfile('gymmer')
+  const basketball = getSpecialNpcProfile('basketball')
+  const mo = getSpecialNpcProfile('mo')
+
+  assert.equal(basketball.height, SPECIAL_NPC_CANONICAL_HEIGHT * 1.5)
+  assert.equal(basketball.height / SPECIAL_NPC_CANONICAL_HEIGHT, 1.5)
+  assert.ok(gymmer.bodyWidth > mo.bodyWidth)
+  assert.ok(gymmer.limbBulk > mo.limbBulk)
   assert.throws(() => getSpecialNpcProfile('missing'), RangeError)
 })
 
-test('all special NPCs use a grounded procedural 3D head without a face card', async () => {
-  for (const profile of SPECIAL_NPC_PROFILE_NAMES) {
-    const actor = await createActor(profile)
+test('all three special NPCs paste their supplied face texture onto one transparent plane', async () => {
+  for (const profileId of SPECIAL_NPC_PROFILE_NAMES) {
+    const texture = faceTexture()
+    const requestedProfiles = []
+    const { actor, faceLoaded } = await createActor(profileId, {
+      faceLoader: async (requestedProfileId) => {
+        requestedProfiles.push(requestedProfileId)
+        return texture
+      },
+    })
 
+    assert.equal(faceLoaded, true)
+    assert.deepEqual(requestedProfiles, [profileId])
     assert.equal(actor.ready, true)
     assert.equal(actor.disabled, false)
     assert.equal(actor.group.visible, true)
-    assertProceduralHead(actor)
-    assertGroundedAndProportional(actor)
-    assert.ok(
-      actor.headMesh.material?.isMeshLambertMaterial ||
-        actor.headMesh.material?.isMeshStandardMaterial ||
-        actor.headMesh.material?.isMeshPhongMaterial,
-      `${profile} default head material must react to scene lighting`,
-    )
-    assert.equal(actor.headMesh.material.map ?? null, null)
+
+    assert.equal(actor.faceCard?.name, 'Special.FaceCard')
+    assert.equal(actor.faceCard?.parent, actor.headRig)
+    assert.equal(actor.faceCard?.geometry?.type, 'PlaneGeometry')
+    assert.equal(actor.faceCard?.material?.isMeshBasicMaterial, true)
+    assert.equal(actor.faceCard?.material?.transparent, true)
+    assert.ok(actor.faceCard.material.alphaTest > 0)
+    assert.equal(actor.faceCard.material.toneMapped, false)
+    assert.equal(actor.faceCard.material.map, texture)
+    assert.equal(actor.faceCard.visible, true)
+    assert.equal(actor.fallbackFace.visible, false)
+    assert.equal(actor.headRoot, actor.headRig)
+    assert.equal(actor.headMesh.name, 'Special.HeadBacking')
+
+    const profile = getSpecialNpcProfile(profileId)
+    assert.equal(actor.faceCard.scale.x, profile.faceWidth)
+    assert.equal(actor.faceCard.scale.y, profile.faceHeight)
+    assert.equal(actor.faceCard.position.y, profile.faceCenterY - 1.53)
+    assert.equal(texture.colorSpace, THREE.SRGBColorSpace)
+    assert.equal(texture.generateMipmaps, false)
+    assert.equal(texture.minFilter, THREE.LinearFilter)
+    assert.equal(texture.magFilter, THREE.LinearFilter)
+
+    const faceCards = []
+    actor.group.traverse((object) => {
+      if (object.name === 'Special.FaceCard') faceCards.push(object)
+      assert.notEqual(object.isSprite, true, `${profileId} must not use a face sprite`)
+    })
+    assert.equal(faceCards.length, 1)
 
     actor.dispose()
   }
 })
 
-test('all special NPC shoulder spans stay between 1.35 and 1.6 actual head-mesh widths', async () => {
-  for (const profile of SPECIAL_NPC_PROFILE_NAMES) {
-    const actor = await createActor(profile)
-    const leftShoulder = actor.leftArm.getWorldPosition(new THREE.Vector3())
-    const rightShoulder = actor.rightArm.getWorldPosition(new THREE.Vector3())
-    const shoulderSpan = leftShoulder.distanceTo(rightShoulder)
-    const headBounds = boundsOf(actor.headMesh)
-    const actualHeadWidth = headBounds.max.x - headBounds.min.x
-    const shoulderToHeadRatio = shoulderSpan / actualHeadWidth
+test('missing or failed face textures keep the low-poly fallback face usable', async () => {
+  const cases = [
+    { name: 'no texture', faceLoader: async () => null },
+    { name: 'load failure', faceLoader: async () => { throw new Error('missing') } },
+  ]
 
-    assert.ok(
-      shoulderToHeadRatio >= 1.35 && shoulderToHeadRatio <= 1.6,
-      `${profile} shoulder/head width ratio ${shoulderToHeadRatio.toFixed(3)} is outside 1.35-1.6`,
-    )
-
-    actor.dispose()
-  }
-})
-
-test('procedural face geometry exists only on the front half of each 3D head', async () => {
-  for (const profile of SPECIAL_NPC_PROFILE_NAMES) {
-    const actor = await createActor(profile)
-    const faceMeshes = []
-
-    assert.equal(actor.faceDetails.parent, actor.headRoot)
-    actor.headRoot.traverse((object) => {
-      assert.notEqual(object.isSprite, true, `${profile} head must not contain a Sprite`)
-      if (object.isMesh) {
-        assert.notEqual(
-          object.geometry?.type,
-          'PlaneGeometry',
-          `${profile} head must not contain PlaneGeometry`,
-        )
-      }
-      if (object.isMesh && object.name.startsWith('Special.Face.')) {
-        faceMeshes.push(object)
-      }
+  for (const entry of cases) {
+    const { actor, faceLoaded } = await createActor('mo', {
+      faceLoader: entry.faceLoader,
+      dialogueLines: null,
     })
 
-    assert.ok(faceMeshes.length > 0, `${profile} must contain procedural face meshes`)
-    for (const mesh of faceMeshes) {
-      const bounds = headLocalBounds(actor, mesh)
-      assert.ok(
-        bounds.min.z > 0,
-        `${profile} ${mesh.name} crosses onto the side/back half of the head`,
-      )
-    }
+    assert.equal(faceLoaded, false, entry.name)
+    assert.equal(actor.ready, true, entry.name)
+    assert.equal(actor.group.visible, true, entry.name)
+    assert.equal(actor.faceCard.visible, false, entry.name)
+    assert.equal(actor.faceCard.material.map, null, entry.name)
+    assert.equal(actor.fallbackFace.visible, true, entry.name)
+    assert.ok(actor.group.getObjectByName('Special.FallbackEye.L'), entry.name)
+    assert.ok(actor.group.getObjectByName('Special.FallbackEye.R'), entry.name)
+    assert.ok(actor.group.getObjectByName('Special.FallbackMouth'), entry.name)
+    assert.equal(actor.getInteraction()?.target, actor, entry.name)
 
     actor.dispose()
   }
 })
 
-test('optional wrapped-face mode reuses the same lit head mesh', async () => {
-  const texture = faceTexture()
-  let resolveTexture
-  const pendingTexture = new Promise((resolve) => {
-    resolveTexture = resolve
+test('gymmer restores the shirtless bulky body, six-pack, shorts and fixed flex pose', async () => {
+  const { actor } = await createActor('gymmer', {
+    faceLoader: async () => faceTexture(),
   })
-  const actor = new SpecialNpcActor({
-    profile: 'gymmer',
-    faceMode: 'wrappedTexture',
-    faceLoader: () => pendingTexture,
-  })
-  const headMesh = actor.headMesh
 
-  resolveTexture(texture)
-  await actor.readyPromise
-
-  assert.equal(actor.headMesh, headMesh)
-  assert.equal(actor.headMesh.material.map, texture)
-  assert.equal(actor.headMesh.material.transparent, false)
-  assert.equal(texture.colorSpace, THREE.SRGBColorSpace)
-  assert.ok(actor.headMesh.material.userData.faceProjection.radiusX <= 0.25)
-  const shader = {
-    vertexShader: '#include <common>\n#include <beginnormal_vertex>',
-    fragmentShader: '#include <common>\n#include <map_fragment>',
-  }
-  actor.headMesh.material.onBeforeCompile(shader)
-  assert.match(shader.vertexShader, /vSpecialObjectNormal/)
-  assert.match(shader.fragmentShader, /frontHemisphereMask/)
-  assert.match(shader.fragmentShader, /vSpecialObjectNormal\.z/)
-  assertProceduralHead(actor)
-  actor.dispose()
-})
-
-test('wrapped-face textures larger than 512px fall back to the procedural face', async () => {
-  for (const [width, height] of [[513, 512], [512, 513]]) {
-    const texture = faceTexture(width, height)
-    const actor = new SpecialNpcActor({
-      profile: 'gymmer',
-      faceMode: 'wrappedTexture',
-      faceLoader: async () => texture,
-    })
-    const wrapped = await actor.readyPromise
-
-    assert.equal(wrapped, false)
-    assert.equal(actor.ready, true)
-    assert.equal(actor.headMesh.material.map ?? null, null)
-    assert.equal(actor.faceDetails.visible, true)
-    assertProceduralHead(actor)
-
-    actor.dispose()
-  }
-})
-
-test('character A uses a wine shirt and only raises his arms during the celebration beat', async () => {
-  const actor = await createActor('gymmer')
-
-  assert.equal(
-    actor.torso.material.color.getHex(),
-    getSpecialNpcProfile('gymmer').outfit.top.color,
-  )
-  assert.ok(actor.group.getObjectByName('Special.Face.Teeth'))
-  assert.ok(actor.group.getObjectByName('Special.Glasses.Frame.L'))
-  assert.ok(Math.abs(actor.leftArm.rotation.z) < 0.2)
-  assert.ok(Math.abs(actor.rightArm.rotation.z) < 0.2)
-
-  actor.elapsed = 6.2
-  actor.update(0.01)
-  assert.ok(actor.leftArm.rotation.z < -1.3)
-  assert.ok(actor.rightArm.rotation.z > 1.3)
-  actor.elapsed = 8
-  actor.update(0.01)
-  assert.ok(Math.abs(actor.leftArm.rotation.z) < 0.2)
-  assert.ok(Math.abs(actor.rightArm.rotation.z) < 0.2)
-  assert.ok(actor.colliderRadius > getSpecialNpcProfile('mo').colliderRadius)
+  assert.equal(actor.torso.material, actor.materials.skin)
+  assert.deepEqual(meshNames(actor.group, 'Special.Gym.Chest.').sort(), [
+    'Special.Gym.Chest.L',
+    'Special.Gym.Chest.R',
+  ])
+  assert.deepEqual(meshNames(actor.group, 'Special.Gym.Abs.').sort(), [
+    'Special.Gym.Abs.1',
+    'Special.Gym.Abs.2',
+    'Special.Gym.Abs.3',
+    'Special.Gym.Abs.4',
+    'Special.Gym.Abs.5',
+    'Special.Gym.Abs.6',
+  ])
+  assert.deepEqual(meshNames(actor.group, 'Special.Outfit.Shorts.').sort(), [
+    'Special.Outfit.Shorts.L',
+    'Special.Outfit.Shorts.R',
+  ])
+  assert.ok(actor.leftArm.rotation.z < -1.5)
+  assert.ok(actor.rightArm.rotation.z > 1.5)
+  assert.ok(actor.leftElbow.rotation.z < -1.2)
+  assert.ok(actor.rightElbow.rotation.z > 1.2)
 
   actor.dispose()
 })
 
-test('basketball ball follows a hand anchor and walking can be toggled explicitly', async () => {
-  const actor = await createActor('basketball')
+test('basketball restores the tall dark outfit, Elite backpack, ball and basketball shoes', async () => {
+  const { actor } = await createActor('basketball', {
+    faceLoader: async () => faceTexture(),
+  })
 
-  assert.ok(actor.leftHandAnchor?.isObject3D)
-  assert.ok(actor.rightHandAnchor?.isObject3D)
-  assert.ok(actor.ball?.isObject3D)
-  assert.ok(
-    actor.ball.parent === actor.leftHandAnchor || actor.ball.parent === actor.rightHandAnchor,
-    'basketball must be parented to one of the animated hand anchors',
-  )
+  assert.equal(actor.bodyScale, 1.5)
+  assert.equal(actor.visual.scale.x, 1.5)
+  assert.equal(actor.visual.scale.y, 1.5)
+  assert.equal(actor.visual.scale.z, 1.5)
+  assert.equal(actor.torso.material, actor.materials.black)
   assert.ok(actor.group.getObjectByName('Special.Accessory.Backpack.Elite'))
+  assert.ok(actor.group.getObjectByName('Special.Accessory.Backpack.Body'))
+  assert.ok(actor.group.getObjectByName('Special.Accessory.Backpack.EliteBadge'))
+  assert.ok(actor.group.getObjectByName('Special.Accessory.Backpack.Strap.L'))
+  assert.ok(actor.group.getObjectByName('Special.Accessory.Backpack.Strap.R'))
+  assert.equal(actor.ball?.name, 'Special.Accessory.Ball')
+  assert.ok(actor.group.getObjectByName('Special.Accessory.Ball.Surface'))
+  assert.equal(meshNames(actor.ball, 'Special.Accessory.Ball.Seam.').length, 3)
   assert.ok(actor.group.getObjectByName('Special.ShoeSole.L'))
-
-  assert.equal(typeof actor.setWalking, 'function')
-  actor.setWalking(true)
-  assert.equal(actor.walking, true)
-  actor.update(0.05)
-  actor.setWalking(false)
-  assert.equal(actor.walking, false)
+  assert.ok(actor.group.getObjectByName('Special.ShoeSole.R'))
+  assert.ok(actor.group.getObjectByName('Special.ShoeCuff.L'))
+  assert.ok(actor.group.getObjectByName('Special.ShoeCuff.R'))
 
   actor.dispose()
 })
 
-test('Mơ exposes a real head hierarchy, hair, glasses, camisole and shorts', async () => {
-  const actor = await createActor('mo', {
-    name: 'Mơ visual',
+test('Mơ restores the simple camisole, straps, shorts and long low-poly hair', async () => {
+  const { actor } = await createActor('mo', {
+    faceLoader: async () => faceTexture(),
     dialogueLines: null,
-    dialoguePortrait: true,
   })
 
-  assertProceduralHead(actor)
-  assert.equal(actor.hairGroup.parent, actor.headRoot)
-  assert.equal(actor.glassesGroup.parent, actor.headRoot)
   assert.ok(actor.group.getObjectByName('Special.Outfit.Top'))
   assert.ok(actor.group.getObjectByName('Special.Outfit.Strap.L'))
   assert.ok(actor.group.getObjectByName('Special.Outfit.Strap.R'))
-  assert.ok(actor.group.getObjectByName('Special.Outfit.Shorts.L'))
-  assert.ok(actor.group.getObjectByName('Special.Outfit.Shorts.R'))
+  assert.deepEqual(meshNames(actor.group, 'Special.Outfit.Shorts.').sort(), [
+    'Special.Outfit.Shorts.L',
+    'Special.Outfit.Shorts.R',
+  ])
+  assert.ok(actor.group.getObjectByName('Special.HairLength.L'))
+  assert.ok(actor.group.getObjectByName('Special.HairLength.R'))
+  assert.equal(actor.hips.material, actor.materials.denim)
   assert.equal(actor.getInteraction()?.target, actor)
 
   actor.dispose()
 })
 
-test('glasses use their configured opacity on lit materials', async () => {
-  for (const profileId of SPECIAL_NPC_PROFILE_NAMES) {
-    const actor = await createActor(profileId)
-    const lens = actor.group.getObjectByName('Special.Glasses.Lens.L')
-    const expectedOpacity = getSpecialNpcProfile(profileId).glasses.lensOpacity
+test('setWalking animates Mơ and returns her limbs to the stored idle pose', async () => {
+  const { actor } = await createActor('mo')
+  const idleLeftLegX = actor.basePose.leftLeg.x
+  const idleRightLegX = actor.basePose.rightLeg.x
 
-    assert.ok(lens.material.isMeshStandardMaterial)
-    assert.equal(lens.material.toneMapped, true)
-    assert.equal(lens.material.transparent, expectedOpacity < 1)
-    assert.equal(lens.material.opacity, expectedOpacity)
-
-    actor.dispose()
-  }
-})
-
-test('outfit variants swap prewarmed shared materials without rebuilding geometry', async () => {
-  const actor = await createActor('mo')
-  const torsoGeometry = actor.torso.geometry
-  const idleTorsoMaterial = actor.torso.material
-  const materialCount = actor.resources.materials.size
-
-  assert.equal(actor.setOutfit('church'), true)
-  assert.equal(actor.currentOutfit, 'church')
-  assert.equal(actor.torso.geometry, torsoGeometry)
-  assert.notEqual(actor.torso.material, idleTorsoMaterial)
-  assert.equal(
-    actor.torso.material.color.getHex(),
-    getSpecialNpcProfile('mo').outfitVariants.church.top.color,
-  )
-  assert.equal(actor.resources.materials.size, materialCount)
-
-  assert.equal(actor.setOutfit('idle'), true)
-  assert.equal(actor.torso.material, idleTorsoMaterial)
-  assert.equal(actor.resources.materials.size, materialCount)
-  assert.equal(actor.setOutfit('missing'), false)
-
-  actor.dispose()
-})
-
-test('walking uses knee and shoe lift pivots, then restores their idle offsets', async () => {
-  const actor = await createActor('mo')
-  const walk = actor.profile.animation.walk
-  const idleKneeX = actor.basePose.rightKnee.x
-  const idleShoeY = actor.basePose.rightShoePosition.y
-
-  actor.elapsed = Math.PI / (2 * walk.strideSpeed)
+  assert.equal(typeof actor.setWalking, 'function')
+  actor.elapsed = Math.PI / (2 * 6.4)
   actor.setWalking(true)
-  actor.update(0)
-  assert.ok(actor.rightKnee.rotation.x > idleKneeX + walk.kneeBend * 0.9)
-  assert.ok(actor.rightShoe.position.y > idleShoeY + walk.footLift * 0.9)
+  actor.update(0.05)
+  assert.equal(actor.walking, true)
+  assert.ok(Math.abs(actor.leftLeg.rotation.x - idleLeftLegX) > 0.01)
+  assert.ok(Math.abs(actor.rightLeg.rotation.x - idleRightLegX) > 0.01)
 
   actor.setWalking(false)
-  for (let index = 0; index < 60; index += 1) actor.update(0.05)
-  assert.ok(Math.abs(actor.rightKnee.rotation.x - idleKneeX) < 0.001)
-  assert.ok(Math.abs(actor.rightShoe.position.y - idleShoeY) < 0.001)
+  assert.equal(actor.walking, false)
+  for (let index = 0; index < 30; index += 1) actor.update(0.05)
+  assert.ok(Math.abs(actor.leftLeg.rotation.x - idleLeftLegX) < 0.001)
+  assert.ok(Math.abs(actor.rightLeg.rotation.x - idleRightLegX) < 0.001)
 
   actor.dispose()
 })
 
-test('special actors share primitive geometry and stay inside a render budget', async () => {
-  const first = await createActor('gymmer')
-  const second = await createActor('gymmer')
-
-  assert.equal(first.headMesh.geometry, second.headMesh.geometry)
-  let sharedHeadDisposed = 0
-  second.headMesh.geometry.addEventListener('dispose', () => {
-    sharedHeadDisposed += 1
+test('setDebugLookFrozen prevents automatic player-facing rotation', async () => {
+  const { actor } = await createActor('gymmer', {
+    position: [0, 0, 0],
+    rotationY: 0,
   })
+  const playerPosition = new THREE.Vector3(2, 0, 0)
 
-  for (const actor of [first, second]) {
-    const meshes = visibleMeshes(actor.group)
-    assert.ok(meshes.length <= 60, `${actor.profile.id} exceeds the 60-mesh budget`)
-    assert.ok(triangleCount(meshes) <= 2500, `${actor.profile.id} exceeds the triangle budget`)
-    assert.ok(
-      meshes.filter((mesh) => mesh.castShadow).length <= 8,
-      `${actor.profile.id} has too many shadow-casting submeshes`,
-    )
-  }
+  assert.equal(typeof actor.setDebugLookFrozen, 'function')
+  actor.setDebugLookFrozen(true)
+  actor.update(0.05, playerPosition)
+  assert.equal(actor.debugLookFrozen, true)
+  assert.equal(actor.group.rotation.y, 0)
 
-  first.dispose()
-  assert.equal(sharedHeadDisposed, 0, 'disposing one actor must not invalidate shared geometry')
-  assert.equal(second.headMesh.geometry, first.headMesh.geometry)
-  second.dispose()
+  actor.setDebugLookFrozen(false)
+  actor.update(0.05, playerPosition)
+  assert.equal(actor.debugLookFrozen, false)
+  assert.ok(actor.group.rotation.y > 0)
+
+  actor.dispose()
 })
 
-test('activation, dialogue and disposal keep the dynamic collider consistent', async () => {
+test('activation, dialogue, positioning and disposal keep the dynamic collider consistent', async () => {
+  const parent = new THREE.Group()
   const colliders = []
-  const actor = await createActor('gymmer', {
+  const { actor } = await createActor('gymmer', {
+    parent,
     position: [2, 0, -3],
     colliders,
     dialogueLines: [{ text: 'Xin chào.' }],
   })
 
+  assert.equal(parent.children.includes(actor.group), true)
   assert.equal(colliders.length, 1)
+  assert.equal(actor.collider.dynamic, true)
   assert.equal(actor.collider.disabled, false)
+  assert.equal(actor.collider.minX, 2 - actor.colliderRadius)
+  assert.equal(actor.collider.maxX, 2 + actor.colliderRadius)
+  assert.equal(actor.collider.minZ, -3 - actor.colliderDepth)
+  assert.equal(actor.collider.maxZ, -3 + actor.colliderDepth)
   assert.equal(actor.getInteraction()?.target, actor)
   assert.deepEqual(actor.getFocusPoint(new THREE.Vector3()).toArray(), [
     2,
@@ -411,18 +268,36 @@ test('activation, dialogue and disposal keep the dynamic collider consistent', a
     -3,
   ])
 
+  actor.setPosition(4, 0, 5)
+  assert.equal(actor.collider.minX, 4 - actor.colliderRadius)
+  assert.equal(actor.collider.maxZ, 5 + actor.colliderDepth)
+
   actor.setDialogueActive(true)
   assert.equal(actor.group.visible, false)
   assert.equal(actor.collider.disabled, true)
+  assert.equal(actor.getInteraction(), null)
   actor.setDialogueActive(false)
   assert.equal(actor.group.visible, true)
+  assert.equal(actor.collider.disabled, false)
+
   actor.deactivate()
+  assert.equal(actor.group.visible, false)
   assert.equal(actor.collider.disabled, true)
   assert.ok(actor.collider.minX > 100000)
   actor.activate()
+  assert.equal(actor.group.visible, true)
   assert.equal(actor.collider.disabled, false)
+
+  actor.setDisabled(true)
+  assert.equal(actor.group.visible, false)
+  assert.equal(actor.collider.disabled, true)
+  actor.setDisabled(false)
+  assert.equal(actor.group.visible, true)
 
   actor.dispose()
   actor.dispose()
+  assert.equal(actor.disposed, true)
+  assert.equal(actor.ready, false)
   assert.equal(colliders.length, 0)
+  assert.equal(parent.children.includes(actor.group), false)
 })

@@ -27,11 +27,13 @@ export class ChurchCrowd {
     interiorColliders,
     playerPosition,
     mo,
+    assetLoader = null,
   }) {
     this.kit = kit
     this.outdoor = outdoor
     this.interior = interior
     this.mo = mo
+    this.assetLoader = assetLoader
     this.playerPosition = playerPosition
     this.manager = new NpcManager(playerPosition)
     this.outdoorGroup = new THREE.Group()
@@ -138,6 +140,7 @@ export class ChurchCrowd {
       parent: this.outdoorGroup,
       colliders: this.outdoorColliders,
       active: false,
+      faceLoader: (profileId) => this.assetLoader?.getSpecialFace(profileId),
       ...options,
     })
     return this.manager.add(actor, { area: 'outdoor', role, active: false })

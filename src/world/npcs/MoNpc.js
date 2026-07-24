@@ -17,7 +17,13 @@ const OUTDOOR_POSITIONS = Object.freeze({
 const INTERIOR_POSITION = [4.75, 0.02, -11.5]
 
 export class MoNpc {
-  constructor({ parent, camera, colliders, position = [6.2, 0.07, -4.2] }) {
+  constructor({
+    parent,
+    camera,
+    colliders,
+    assetLoader = null,
+    position = [6.2, 0.07, -4.2],
+  }) {
     this.camera = camera
     this.outdoorColliders = colliders
     this.interiorColliders = null
@@ -48,6 +54,7 @@ export class MoNpc {
       position: [0, 0, 0],
       colliders: null,
       active: true,
+      faceLoader: (profileId) => assetLoader?.getSpecialFace(profileId),
       dialogueLines: null,
       castShadow: true,
     })
@@ -55,6 +62,7 @@ export class MoNpc {
     this.visual = this.actor.visual
     this.headRoot = this.actor.headRoot
     this.headMesh = this.actor.headMesh
+    this.faceCard = this.actor.faceCard
     this.contactShadow = this.actor.contactShadow
 
     this.elapsed = 0
@@ -160,9 +168,9 @@ export class MoNpc {
       }
     }
 
-    // SpecialNpcActor accepts a Vector3 directly. Passing the existing camera
-    // position avoids allocating a short-lived context object every frame.
-    this.actor.update(clampedDelta, this.camera.position)
+    // The outer Mơ group already handles travel/player-facing yaw. The inner
+    // legacy body only needs its breathing and walking animation here.
+    this.actor.update(clampedDelta)
     this.pose.rotation.z = 0
   }
 

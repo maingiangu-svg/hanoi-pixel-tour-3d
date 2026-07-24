@@ -1,11 +1,11 @@
 import * as THREE from 'three'
-import { getSpecialNpcProfile } from './specialNpcProfiles.js'
-import { createLowPolyHead } from './SpecialNpcHead.js'
-import { getSharedSpecialNpcResources } from './SpecialNpcResources.js'
+import {
+  getSpecialNpcProfile,
+  SPECIAL_NPC_CANONICAL_HEIGHT,
+} from './specialNpcProfiles.js'
 
 const PARKED_COLLIDER_POSITION = 1000000
 const EMPTY_DIALOGUE = Object.freeze([])
-const TEMP_LOCAL_TARGET = new THREE.Vector3()
 
 function readPosition(position) {
   if (Array.isArray(position)) {
@@ -14,31 +14,25 @@ function readPosition(position) {
   return { x: position?.x ?? 0, y: position?.y ?? 0, z: position?.z ?? 0 }
 }
 
-function easeInOut(value) {
-  const clamped = THREE.MathUtils.clamp(value, 0, 1)
-  return clamped * clamped * (3 - 2 * clamped)
-}
-
-function celebrationAmount(elapsed, celebration) {
-  if (!celebration?.enabled) return 0
-  const cycleLength = celebration.cycleLength ?? 9
-  const raiseStart = celebration.raiseStart ?? 5.4
-  const holdStart = celebration.holdStart ?? 6
-  const lowerStart = celebration.lowerStart ?? 6.9
-  const end = celebration.end ?? 7.6
-  const cycle = elapsed % cycleLength
-  if (cycle < raiseStart || cycle > end) return 0
-  if (cycle < holdStart) {
-    return easeInOut((cycle - raiseStart) / Math.max(0.001, holdStart - raiseStart))
-  }
-  if (cycle < lowerStart) return 1
-  return 1 - easeInOut((cycle - lowerStart) / Math.max(0.001, end - lowerStart))
+function createContactShadow() {
+  const geometry = new THREE.PlaneGeometry(0.92, 0.58)
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x101311,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const shadow = new THREE.Mesh(geometry, material)
+  shadow.name = 'Special.ContactShadow'
+  shadow.rotation.x = -Math.PI / 2
+  shadow.position.y = 0.008
+  return shadow
 }
 
 export class SpecialNpcActor {
   constructor({
     parent = null,
-    resources = getSharedSpecialNpcResources(),
     profile = 'gymmer',
     name = null,
     position = [0, 0, 0],
@@ -46,7 +40,6 @@ export class SpecialNpcActor {
     colliders = null,
     active = true,
     faceLoader = null,
-    faceMode = null,
     dialogueLines = EMPTY_DIALOGUE,
     dialogueName = null,
     dialoguePortrait = false,
@@ -56,7 +49,6 @@ export class SpecialNpcActor {
     castShadow = true,
     animationOffset = 0,
   } = {}) {
-    this.resources = resources
     this.profile = typeof profile === 'string' ? getSpecialNpcProfile(profile) : profile
     this.name = name ?? this.profile.label
     this.dialogueLines = dialogueLines
@@ -76,11 +68,8 @@ export class SpecialNpcActor {
     this.debugLookFrozen = false
     this.elapsed = Number.isFinite(animationOffset) ? animationOffset : 0
     this.currentOutfit = this.profile.defaultOutfit
-    this.outfitPresets = this.#createOutfitPresets()
-    this.outfitMaterialSets = this.#createOutfitMaterialSets()
-    this.outfitMeshes = new Map()
-    this.activeOutfit = this.outfitPresets[this.currentOutfit]
-    this.faceMode = faceMode ?? (faceLoader ? 'wrappedTexture' : this.profile.face.mode)
+    this.ownedGeometries = new Set()
+    this.ownedMaterials = new Set()
 
     this.group = new THREE.Group()
     this.group.name = `NPC ${this.name}`
@@ -93,30 +82,27 @@ export class SpecialNpcActor {
     this.visual = new THREE.Group()
     this.visual.name = 'Special.Visual'
     this.group.add(this.visual)
+    this.bodyScale = this.profile.height / SPECIAL_NPC_CANONICAL_HEIGHT
+    this.visual.scale.setScalar(this.bodyScale)
 
-    this.body = new THREE.Group()
-    this.body.name = 'Special.Body'
-    this.visual.add(this.body)
+    this.contactShadow = createContactShadow()
+    this.ownedGeometries.add(this.contactShadow.geometry)
+    this.ownedMaterials.add(this.contactShadow.material)
+    this.group.add(this.contactShadow)
+
+    this.materials = this.#createMaterials()
     this.#buildBody()
-    this.#applyBasePose()
-    this.#normalizeVisualHeight()
-
-    this.contactShadow = this.#mesh({
-      name: 'Special.ContactShadow',
-      geometry: 'contactShadow',
-      color: 0x101311,
-      parent: this.group,
-      position: [0, 0.008, 0],
-      scale: [this.colliderRadius * 2.5, this.colliderDepth * 2.5, 1],
-      rotation: [-Math.PI / 2, 0, 0],
-      castShadow: false,
-      materialOptions: {
-        transparent: true,
-        opacity: 0.24,
-        depthWrite: false,
-        roughness: 1,
-      },
-    })
+    this.#applyProfilePose()
+    this.basePose = {
+      leftArm: this.leftArm.rotation.clone(),
+      rightArm: this.rightArm.rotation.clone(),
+      leftElbow: this.leftElbow.rotation.clone(),
+      rightElbow: this.rightElbow.rotation.clone(),
+      leftLeg: this.leftLeg.rotation.clone(),
+      rightLeg: this.rightLeg.rotation.clone(),
+    }
+    this.headRoot = this.headRig
+    this.faceDetails = this.fallbackFace
 
     this.collider = {
       name: `NPC ${this.name}`,
@@ -137,47 +123,112 @@ export class SpecialNpcActor {
     }
 
     this.group.visible = false
-    this.readyPromise = this.#initializeFace(faceLoader)
+    this.readyPromise = this.#loadFace(faceLoader)
   }
 
-  async #initializeFace(faceLoader) {
+  async #loadFace(faceLoader) {
     let texture = null
-    if (this.faceMode === 'wrappedTexture' && faceLoader) {
-      try {
-        texture = await faceLoader(this.profile.id)
-      } catch {
-        texture = null
-      }
+    try {
+      texture = faceLoader ? await faceLoader(this.profile.id) : null
+    } catch {
+      texture = null
     }
     if (this.disposed) return false
-    const wrapped = texture ? this.headVisual.setFaceTexture(texture) : false
-    if (!wrapped) this.headVisual.setFaceTexture(null)
+
+    if (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.generateMipmaps = false
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.needsUpdate = true
+      this.faceCard.material.map = texture
+      this.faceCard.material.needsUpdate = true
+      this.faceCard.visible = true
+      this.fallbackFace.visible = false
+    }
+
+    // A procedural face remains available if the texture cannot load, so an
+    // NPC never disappears because of a recoverable image failure.
     this.ready = true
     this.#refreshState()
-    return wrapped
+    return Boolean(texture)
   }
 
-  #material(color, options = {}) {
-    return this.resources.getMaterial(color, options)
+  #createMaterials() {
+    const lambert = (color, options = {}) => {
+      const material = new THREE.MeshLambertMaterial({
+        color,
+        flatShading: true,
+        ...options,
+      })
+      this.ownedMaterials.add(material)
+      return material
+    }
+    const basic = (color, options = {}) => {
+      const material = new THREE.MeshBasicMaterial({ color, ...options })
+      this.ownedMaterials.add(material)
+      return material
+    }
+
+    return {
+      skin: lambert(this.profile.skinColor),
+      skinShade: lambert(new THREE.Color(this.profile.skinColor).multiplyScalar(0.82)),
+      hair: lambert(this.profile.hairColor),
+      black: lambert(0x17191c),
+      charcoal: lambert(0x292d33),
+      denim: lambert(0x536777),
+      cream: lambert(0xece5d8),
+      white: lambert(0xf2eee5),
+      orange: lambert(0xc9692c),
+      red: lambert(0xa83c36),
+      backpack: lambert(0x465348),
+      metal: lambert(0x74797d),
+      face: basic(0xffffff, {
+        transparent: true,
+        alphaTest: 0.1,
+        depthWrite: true,
+        side: THREE.FrontSide,
+        toneMapped: false,
+      }),
+    }
   }
 
-  #mesh({
-    name,
-    geometry = 'box',
-    color,
-    material = null,
-    parent,
+  #geometry(type) {
+    let geometry
+    switch (type) {
+      case 'cylinder':
+        geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false)
+        break
+      case 'tapered':
+        geometry = new THREE.CylinderGeometry(0.4, 0.5, 1, 8, 1, false)
+        break
+      case 'sphere':
+        geometry = new THREE.IcosahedronGeometry(0.5, 1)
+        break
+      case 'head':
+        geometry = new THREE.DodecahedronGeometry(0.5, 1)
+        break
+      case 'plane':
+        geometry = new THREE.PlaneGeometry(1, 1)
+        break
+      case 'torus':
+        geometry = new THREE.TorusGeometry(0.5, 0.018, 4, 16)
+        break
+      default:
+        geometry = new THREE.BoxGeometry(1, 1, 1)
+        break
+    }
+    this.ownedGeometries.add(geometry)
+    return geometry
+  }
+
+  #mesh(name, geometryType, material, parent, {
     position = [0, 0, 0],
     scale = [1, 1, 1],
     rotation = [0, 0, 0],
-    castShadow = false,
-    materialOptions = {},
-    outfitSlot = null,
-  }) {
-    const mesh = new THREE.Mesh(
-      this.resources.getGeometry(geometry),
-      material ?? this.#material(color, materialOptions),
-    )
+    castShadow = this.castShadow,
+  } = {}) {
+    const mesh = new THREE.Mesh(this.#geometry(geometryType), material)
     mesh.name = name
     mesh.position.set(...position)
     mesh.scale.set(...scale)
@@ -185,443 +236,332 @@ export class SpecialNpcActor {
     mesh.castShadow = castShadow
     mesh.receiveShadow = false
     parent.add(mesh)
-    if (outfitSlot) {
-      if (!this.outfitMeshes.has(outfitSlot)) this.outfitMeshes.set(outfitSlot, [])
-      this.outfitMeshes.get(outfitSlot).push(mesh)
-    }
     return mesh
   }
 
-  #createOutfitPresets() {
-    const presets = {
-      [this.profile.defaultOutfit]: this.profile.outfit,
-      ...(this.profile.outfitVariants ?? {}),
-    }
-    for (const alias of this.profile.outfit.aliases ?? []) {
-      if (!presets[alias]) presets[alias] = this.profile.outfit
-    }
-    return Object.freeze(presets)
-  }
-
-  #createOutfitMaterialSets() {
-    const materialSets = new Map()
-    for (const [outfitId, outfit] of Object.entries(this.outfitPresets)) {
-      const top = outfit.top
-      const bottom = outfit.bottom
-      const shoes = outfit.shoes
-      materialSets.set(outfitId, Object.freeze({
-        top: this.#material(top.color),
-        topShade: this.#material(top.shadeColor ?? top.color),
-        topStrap: this.#material(top.strapColor ?? top.color),
-        topLayer: this.#material(top.layers?.[1]?.color ?? top.color),
-        bottom: this.#material(bottom.color),
-        bottomShade: this.#material(bottom.shadeColor ?? bottom.color),
-        shoes: this.#material(shoes.color),
-        shoeSole: this.#material(shoes.soleColor ?? shoes.color),
-        shoePanel: this.#material(shoes.panelColor ?? shoes.color),
-        shoeAccent: this.#material(shoes.accentColor ?? shoes.panelColor ?? shoes.color),
-      }))
-    }
-    return materialSets
-  }
-
-  #outfitMaterial(slot) {
-    return this.outfitMaterialSets.get(this.currentOutfit)?.[slot]
-  }
-
   #buildBody() {
-    const { proportions, head } = this.profile
-    const outfit = this.activeOutfit
-    const sleeveless = outfit.top.sleeveless ?? outfit.top.style === 'camisole'
-    const bareLegs = outfit.bottom.bareLegs ?? outfit.bottom.length === 'short'
-    const skinColor = head.skinColor
+    this.body = new THREE.Group()
+    this.body.name = 'Special.Body'
+    this.visual.add(this.body)
 
-    this.torso = this.#mesh({
-      name: 'Special.Torso',
-      geometry: 'tapered',
-      material: this.#outfitMaterial('top'),
-      parent: this.body,
+    const isGymmer = this.profile.id === 'gymmer'
+    const isBasketball = this.profile.id === 'basketball'
+    const isMo = this.profile.id === 'mo'
+    const width = this.profile.bodyWidth
+    const bulk = this.profile.limbBulk
+
+    const torsoMaterial = isBasketball ? this.materials.black : this.materials.skin
+    this.torso = this.#mesh('Special.Torso', 'tapered', torsoMaterial, this.body, {
       position: [0, 1.04, 0],
-      scale: [
-        0.52 * proportions.torsoWidth * proportions.bodyWidth,
-        0.62,
-        0.32 * proportions.torsoDepth,
-      ],
-      castShadow: this.castShadow,
-      outfitSlot: 'top',
+      scale: [0.52 * width, 0.62, 0.32 * Math.max(0.92, width * 0.84)],
     })
-    this.hips = this.#mesh({
-      name: 'Special.Hips',
-      material: this.#outfitMaterial('bottom'),
-      parent: this.body,
-      position: [0, 0.71, 0],
-      scale: [0.39 * proportions.hipWidth, 0.18, 0.27],
-      outfitSlot: 'bottom',
-    })
-    this.neck = this.#mesh({
-      name: 'Special.Neck',
-      geometry: 'cylinder',
-      color: skinColor,
-      parent: this.body,
-      position: head.neck.position,
-      scale: head.neck.scale,
+    this.hips = this.#mesh(
+      'Special.Hips',
+      'box',
+      isMo ? this.materials.denim : this.materials.black,
+      this.body,
+      {
+        position: [0, 0.71, 0],
+        scale: [0.4 * width, 0.18, 0.27 * Math.max(0.92, width)],
+      },
+    )
+    this.#mesh('Special.Neck', 'cylinder', this.materials.skin, this.body, {
+      position: [0, 1.35, 0],
+      scale: [0.17, 0.14, 0.17],
     })
 
-    this.headVisual = createLowPolyHead({
-      profile: this.profile,
-      resources: this.resources,
-      parent: this.body,
-      castShadow: this.castShadow,
+    this.headRig = new THREE.Group()
+    this.headRig.name = 'Special.HeadRig'
+    this.headRig.position.set(0, 1.53, 0)
+    this.body.add(this.headRig)
+    this.headMesh = this.#mesh('Special.HeadBacking', 'head', this.materials.skin, this.headRig, {
+      scale: [0.37, 0.43, 0.34],
     })
-    this.headRoot = this.headVisual.headRoot
-    this.headRig = this.headRoot
-    this.headMesh = this.headVisual.headMesh
-    this.faceDetails = this.headVisual.faceDetails
-    this.hairGroup = this.headVisual.hairGroup
-    this.glassesGroup = this.headVisual.glassesGroup
+    this.#mesh('Special.HairBacking', 'sphere', this.materials.hair, this.headRig, {
+      position: [0, 0.095, -0.06],
+      scale: [isMo ? 0.43 : 0.4, 0.24, 0.38],
+    })
+    if (isMo) {
+      for (const side of [-1, 1]) {
+        this.#mesh(
+          `Special.HairLength.${side < 0 ? 'L' : 'R'}`,
+          'sphere',
+          this.materials.hair,
+          this.body,
+          {
+            position: [side * 0.27, 1.25, -0.07],
+            scale: [0.22, 0.65, 0.2],
+          },
+        )
+      }
+    }
 
-    const shoulderHalf = 0.265 * Math.max(1, proportions.shoulderWidth)
-    this.leftArm = this.#buildArm('L', -1, shoulderHalf, sleeveless)
-    this.rightArm = this.#buildArm('R', 1, shoulderHalf, sleeveless)
-    this.leftLeg = this.#buildLeg('L', -1, bareLegs)
-    this.rightLeg = this.#buildLeg('R', 1, bareLegs)
+    this.faceCard = this.#mesh(
+      'Special.FaceCard',
+      'plane',
+      this.materials.face,
+      this.headRig,
+      {
+        position: [0, this.profile.faceCenterY - 1.53, 0.205],
+        scale: [this.profile.faceWidth, this.profile.faceHeight, 1],
+        castShadow: false,
+      },
+    )
+    this.faceCard.renderOrder = 3
+    this.faceCard.visible = false
+    this.#buildFallbackFace()
 
-    this.#buildOutfitDetails()
-    this.#buildAccessories()
+    this.leftArm = this.#buildArm('L', -1, bulk, isBasketball)
+    this.rightArm = this.#buildArm('R', 1, bulk, isBasketball)
+    this.leftLeg = this.#buildLeg('L', -1, width, bulk, isBasketball)
+    this.rightLeg = this.#buildLeg('R', 1, width, bulk, isBasketball)
+
+    if (isGymmer) this.#buildGymmerDetails()
+    if (isBasketball) this.#buildBasketballDetails()
+    if (isMo) this.#buildMoOutfit()
   }
 
-  #buildArm(label, side, shoulderHalf, sleeveless) {
-    const { proportions, head } = this.profile
-    const upperLength = 0.28 * proportions.armLength
-    const lowerLength = 0.27 * proportions.armLength
+  #buildFallbackFace() {
+    this.fallbackFace = new THREE.Group()
+    this.fallbackFace.name = 'Special.FallbackFace'
+    this.headRig.add(this.fallbackFace)
+    for (const side of [-1, 1]) {
+      this.#mesh(
+        `Special.FallbackEye.${side < 0 ? 'L' : 'R'}`,
+        'sphere',
+        this.materials.black,
+        this.fallbackFace,
+        {
+          position: [side * 0.105, 0.025, 0.18],
+          scale: [0.038, 0.05, 0.025],
+          castShadow: false,
+        },
+      )
+    }
+    this.#mesh('Special.FallbackMouth', 'box', this.materials.red, this.fallbackFace, {
+      position: [0, -0.1, 0.19],
+      scale: [0.12, 0.025, 0.018],
+      castShadow: false,
+    })
+  }
+
+  #buildArm(label, side, bulk, shirtSleeve) {
     const shoulder = new THREE.Group()
     shoulder.name = `Special.Shoulder.${label}`
-    shoulder.position.set(side * shoulderHalf, 1.25, 0)
+    shoulder.position.set(side * 0.31 * this.profile.bodyWidth, 1.25, 0)
     this.body.add(shoulder)
 
-    this.#mesh({
-      name: `Special.UpperArm.${label}`,
-      geometry: 'cylinder',
-      material: sleeveless
-        ? this.#material(head.skinColor)
-        : this.#outfitMaterial('top'),
-      parent: shoulder,
-      position: [0, -upperLength * 0.5, 0],
-      scale: [0.145 * proportions.limbBulk, upperLength, 0.145 * proportions.limbBulk],
-      outfitSlot: sleeveless ? null : 'top',
+    const upperMaterial = shirtSleeve ? this.materials.black : this.materials.skin
+    this.#mesh(`Special.UpperArm.${label}`, 'cylinder', upperMaterial, shoulder, {
+      position: [0, -0.15, 0],
+      scale: [0.15 * bulk, 0.3, 0.15 * bulk],
     })
 
     const elbow = new THREE.Group()
     elbow.name = `Special.Elbow.${label}`
-    elbow.position.y = -upperLength
+    elbow.position.y = -0.3
     shoulder.add(elbow)
-    this.#mesh({
-      name: `Special.Forearm.${label}`,
-      geometry: 'cylinder',
-      color: head.skinColor,
-      parent: elbow,
-      position: [0, -lowerLength * 0.5, 0],
-      scale: [0.125 * proportions.limbBulk, lowerLength, 0.125 * proportions.limbBulk],
+    this.#mesh(`Special.Forearm.${label}`, 'cylinder', this.materials.skin, elbow, {
+      position: [0, -0.145, 0],
+      scale: [0.13 * bulk, 0.29, 0.13 * bulk],
+    })
+    this.#mesh(`Special.Hand.${label}`, 'sphere', this.materials.skin, elbow, {
+      position: [0, -0.31, 0],
+      scale: [0.15 * bulk, 0.16 * bulk, 0.14 * bulk],
     })
 
-    const handAnchor = new THREE.Group()
-    handAnchor.name = `Special.HandAnchor.${label}`
-    handAnchor.position.y = -lowerLength
-    elbow.add(handAnchor)
-    this.#mesh({
-      name: `Special.Hand.${label}`,
-      geometry: 'sphereLow',
-      color: head.skinColor,
-      parent: handAnchor,
-      scale: [
-        0.145 * proportions.handScale,
-        0.155 * proportions.handScale,
-        0.135 * proportions.handScale,
-      ],
-    })
-
-    if (side < 0) {
-      this.leftElbow = elbow
-      this.leftHandAnchor = handAnchor
-    } else {
-      this.rightElbow = elbow
-      this.rightHandAnchor = handAnchor
-    }
+    if (side < 0) this.leftElbow = elbow
+    else this.rightElbow = elbow
     return shoulder
   }
 
-  #buildLeg(label, side, bareLeg) {
-    const { proportions, head } = this.profile
-    const outfit = this.activeOutfit
-    const upperLength = 0.32 * proportions.legLength
-    const lowerLength = 0.3 * proportions.legLength
+  #buildLeg(label, side, width, bulk, longPants) {
     const hip = new THREE.Group()
     hip.name = `Special.Hip.${label}`
-    hip.position.set(side * 0.145 * proportions.hipWidth, 0.7, 0)
+    hip.position.set(side * 0.15 * Math.max(0.9, width), 0.7, 0)
     this.body.add(hip)
-
-    this.#mesh({
-      name: `Special.Thigh.${label}`,
-      geometry: 'cylinder',
-      material: bareLeg
-        ? this.#material(head.skinColor)
-        : this.#outfitMaterial('bottom'),
-      parent: hip,
-      position: [0, -upperLength * 0.5, 0],
-      scale: [0.185 * proportions.limbBulk, upperLength, 0.19 * proportions.limbBulk],
-      outfitSlot: bareLeg ? null : 'bottom',
+    const legMaterial = longPants ? this.materials.black : this.materials.skin
+    this.#mesh(`Special.Thigh.${label}`, 'cylinder', legMaterial, hip, {
+      position: [0, -0.16, 0],
+      scale: [0.19 * bulk, 0.32, 0.2 * bulk],
     })
+
     const knee = new THREE.Group()
     knee.name = `Special.Knee.${label}`
-    knee.position.y = -upperLength
+    knee.position.y = -0.32
     hip.add(knee)
-    this.#mesh({
-      name: `Special.Shin.${label}`,
-      geometry: 'cylinder',
-      material: bareLeg
-        ? this.#material(head.skinColor)
-        : this.#outfitMaterial('bottom'),
-      parent: knee,
-      position: [0, -lowerLength * 0.5, 0],
-      scale: [0.16 * proportions.limbBulk, lowerLength, 0.17 * proportions.limbBulk],
-      outfitSlot: bareLeg ? null : 'bottom',
+    this.#mesh(`Special.Shin.${label}`, 'cylinder', legMaterial, knee, {
+      position: [0, -0.15, 0],
+      scale: [0.165 * bulk, 0.3, 0.175 * bulk],
     })
 
     const shoe = new THREE.Group()
     shoe.name = `Special.Shoe.${label}`
-    shoe.position.set(0, -lowerLength - 0.02, 0.055)
+    shoe.position.set(0, -0.32, 0.055)
     knee.add(shoe)
-    const footScale = proportions.footScale
-    this.#mesh({
-      name: `Special.ShoeBase.${label}`,
-      material: this.#outfitMaterial('shoes'),
-      parent: shoe,
-      scale: [0.19 * footScale[0], 0.09 * footScale[1], 0.31 * footScale[2]],
-      outfitSlot: 'shoes',
+    const shoeMaterial = longPants ? this.materials.white : this.materials.charcoal
+    this.#mesh(`Special.ShoeBase.${label}`, 'box', shoeMaterial, shoe, {
+      scale: [0.2 * bulk, 0.11, 0.34],
     })
-    this.#mesh({
-      name: `Special.ShoeSole.${label}`,
-      material: this.#outfitMaterial('shoeSole'),
-      parent: shoe,
-      position: [0, -0.055, 0.012],
-      scale: [0.2 * footScale[0], 0.035, 0.33 * footScale[2]],
-      outfitSlot: 'shoeSole',
-    })
-    if (outfit.shoes.style === 'basketballHighTop') {
-      this.#mesh({
-        name: `Special.ShoeCuff.${label}`,
-        material: this.#outfitMaterial('shoePanel'),
-        parent: shoe,
-        position: [0, 0.095, -0.04],
-        scale: [0.19 * footScale[0], 0.16, 0.22],
-        outfitSlot: 'shoePanel',
+    if (longPants) {
+      this.#mesh(`Special.ShoeSole.${label}`, 'box', this.materials.orange, shoe, {
+        position: [0, -0.07, 0.015],
+        scale: [0.215 * bulk, 0.045, 0.37],
       })
-      this.#mesh({
-        name: `Special.ShoePanel.${label}`,
-        material: this.#outfitMaterial('shoeAccent'),
-        parent: shoe,
-        position: [side * 0.095, 0.015, 0.1],
-        scale: [0.018, 0.075, 0.15],
-        outfitSlot: 'shoeAccent',
+      this.#mesh(`Special.ShoeCuff.${label}`, 'box', this.materials.black, shoe, {
+        position: [0, 0.105, -0.045],
+        scale: [0.205 * bulk, 0.18, 0.24],
+      })
+      this.#mesh(`Special.ShoePanel.${label}`, 'box', this.materials.red, shoe, {
+        position: [side * 0.11, 0.015, 0.11],
+        scale: [0.02, 0.08, 0.16],
       })
     }
 
-    if (side < 0) {
-      this.leftKnee = knee
-      this.leftShoe = shoe
-    } else {
-      this.rightKnee = knee
-      this.rightShoe = shoe
-    }
+    if (side < 0) this.leftKnee = knee
+    else this.rightKnee = knee
     return hip
   }
 
-  #buildOutfitDetails() {
-    const { proportions } = this.profile
-    const outfit = this.activeOutfit
-    if (outfit.top.style === 'shortSleeveShirt') {
-      this.#mesh({
-        name: 'Special.Outfit.Collar.L',
-        material: this.#outfitMaterial('topShade'),
-        parent: this.body,
-        position: [-0.085, 1.29, 0.26],
-        scale: [0.16, 0.055, 0.025],
-        rotation: [0, 0, -0.32],
-        outfitSlot: 'topShade',
-      })
-      this.#mesh({
-        name: 'Special.Outfit.Collar.R',
-        material: this.#outfitMaterial('topShade'),
-        parent: this.body,
-        position: [0.085, 1.29, 0.26],
-        scale: [0.16, 0.055, 0.025],
-        rotation: [0, 0, 0.32],
-        outfitSlot: 'topShade',
-      })
+  #buildGymmerDetails() {
+    for (const side of [-1, 1]) {
+      this.#mesh(
+        `Special.Gym.Chest.${side < 0 ? 'L' : 'R'}`,
+        'sphere',
+        this.materials.skinShade,
+        this.body,
+        {
+          position: [side * 0.19, 1.19, 0.2],
+          scale: [0.25, 0.17, 0.12],
+        },
+      )
     }
-
-    if (outfit.top.style === 'layeredAthletic') {
+    const rows = [1.055, 0.93, 0.805]
+    let index = 1
+    for (const y of rows) {
       for (const side of [-1, 1]) {
-        this.#mesh({
-          name: `Special.Outfit.Layer.${side < 0 ? 'L' : 'R'}`,
-          material: this.#outfitMaterial('topLayer'),
-          parent: this.body,
-          position: [side * 0.135, 1.04, 0.29],
-          scale: [0.23, 0.54, 0.028],
-          rotation: [0, 0, side * -0.04],
-          outfitSlot: 'topLayer',
+        this.#mesh(`Special.Gym.Abs.${index}`, 'sphere', this.materials.skinShade, this.body, {
+          position: [side * 0.105, y, 0.205],
+          scale: [0.115, 0.075, 0.055],
         })
+        index += 1
       }
     }
-
-    if (outfit.top.style === 'camisole') {
-      this.#mesh({
-        name: 'Special.Outfit.Top',
-        geometry: 'tapered',
-        material: this.#outfitMaterial('top'),
-        parent: this.body,
-        position: [0, 1.05, 0.018],
-        scale: [0.43 * proportions.torsoWidth, 0.38, 0.29],
-        outfitSlot: 'top',
-      })
-      for (const side of [-1, 1]) {
-        this.#mesh({
-          name: `Special.Outfit.Strap.${side < 0 ? 'L' : 'R'}`,
-          material: this.#outfitMaterial('topStrap'),
-          parent: this.body,
-          position: [side * 0.155, 1.29, 0.155],
-          scale: [outfit.top.strapWidth, 0.26, 0.04],
-          rotation: [0, 0, side * -0.055],
-          outfitSlot: 'topStrap',
-        })
-      }
-    }
-
-    if (outfit.bottom.style === 'shorts') {
-      for (const side of [-1, 1]) {
-        this.#mesh({
-          name: `Special.Outfit.Shorts.${side < 0 ? 'L' : 'R'}`,
-          material: this.#outfitMaterial('bottom'),
-          parent: this.body,
-          position: [side * 0.142, 0.625, 0],
-          scale: [0.265, 0.235, 0.285],
-          outfitSlot: 'bottom',
-        })
-      }
+    for (const side of [-1, 1]) {
+      this.#mesh(
+        `Special.Outfit.Shorts.${side < 0 ? 'L' : 'R'}`,
+        'box',
+        this.materials.black,
+        this.body,
+        {
+          position: [side * 0.17, 0.63, 0],
+          scale: [0.33, 0.26, 0.35],
+        },
+      )
     }
   }
 
-  #buildAccessories() {
-    const { backpack, ball } = this.profile.accessories ?? {}
-    if (backpack?.enabled) this.#buildBackpack(backpack)
-    if (ball?.enabled) this.#buildHeldBall(ball)
-  }
-
-  #buildBackpack(backpack) {
-    this.backpack = new THREE.Group()
-    this.backpack.name = 'Special.Accessory.Backpack.Elite'
-    this.backpack.position.set(...backpack.position)
-    this.body.add(this.backpack)
-    this.#mesh({
-      name: 'Special.Accessory.Backpack.Body',
-      color: backpack.color,
-      parent: this.backpack,
-      position: [0, 0, -0.07],
-      scale: backpack.scale,
-      castShadow: this.castShadow,
+  #buildBasketballDetails() {
+    const backpack = new THREE.Group()
+    backpack.name = 'Special.Accessory.Backpack.Elite'
+    backpack.position.set(0, 1.03, -0.25)
+    this.body.add(backpack)
+    this.#mesh('Special.Accessory.Backpack.Body', 'box', this.materials.backpack, backpack, {
+      position: [0, 0, -0.08],
+      scale: [0.43, 0.55, 0.24],
     })
-    this.#mesh({
-      name: 'Special.Accessory.Backpack.Flap',
-      color: backpack.trimColor,
-      parent: this.backpack,
-      position: [0, 0.19, 0.055],
-      scale: [0.4, 0.14, 0.035],
+    this.#mesh('Special.Accessory.Backpack.Flap', 'box', this.materials.charcoal, backpack, {
+      position: [0, 0.2, 0.055],
+      scale: [0.4, 0.15, 0.04],
     })
-    this.#mesh({
-      name: 'Special.Accessory.Backpack.EliteBadge',
-      color: backpack.badgeColor,
-      parent: this.backpack,
-      position: [0, 0.04, -0.205],
-      scale: [0.21, 0.13, 0.022],
+    this.#mesh('Special.Accessory.Backpack.EliteBadge', 'box', this.materials.red, backpack, {
+      position: [0, 0.05, -0.205],
+      scale: [0.22, 0.13, 0.025],
     })
     for (const side of [-1, 1]) {
-      this.#mesh({
-        name: `Special.Accessory.Backpack.Strap.${side < 0 ? 'L' : 'R'}`,
-        color: backpack.strapColor,
-        parent: this.body,
-        position: [side * 0.19, 1.1, 0.325],
-        scale: [0.06, 0.46, 0.025],
-        rotation: [0, 0, side * -0.08],
-      })
+      this.#mesh(
+        `Special.Accessory.Backpack.Strap.${side < 0 ? 'L' : 'R'}`,
+        'box',
+        this.materials.backpack,
+        this.body,
+        {
+          position: [side * 0.2, 1.1, 0.19],
+          scale: [0.07, 0.48, 0.045],
+          rotation: [0, 0, side * -0.09],
+        },
+      )
     }
-  }
 
-  #buildHeldBall(ball) {
-    const handAnchor = ball.heldBy === 'leftHand'
-      ? this.leftHandAnchor
-      : this.rightHandAnchor
     this.ball = new THREE.Group()
     this.ball.name = 'Special.Accessory.Ball'
-    this.ball.position.set(...ball.handOffset)
-    handAnchor.add(this.ball)
-    this.#mesh({
-      name: 'Special.Accessory.Ball.Surface',
-      geometry: ball.geometry ?? 'sphere',
-      color: ball.color,
-      parent: this.ball,
-      scale: [ball.radius, ball.radius, ball.radius],
-      castShadow: this.castShadow,
+    this.ball.position.set(0.39, 0.88, 0.34)
+    this.body.add(this.ball)
+    this.#mesh('Special.Accessory.Ball.Surface', 'sphere', this.materials.orange, this.ball, {
+      scale: [0.23, 0.23, 0.23],
     })
     const seamRotations = [[0, 0, 0], [Math.PI / 2, 0, 0], [0, Math.PI / 2, 0]]
-    seamRotations.slice(0, ball.seamCount ?? seamRotations.length).forEach((rotation, index) => {
-      this.#mesh({
-        name: `Special.Accessory.Ball.Seam.${index + 1}`,
-        geometry: 'torus',
-        color: ball.seamColor,
-        parent: this.ball,
-        scale: [ball.radius, ball.radius, ball.radius],
+    seamRotations.forEach((rotation, index) => {
+      this.#mesh(`Special.Accessory.Ball.Seam.${index + 1}`, 'torus', this.materials.black, this.ball, {
+        scale: [0.465, 0.465, 0.465],
         rotation,
+        castShadow: false,
       })
     })
   }
 
-  #normalizeVisualHeight() {
-    this.visual.updateMatrixWorld(true)
-    const bounds = new THREE.Box3().setFromObject(this.visual)
-    const unscaledHeight = Math.max(0.001, bounds.max.y - bounds.min.y)
-    this.visual.position.y -= bounds.min.y
-    this.bodyScale = this.profile.height / unscaledHeight
-    this.visual.scale.setScalar(this.bodyScale)
+  #buildMoOutfit() {
+    this.#mesh('Special.Outfit.Top', 'tapered', this.materials.cream, this.body, {
+      position: [0, 1.055, 0.02],
+      scale: [0.43, 0.38, 0.29],
+    })
+    for (const side of [-1, 1]) {
+      this.#mesh(
+        `Special.Outfit.Strap.${side < 0 ? 'L' : 'R'}`,
+        'box',
+        this.materials.cream,
+        this.body,
+        {
+          position: [side * 0.16, 1.29, 0.155],
+          scale: [0.045, 0.27, 0.045],
+          rotation: [0, 0, side * -0.06],
+        },
+      )
+      this.#mesh(
+        `Special.Outfit.Shorts.${side < 0 ? 'L' : 'R'}`,
+        'box',
+        this.materials.denim,
+        this.body,
+        {
+          position: [side * 0.145, 0.62, 0],
+          scale: [0.27, 0.24, 0.29],
+        },
+      )
+    }
   }
 
-  #applyBasePose() {
-    this.leftArm.rotation.set(0, 0, -0.075)
-    this.rightArm.rotation.set(0, 0, 0.075)
-    this.leftElbow.rotation.set(-0.12, 0, 0.08)
-    this.rightElbow.rotation.set(-0.14, 0, -0.08)
-    this.leftLeg.rotation.set(0, 0, 0.02)
-    this.rightLeg.rotation.set(0, 0, -0.02)
-    this.leftKnee.rotation.set(0, 0, 0)
-    this.rightKnee.rotation.set(0, 0, 0)
+  #applyProfilePose() {
+    this.leftArm.rotation.set(0, 0, -0.06)
+    this.rightArm.rotation.set(0, 0, 0.06)
+    this.leftElbow.rotation.set(0, 0, 0)
+    this.rightElbow.rotation.set(0, 0, 0)
 
-    const armPose = this.profile.animation.armPose
-    if (armPose) {
-      this.leftArm.rotation.set(...armPose.leftShoulder)
-      this.rightArm.rotation.set(...armPose.rightShoulder)
-      this.leftElbow.rotation.set(...armPose.leftElbow)
-      this.rightElbow.rotation.set(...armPose.rightElbow)
-    }
-    this.basePose = {
-      leftArm: this.leftArm.rotation.clone(),
-      rightArm: this.rightArm.rotation.clone(),
-      leftElbow: this.leftElbow.rotation.clone(),
-      rightElbow: this.rightElbow.rotation.clone(),
-      leftLeg: this.leftLeg.rotation.clone(),
-      rightLeg: this.rightLeg.rotation.clone(),
-      leftKnee: this.leftKnee.rotation.clone(),
-      rightKnee: this.rightKnee.rotation.clone(),
-      leftShoePosition: this.leftShoe.position.clone(),
-      rightShoePosition: this.rightShoe.position.clone(),
+    if (this.profile.id === 'gymmer') {
+      this.leftArm.rotation.z = -1.9
+      this.rightArm.rotation.z = 1.9
+      this.leftElbow.rotation.z = -1.55
+      this.rightElbow.rotation.z = 1.55
+    } else if (this.profile.id === 'basketball') {
+      this.leftArm.rotation.set(-0.12, 0, -0.05)
+      this.leftElbow.rotation.set(-0.18, 0, 0.08)
+      this.rightArm.rotation.set(-0.62, 0, 0.16)
+      this.rightElbow.rotation.set(-0.78, 0, -0.52)
+    } else if (this.profile.id === 'mo') {
+      this.leftArm.rotation.set(-0.18, 0, -0.06)
+      this.rightArm.rotation.set(-0.18, 0, 0.06)
+      this.leftElbow.rotation.set(-0.68, 0, 0.28)
+      this.rightElbow.rotation.set(-0.68, 0, -0.28)
+      this.leftLeg.rotation.z = 0.035
+      this.rightLeg.rotation.z = -0.035
     }
   }
 
@@ -630,125 +570,54 @@ export class SpecialNpcActor {
     const delta = Math.min(Math.max(deltaTime, 0), 0.05)
     this.elapsed += delta
     const playerPosition = context?.isVector3 ? context : context?.playerPosition
-    this.#animateHead(delta, playerPosition)
-    this.#animateBody()
+    if (playerPosition && !this.debugLookFrozen) {
+      const dx = playerPosition.x - this.position.x
+      const dz = playerPosition.z - this.position.z
+      if (dx * dx + dz * dz < 16) {
+        const targetYaw = Math.atan2(dx, dz)
+        const yawDelta = Math.atan2(
+          Math.sin(targetYaw - this.group.rotation.y),
+          Math.cos(targetYaw - this.group.rotation.y),
+        )
+        this.group.rotation.y += yawDelta * (1 - Math.exp(-2.8 * delta))
+      }
+    }
+
+    const breath = Math.sin(this.elapsed * 1.35) * 0.004
+    this.visual.scale.set(
+      this.bodyScale * (1 + breath * 0.35),
+      this.bodyScale * (1 + breath),
+      this.bodyScale * (1 + breath * 0.35),
+    )
+    this.#updateWalkingPose(delta)
     this.#syncCollider()
   }
 
-  #animateHead(delta, playerPosition) {
-    let targetYaw = 0
-    if (playerPosition && !this.debugLookFrozen) {
-      TEMP_LOCAL_TARGET.copy(playerPosition)
-      this.body.worldToLocal(TEMP_LOCAL_TARGET)
-      const distanceSquared = TEMP_LOCAL_TARGET.x ** 2 + TEMP_LOCAL_TARGET.z ** 2
-      const radius = this.profile.animation.lookAt.radius
-      if (distanceSquared <= radius * radius) {
-        targetYaw = THREE.MathUtils.clamp(
-          Math.atan2(TEMP_LOCAL_TARGET.x, TEMP_LOCAL_TARGET.z),
-          -this.profile.animation.lookAt.maxYaw,
-          this.profile.animation.lookAt.maxYaw,
-        )
-      }
-    }
-    this.headRoot.rotation.y += (
-      targetYaw - this.headRoot.rotation.y
-    ) * (1 - Math.exp(-this.profile.animation.lookAt.turnSpeed * delta))
-    this.headRoot.rotation.z = Math.sin(this.elapsed * 0.63) * 0.012
-  }
-
-  #animateBody() {
-    const breathing = this.profile.animation.breathing
-    const breath = Math.sin(this.elapsed * breathing.speed) * breathing.amplitude
-    this.visual.scale.set(
-      this.bodyScale * (1 + breath * 0.3),
-      this.bodyScale * (1 + breath),
-      this.bodyScale * (1 + breath * 0.3),
-    )
-
-    const celebration = this.profile.animation.celebration
-    if (celebration?.enabled) {
-      const celebrate = celebrationAmount(this.elapsed, celebration)
-      this.leftArm.rotation.z = THREE.MathUtils.lerp(
-        this.basePose.leftArm.z,
-        celebration.leftShoulderZ ?? -1.45,
-        celebrate,
-      )
-      this.rightArm.rotation.z = THREE.MathUtils.lerp(
-        this.basePose.rightArm.z,
-        celebration.rightShoulderZ ?? 1.45,
-        celebrate,
-      )
-      this.leftElbow.rotation.z = THREE.MathUtils.lerp(
-        this.basePose.leftElbow.z,
-        celebration.leftElbowZ ?? -1.05,
-        celebrate,
-      )
-      this.rightElbow.rotation.z = THREE.MathUtils.lerp(
-        this.basePose.rightElbow.z,
-        celebration.rightElbowZ ?? 1.05,
-        celebrate,
-      )
-    }
-
-    const walk = this.profile.animation.walk
-    if (this.walking && walk.enabled) {
-      const cycle = Math.sin(this.elapsed * walk.strideSpeed)
-      const stride = cycle * walk.stride
-      const leftLiftAmount = Math.max(0, -cycle)
-      const rightLiftAmount = Math.max(0, cycle)
-      const footLift = walk.footLift ?? 0
-      const kneeBend = walk.kneeBend ?? 0.28
-      this.leftLeg.rotation.x = stride
-      this.rightLeg.rotation.x = -stride
-      this.leftKnee.rotation.x = this.basePose.leftKnee.x + leftLiftAmount * kneeBend
-      this.rightKnee.rotation.x = this.basePose.rightKnee.x + rightLiftAmount * kneeBend
-      this.leftShoe.position.y = this.basePose.leftShoePosition.y + leftLiftAmount * footLift
-      this.rightShoe.position.y = this.basePose.rightShoePosition.y + rightLiftAmount * footLift
-      this.leftArm.rotation.x = this.basePose.leftArm.x - stride * walk.armSwing
-      this.rightArm.rotation.x = this.basePose.rightArm.x + stride * walk.armSwing
-      return
-    }
+  #updateWalkingPose(delta) {
+    if (this.profile.id !== 'mo') return
+    const blend = 1 - Math.exp(-10 * delta)
+    const stride = this.walking ? Math.sin(this.elapsed * 6.4) * 0.34 : 0
+    const armSwing = this.walking ? Math.sin(this.elapsed * 6.4) * 0.2 : 0
     this.leftLeg.rotation.x = THREE.MathUtils.lerp(
       this.leftLeg.rotation.x,
-      this.basePose.leftLeg.x,
-      0.18,
+      this.basePose.leftLeg.x + stride,
+      blend,
     )
     this.rightLeg.rotation.x = THREE.MathUtils.lerp(
       this.rightLeg.rotation.x,
-      this.basePose.rightLeg.x,
-      0.18,
+      this.basePose.rightLeg.x - stride,
+      blend,
     )
-    this.leftKnee.rotation.x = THREE.MathUtils.lerp(
-      this.leftKnee.rotation.x,
-      this.basePose.leftKnee.x,
-      0.18,
+    this.leftArm.rotation.x = THREE.MathUtils.lerp(
+      this.leftArm.rotation.x,
+      this.basePose.leftArm.x - armSwing,
+      blend,
     )
-    this.rightKnee.rotation.x = THREE.MathUtils.lerp(
-      this.rightKnee.rotation.x,
-      this.basePose.rightKnee.x,
-      0.18,
+    this.rightArm.rotation.x = THREE.MathUtils.lerp(
+      this.rightArm.rotation.x,
+      this.basePose.rightArm.x + armSwing,
+      blend,
     )
-    this.leftShoe.position.y = THREE.MathUtils.lerp(
-      this.leftShoe.position.y,
-      this.basePose.leftShoePosition.y,
-      0.18,
-    )
-    this.rightShoe.position.y = THREE.MathUtils.lerp(
-      this.rightShoe.position.y,
-      this.basePose.rightShoePosition.y,
-      0.18,
-    )
-    this.leftArm.rotation.x = this.basePose.leftArm.x + Math.sin(this.elapsed * 0.8) * 0.012
-    this.rightArm.rotation.x = this.basePose.rightArm.x - Math.sin(this.elapsed * 0.8) * 0.012
-  }
-
-  setWalking(walking) {
-    this.walking = Boolean(walking)
-  }
-
-  setDebugLookFrozen(frozen) {
-    this.debugLookFrozen = Boolean(frozen)
-    if (this.debugLookFrozen) this.headRoot.rotation.y = 0
   }
 
   setActive(active) {
@@ -776,17 +645,16 @@ export class SpecialNpcActor {
   }
 
   setOutfit(outfitId) {
-    const materialSet = this.outfitMaterialSets.get(outfitId)
-    const outfit = this.outfitPresets[outfitId]
-    if (!materialSet || !outfit) return false
-    for (const [slot, meshes] of this.outfitMeshes) {
-      const material = materialSet[slot]
-      if (!material) continue
-      for (const mesh of meshes) mesh.material = material
-    }
     this.currentOutfit = outfitId
-    this.activeOutfit = outfit
     return true
+  }
+
+  setWalking(walking) {
+    this.walking = Boolean(walking)
+  }
+
+  setDebugLookFrozen(frozen) {
+    this.debugLookFrozen = Boolean(frozen)
   }
 
   getInteraction() {
@@ -851,7 +719,10 @@ export class SpecialNpcActor {
       const index = this.colliders.indexOf(this.collider)
       if (index >= 0) this.colliders.splice(index, 1)
     }
-    this.headVisual.dispose()
+    this.ownedGeometries.forEach((geometry) => geometry.dispose())
+    this.ownedMaterials.forEach((material) => material.dispose())
+    this.ownedGeometries.clear()
+    this.ownedMaterials.clear()
     this.group.removeFromParent()
   }
 }

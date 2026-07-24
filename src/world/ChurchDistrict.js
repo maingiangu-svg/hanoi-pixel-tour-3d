@@ -112,6 +112,7 @@ export class ChurchDistrict {
           parent: this.outdoor,
           camera,
           colliders: outdoorColliders,
+          assetLoader,
         })
       : null
     this.interior = new ChurchInterior({ kit: this.kit, parent: this.root })
@@ -129,6 +130,7 @@ export class ChurchDistrict {
           interiorColliders: this.interior.colliders,
           playerPosition: camera.position,
           mo: this.mo,
+          assetLoader,
         })
       : null
     this.hoanKiemCrowd = camera
