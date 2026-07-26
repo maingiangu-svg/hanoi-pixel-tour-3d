@@ -19,8 +19,16 @@ import { PhotoCapture } from '../photo/PhotoCapture.js'
 import { PhotoMode } from '../photo/PhotoMode.js'
 import { PhotoStore } from '../photo/PhotoStore.js'
 import { PhotoAlbum } from '../photo/PhotoAlbum.js'
+import { PhotoAlbumCatalog } from '../photo/PhotoAlbumCatalog.js'
 import { PhotoModeUI } from '../ui/PhotoModeUI.js'
 import { PhotoAlbumUI } from '../ui/PhotoAlbumUI.js'
+import { PhotoQuestSystem } from '../quests/PhotoQuestSystem.js'
+import { PhotoQuestJournal } from '../quests/PhotoQuestJournal.js'
+import { PhotoQuestJournalUI } from '../ui/PhotoQuestJournalUI.js'
+import { RegionalAudioSystem } from '../audio/RegionalAudioSystem.js'
+import { AudioSettingsUI } from '../ui/AudioSettingsUI.js'
+import { IndexedDbSaveStorage } from '../save/IndexedDbSaveStorage.js'
+import { GameSaveSystem } from '../save/GameSaveSystem.js'
 import {
   MAP_INSPECTION_TARGETS,
   createMapInspectionTarget,
@@ -34,6 +42,14 @@ import {
 } from '../debug/DebugTeleport.js'
 import { PerformanceProfiler } from '../debug/PerformanceProfiler.js'
 import { MomentSystem } from '../moments/MomentSystem.js'
+import { SceneMomentSystem } from '../moments/SceneMomentSystem.js'
+import { registerChurchOldQuarterMoments } from '../moments/ChurchOldQuarterMoments.js'
+import { registerPedestrianMoments } from '../moments/PedestrianMoments.js'
+import { registerLakeBridgeTempleMoments } from '../moments/LakeBridgeTempleMoments.js'
+import { registerDevelopmentTestMoments } from '../moments/developmentMomentFixtures.js'
+
+const ENABLE_DEBUG_MOMENT_FIXTURES = import.meta.env.DEV
+  && new URLSearchParams(window.location.search).has('debug-moments')
 
 export class Game {
   constructor(container, uiRoot) {
@@ -71,9 +87,14 @@ export class Game {
     })
     this.player.lookAt(CHURCH_FACADE_LOOK_AT)
     this.momentSystem = new MomentSystem({
-      resourceResolver: (type, id) => {
+      resourceResolver: (type, id, definition) => {
         if (type === 'npc') return Boolean(this.world.getNamedNpc(id))
-        if (type === 'prop') return Boolean(this.world.getNamedProp?.(id))
+        if (type === 'prop') {
+          return Boolean(this.world.getNamedProp?.(id)) || (
+            definition?.metadata?.template
+            && definition.propIds.includes(id)
+          )
+        }
         // Staging zones, performance areas, audio channels and interaction
         // points are logical resources declared by a moment, not spawned assets.
         return true
@@ -91,6 +112,20 @@ export class Game {
         }
       },
     })
+    registerChurchOldQuarterMoments(this.momentSystem, {
+      resolveNpc: (id) => this.world.getNamedNpc(id),
+    })
+    registerPedestrianMoments(this.momentSystem, {
+      resolveNpc: (id) => this.world.getNamedNpc(id),
+    })
+    registerLakeBridgeTempleMoments(this.momentSystem, {
+      resolveNpc: (id) => this.world.getNamedNpc(id),
+    })
+    if (ENABLE_DEBUG_MOMENT_FIXTURES) {
+      registerDevelopmentTestMoments(this.momentSystem, {
+        resolveNpc: (id) => this.world.getNamedNpc(id),
+      })
+    }
     this.momentContext = {
       playerPosition: this.player.camera.position,
       regionIds: [],
@@ -98,7 +133,38 @@ export class Game {
       gameMinutes: this.clock.minutes,
       paused: false,
     }
-    this.ui = new StartOverlay(uiRoot, () => this.player.lock())
+    this.sceneMomentSystem = new SceneMomentSystem({
+      effects: this.world.sceneMomentEffects,
+    })
+    this.sceneMomentContext = {
+      playerPosition: this.player.camera.position,
+      regionIds: [],
+      areaId: this.world.activeAreaName,
+      gameMinutes: this.clock.minutes,
+      lightingPhase: null,
+      paused: false,
+    }
+    this.audio = new RegionalAudioSystem()
+    this.ui = new StartOverlay(uiRoot, () => {
+      void this.audio.start()
+      this.player.lock()
+    })
+    this.audioUi = new AudioSettingsUI(this.ui.shell, {
+      initialVolume: this.audio.volume,
+      initialMuted: this.audio.muted,
+      onVolumeChange: (volume) => {
+        void this.audio.start()
+        this.audio.setVolume(volume)
+        this.audioUi.render(this.audio.getState())
+        this.saveSystem?.saveSoon()
+      },
+      onMutedChange: (muted) => {
+        void this.audio.start()
+        this.audio.setMuted(muted)
+        this.audioUi.render(this.audio.getState())
+        this.saveSystem?.saveSoon()
+      },
+    })
     this.clockUi = new GameClockUI(this.ui.shell)
     this.clockUi.update(this.clock)
     this.mapUi = new MapOverlay(this.ui.shell, {
@@ -134,6 +200,7 @@ export class Game {
         && !this.interactions.transitioning
         && !this.photoMode?.isActive()
         && !this.photoAlbum?.isOpen
+        && !this.photoQuestJournal?.isOpen
         && (
           this.player.isMotorbikeMounted
           || this.world.activeAreaName !== 'interior'
@@ -149,12 +216,18 @@ export class Game {
     })
     this.photoUi = new PhotoModeUI(this.ui.shell)
     this.photoStore = new PhotoStore()
+    this.photoQuestSystem = new PhotoQuestSystem()
+    this.photoAlbumCatalog = new PhotoAlbumCatalog({
+      questSystem: this.photoQuestSystem,
+    })
     this.photoCapture = new PhotoCapture({
       renderer: this.renderer,
       camera: this.player.camera,
       clock: this.clock,
       world: this.world,
       dayNight: this.dayNight,
+      momentSystem: this.momentSystem,
+      sceneMomentSystem: this.sceneMomentSystem,
     })
     this.photoMode = new PhotoMode({
       camera: this.player.camera,
@@ -170,10 +243,32 @@ export class Game {
         && !this.player.isMotorbikeMounted
         && !this.mapUi.isOpen
         && !this.photoAlbum?.isOpen
+        && !this.photoQuestJournal?.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
       ),
-      onPhotoCaptured: (photo) => this.photoStore.add(photo),
+      onPhotoCaptured: async (photo) => {
+        const stored = await this.photoStore.add(photo)
+        const questResult = this.photoQuestSystem.evaluatePhoto(
+          stored.record.photo,
+          { photoId: stored.record.id },
+        )
+        const albumResult = this.photoAlbumCatalog.processPhoto(stored.record, {
+          questResult,
+        })
+        this.saveSystem?.saveSoon({ photos: true })
+        if (albumResult.unlockedSecret) {
+          const questNotice = questResult.completed
+            ? ` · Nhiệm vụ: ${questResult.questName}`
+            : ''
+          return {
+            notice: `Mở khóa bí mật · ${albumResult.unlockedSecret.name}${questNotice}`,
+          }
+        }
+        return questResult.completed
+          ? { notice: `Hoàn thành nhiệm vụ · ${questResult.questName}` }
+          : null
+      },
     })
     this.photoAlbumUi = new PhotoAlbumUI(this.ui.shell)
     this.photoAlbum = new PhotoAlbum({
@@ -182,15 +277,59 @@ export class Game {
       input: this.input,
       player: this.player,
       gameUi: this.ui,
+      catalog: this.photoAlbumCatalog,
       eventTarget: window,
       canOpen: () => (
         this.player.controls.isLocked
         && !this.player.isMotorbikeMounted
         && !this.photoMode.isActive()
+        && !this.photoQuestJournal?.isOpen
         && !this.mapUi.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
       ),
+    })
+    this.photoQuestJournalUi = new PhotoQuestJournalUI(this.ui.shell)
+    this.photoQuestJournal = new PhotoQuestJournal({
+      questSystem: this.photoQuestSystem,
+      photoStore: this.photoStore,
+      ui: this.photoQuestJournalUi,
+      input: this.input,
+      player: this.player,
+      gameUi: this.ui,
+      eventTarget: window,
+      canOpen: () => (
+        this.player.controls.isLocked
+        && !this.player.isMotorbikeMounted
+        && !this.photoMode.isActive()
+        && !this.photoAlbum.isOpen
+        && !this.mapUi.isOpen
+        && !this.dialogue.isActive()
+        && !this.interactions.transitioning
+      ),
+    })
+    const isDevelopmentInspection = import.meta.env.DEV
+      && new URLSearchParams(window.location.search).has('inspect')
+    this.saveSystem = new GameSaveSystem({
+      storage: new IndexedDbSaveStorage(),
+      clock: this.clock,
+      player: this.player,
+      collision: this.collision,
+      world: this.world,
+      dayNight: this.dayNight,
+      photoStore: this.photoStore,
+      questSystem: this.photoQuestSystem,
+      albumCatalog: this.photoAlbumCatalog,
+      audioSystem: this.audio,
+      enabled: !isDevelopmentInspection,
+      onStatus: (message) => {
+        this.audioUi.render(this.audio.getState())
+        if (message === 'Đã khôi phục tiến trình') this.ui.showNotice(message, 1800)
+      },
+    })
+    this.saveReady = this.saveSystem.restore().catch(() => {
+      this.ui.showNotice('Save cũ không thể đọc; game dùng trạng thái an toàn.', 2400)
+      return false
     })
     this.debug = import.meta.env.DEV
       ? new DebugPanel(
@@ -209,7 +348,11 @@ export class Game {
     this.timer.connect(document)
 
     this.handleLock = () => {
-      if (this.dialogue.isActive()) {
+      if (
+        this.dialogue.isActive()
+        || this.photoAlbum.isOpen
+        || this.photoQuestJournal.isOpen
+      ) {
         this.player.controls.unlock()
         return
       }
@@ -244,15 +387,32 @@ export class Game {
     this.dayNight.update(this.world.activeAreaName)
     this.profiler?.end('dayNight', dayNightStartedAt)
     this.photoMode.update(deltaTime)
+    const updatesSpatialSystems = this.momentSystem.size > 0
+      || this.sceneMomentSystem.size > 0
+      || this.audio.started
+    const regionIds = updatesSpatialSystems
+      ? this.world.getActiveDistrictNames(this.player.camera.position)
+      : null
     if (this.momentSystem.size > 0) {
-      this.momentContext.regionIds = this.world.getActiveDistrictNames(
-        this.player.camera.position,
-      )
+      this.momentContext.regionIds = regionIds
       this.momentContext.areaId = this.world.activeAreaName
       this.momentContext.gameMinutes = this.clock.minutes
       this.momentContext.paused = this.clock.paused
       this.momentSystem.update(deltaTime, this.momentContext)
     }
+    if (this.sceneMomentSystem.size > 0) {
+      this.sceneMomentContext.regionIds = regionIds
+      this.sceneMomentContext.areaId = this.world.activeAreaName
+      this.sceneMomentContext.gameMinutes = this.clock.minutes
+      this.sceneMomentContext.lightingPhase = this.dayNight.getLightingPhase()
+      this.sceneMomentContext.paused = this.clock.paused
+      this.sceneMomentSystem.update(deltaTime, this.sceneMomentContext)
+    }
+    this.audio.update(deltaTime, {
+      areaName: this.world.activeAreaName,
+      regionIds: regionIds ?? [],
+      position: this.player.camera.position,
+    })
     if (this.mapUi.isOpen) {
       this.player.camera.getWorldDirection(this.mapDirection)
       this.mapUi.updatePosition(
@@ -278,7 +438,11 @@ export class Game {
   }
 
   handleMapKeyDown(event) {
-    if (this.photoMode.isActive() || this.photoAlbum.isOpen) return
+    if (
+      this.photoMode.isActive()
+      || this.photoAlbum.isOpen
+      || this.photoQuestJournal.isOpen
+    ) return
     const action = getMapHotkeyAction(event, this.mapUi.isOpen)
     if (!action) return
     if (action === 'open') {
@@ -532,11 +696,19 @@ export class Game {
     this.dialogue.dispose()
     this.interactions.dispose()
     this.motorcycleMode.dispose()
+    this.photoQuestJournal.dispose()
     this.photoAlbum.dispose()
     this.photoMode.dispose()
+    this.photoQuestJournalUi.dispose()
     this.photoAlbumUi.dispose()
     this.photoUi.dispose()
+    this.audioUi.dispose()
+    this.saveSystem.dispose()
+    this.photoQuestSystem.dispose()
+    this.photoAlbumCatalog.dispose()
     this.photoStore.dispose()
+    this.audio.dispose()
+    this.sceneMomentSystem.dispose()
     this.momentSystem.dispose()
     this.player.dispose()
     this.dialogueUi.dispose()

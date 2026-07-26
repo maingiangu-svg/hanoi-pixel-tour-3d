@@ -15,6 +15,7 @@ export class StartOverlay {
               <span><kbd>Space</kbd> nhảy</span>
               <span><kbd>C</kbd> máy ảnh</span>
               <span><kbd>P</kbd> album ảnh</span>
+              <span><kbd>J</kbd> nhiệm vụ ảnh</span>
               <span><kbd>2</kbd> xe máy / đi bộ</span>
               <span><kbd>E</kbd> tương tác</span>
               <span><kbd>M</kbd> bản đồ</span>

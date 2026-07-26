@@ -12,7 +12,7 @@ function dispatchKey(target, code, repeat = false) {
   return event
 }
 
-function createHarness({ canOpen = true } = {}) {
+function createHarness({ canOpen = true, catalog = null } = {}) {
   const eventTarget = new EventTarget()
   const records = [
     { id: 'photo-2', photo: { timestamp: 'newest' } },
@@ -82,6 +82,7 @@ function createHarness({ canOpen = true } = {}) {
       setResumeMode: (resume) => calls.resume.push(resume),
       setLocked: (locked) => calls.locked.push(locked),
     },
+    catalog,
     canOpen: () => canOpen,
     eventTarget,
   })
@@ -123,13 +124,41 @@ test('Escape closes the album without relocking and blocked overlays reject P', 
   harness.album.dispose()
 })
 
-test('camera, map, jump, interaction and debug teleport keys are swallowed while open', () => {
+test('camera, journal, map, jump, interaction and debug teleport keys are swallowed while open', () => {
   const harness = createHarness()
   harness.album.open()
-  for (const code of ['KeyC', 'KeyM', 'Space', 'KeyE', 'Digit1']) {
+  for (const code of ['KeyC', 'KeyJ', 'KeyM', 'Space', 'KeyE', 'Digit1']) {
     const event = dispatchKey(harness.eventTarget, code)
     assert.equal(event.defaultPrevented, true, `${code} should be blocked`)
   }
   assert.equal(harness.album.isOpen, true)
+  harness.album.dispose()
+})
+
+test('theme, star and highest-score filters use catalog data without mutating the store', () => {
+  const catalog = {
+    subscribe: () => () => {},
+    decorate: (records) => records.map((record, index) => ({
+      ...record,
+      album: {
+        themeIds: [index === 0 ? 'people-together' : 'hanoi-light'],
+        stars: index === 0 ? 3 : 5,
+        score: index === 0 ? 62 : 91,
+      },
+    })),
+    getThemeProgress: () => [],
+  }
+  const harness = createHarness({ catalog })
+  harness.album.open()
+
+  harness.ui.handlers.themeFilter('hanoi-light')
+  assert.deepEqual(harness.calls.renders.at(-1).ids, ['photo-1'])
+  harness.ui.handlers.themeFilter('all')
+  harness.ui.handlers.starsFilter('4')
+  assert.deepEqual(harness.calls.renders.at(-1).ids, ['photo-1'])
+  harness.ui.handlers.starsFilter('0')
+  harness.ui.handlers.sort('highest')
+  assert.deepEqual(harness.calls.renders.at(-1).ids, ['photo-1', 'photo-2'])
+  assert.deepEqual(harness.records.map((record) => record.id), ['photo-2', 'photo-1'])
   harness.album.dispose()
 })

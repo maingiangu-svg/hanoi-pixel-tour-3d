@@ -72,6 +72,7 @@ export class SpecialNpcActor {
     this.currentOutfit = this.profile.defaultOutfit
     this.ownedGeometries = new Set()
     this.ownedMaterials = new Set()
+    this.shadowMeshes = []
 
     this.group = new THREE.Group()
     this.group.name = `NPC ${this.name}`
@@ -259,6 +260,7 @@ export class SpecialNpcActor {
     mesh.scale.set(...scale)
     mesh.rotation.set(...rotation)
     mesh.castShadow = castShadow
+    if (castShadow) this.shadowMeshes.push(mesh)
     mesh.receiveShadow = false
     parent.add(mesh)
     return mesh
@@ -616,6 +618,11 @@ export class SpecialNpcActor {
   setActive(active) {
     this.active = Boolean(active)
     this.#refreshState()
+  }
+
+  setShadowDetail(detailed) {
+    const enabled = this.castShadow && Boolean(detailed)
+    for (const mesh of this.shadowMeshes) mesh.castShadow = enabled
   }
 
   activate() {

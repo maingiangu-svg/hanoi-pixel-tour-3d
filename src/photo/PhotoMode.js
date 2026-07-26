@@ -140,10 +140,13 @@ export class PhotoMode {
 
     try {
       const photo = await this.capture.capture({ focalLength: this.focalLength })
-      await this.onPhotoCaptured(photo)
+      const result = await this.onPhotoCaptured(photo)
       if (!this.disposed) {
         this.gameUi.flashPhoto()
-        this.gameUi.showNotice(`Đã chụp ảnh · ${this.focalLength}mm`, 1500)
+        this.gameUi.showNotice(
+          result?.notice ?? `Đã chụp ảnh · ${this.focalLength}mm`,
+          result?.notice ? 2400 : 1500,
+        )
       }
       return photo
     } catch (error) {

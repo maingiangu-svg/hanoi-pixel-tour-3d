@@ -67,7 +67,9 @@ export class NpcActor {
     this.elapsed = Number.isFinite(animationOffset) ? animationOffset : 0
     this.ready = false
     this._disabled = false
+    this.requestedActive = Boolean(active)
     this.active = Boolean(active)
+    this.momentLocks = new Set()
     this.dialogueActive = false
     this.pausedForPlayer = false
     this.walking = false
@@ -101,6 +103,7 @@ export class NpcActor {
     this.leftHandAnchor = null
     this.rightHandAnchor = null
     this.builtInHandheldProps = new Map()
+    this.shadowMeshes = []
 
     this.#buildBody()
     this.#applyStaticPose()
@@ -173,7 +176,9 @@ export class NpcActor {
     }
 
     const activityControlsPose = this.activityController.isControllingPose
-    const activityIsWalking = this.activityController.currentActivity === 'walk'
+    const activityIsWalking = ['walk', 'cycle'].includes(
+      this.activityController.currentActivity,
+    )
     if (activityIsWalking || (!activityControlsPose && this.behavior === 'walker')) {
       if (this.pausedForPlayer) {
         if (playerDistanceSquared > this.resumeRadiusSquared) this.pausedForPlayer = false
@@ -233,6 +238,11 @@ export class NpcActor {
     }
   }
 
+  setShadowDetail(detailed) {
+    const enabled = this.castShadow && Boolean(detailed)
+    for (const mesh of this.shadowMeshes) mesh.castShadow = enabled
+  }
+
   setPosition(x, y, z) {
     if (x?.isVector3) this.position.copy(x)
     else this.position.set(x, y, z)
@@ -240,7 +250,8 @@ export class NpcActor {
   }
 
   setActive(active) {
-    this.active = Boolean(active)
+    this.requestedActive = Boolean(active)
+    this.active = this.momentLocks.size > 0 ? true : this.requestedActive
     this.#refreshState()
   }
 
@@ -330,8 +341,20 @@ export class NpcActor {
     return true
   }
 
-  releaseMomentLock() {
-    return this.resetMomentState()
+  acquireMomentLock(momentId) {
+    this.momentLocks.add(String(momentId))
+    this.active = true
+    this.#refreshState()
+    return true
+  }
+
+  releaseMomentLock(momentId = null) {
+    if (momentId === null) this.momentLocks.clear()
+    else this.momentLocks.delete(String(momentId))
+    this.resetMomentState()
+    if (this.momentLocks.size === 0) this.active = this.requestedActive
+    this.#refreshState()
+    return true
   }
 
   faceToward(target, deltaTime, speed = 3.5) {
@@ -367,6 +390,7 @@ export class NpcActor {
     torso.position.set(0, 1.02, 0)
     torso.scale.set(0.52, 0.62, 0.32)
     torso.castShadow = this.castShadow
+    if (this.castShadow) this.shadowMeshes.push(torso)
 
     const hips = this.#mesh('Hông', 'box', this.preset.bottom, this.visual)
     hips.position.set(0, 0.72, 0)
@@ -383,6 +407,7 @@ export class NpcActor {
     const head = this.#mesh('Khuôn mặt', 'head', skin, this.headRig)
     head.scale.set(0.37, 0.43, 0.37)
     head.castShadow = this.castShadow
+    if (this.castShadow) this.shadowMeshes.push(head)
     this.#buildHair()
 
     this.leftArm = this.#buildArm('Trái', -1)

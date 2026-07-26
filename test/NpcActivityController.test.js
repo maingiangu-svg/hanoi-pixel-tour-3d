@@ -30,6 +30,7 @@ test('activity controller exposes every requested reusable activity', () => {
     'pose',
     'point',
     'takePhoto',
+    'recordVideo',
     'viewPhoto',
     'drink',
     'read',
@@ -39,7 +40,31 @@ test('activity controller exposes every requested reusable activity', () => {
     'giveItem',
     'receiveItem',
     'lookAtLandmark',
+    'help',
+    'cycle',
+    'openAwning',
+    'feedBirds',
+    'respectfulPause',
   ])
+})
+
+test('feeding birds and respectful pause use restrained distinct poses', () => {
+  const resources = new NpcResources()
+  const actor = createActor(resources, 'Quiet activity actor')
+
+  actor.playActivity('feedBirds', { duration: 1, transitionDuration: 0 })
+  actor.update(0.05, NEAR_PLAYER)
+  assert.ok(actor.visual.rotation.x < 0)
+  assert.ok(actor.rightArm.rotation.x < -0.7)
+
+  actor.playActivity('respectfulPause', { duration: 1, transitionDuration: 0 })
+  actor.update(0.05, NEAR_PLAYER)
+  assert.ok(actor.headRig.rotation.x < -0.2)
+  assert.ok(actor.leftArm.rotation.x < -0.7)
+  assert.ok(actor.rightArm.rotation.x < -0.7)
+
+  actor.dispose()
+  resources.dispose()
 })
 
 test('wave blends into a raised arm pose and completes exactly once', () => {
@@ -110,6 +135,31 @@ test('phone and flowers attach to the correct anchors and never duplicate', () =
   resources.dispose()
 })
 
+test('recordVideo uses one phone and a stable one-handed pose', () => {
+  const resources = new NpcResources()
+  const actor = createActor(resources, 'Video recorder')
+  actor.playActivity('recordVideo', {
+    duration: 1,
+    transitionDuration: 0,
+    props: [{ type: 'phone', id: 'recording-phone' }],
+  })
+  actor.update(0.05, NEAR_PLAYER)
+
+  assert.equal(actor.getActivityState().activity, 'recordVideo')
+  assert.equal(actor.getActivityState().props.length, 1)
+  assert.equal(
+    actor.activityController.heldProps.get('recording-phone').group.parent,
+    actor.rightHandAnchor,
+  )
+  assert.ok(actor.rightArm.rotation.x < -1.2)
+  assert.ok(actor.leftArm.rotation.x > -0.5)
+
+  actor.stopActivity({ transitionDuration: 0 })
+  assert.equal(actor.getActivityState().props.length, 0)
+  actor.dispose()
+  resources.dispose()
+})
+
 test('a held prop transfers between NPCs without cloning its object', () => {
   const resources = new NpcResources()
   const giver = createActor(resources, 'Giver')
@@ -129,6 +179,58 @@ test('a held prop transfers between NPCs without cloning its object', () => {
 
   giver.dispose()
   recipient.dispose()
+  resources.dispose()
+})
+
+test('cycle mounts one shared bicycle at the actor root and cleanup removes it', () => {
+  const resources = new NpcResources()
+  const actor = createActor(resources, 'Cyclist')
+  actor.playActivity('cycle', {
+    duration: 1,
+    transitionDuration: 0,
+    props: [{
+      type: 'bicycle',
+      id: 'event-bicycle',
+      mount: 'root',
+    }],
+  })
+  actor.update(0.05, NEAR_PLAYER)
+
+  const bicycle = actor.activityController.heldProps.get('event-bicycle')
+  assert.ok(bicycle)
+  assert.equal(bicycle.group.parent, actor.group)
+  assert.equal(
+    bicycle.group.getObjectByName('Bánh xe đạp').geometry,
+    resources.getGeometry('cylinder'),
+  )
+  assert.ok(actor.leftKnee.rotation.x !== actor.rightKnee.rotation.x)
+  assert.equal(actor.attachProp('bicycle', {
+    id: 'event-bicycle',
+    mount: 'root',
+  }), bicycle)
+
+  actor.stopActivity({ transitionDuration: 0 })
+  assert.equal(actor.group.getObjectByName('Handheld.bicycle.event-bicycle'), undefined)
+  assert.equal(actor.getActivityState().props.length, 0)
+  actor.dispose()
+  resources.dispose()
+})
+
+test('help and openAwning provide distinct lightweight upper-body poses', () => {
+  const resources = new NpcResources()
+  const actor = createActor(resources, 'Shop helper')
+
+  actor.playActivity('help', { duration: 1, transitionDuration: 0 })
+  actor.update(0.05, NEAR_PLAYER)
+  const helpArm = actor.leftArm.rotation.x
+  assert.ok(actor.visual.rotation.x < 0)
+
+  actor.playActivity('openAwning', { duration: 1, transitionDuration: 0 })
+  actor.update(0.05, NEAR_PLAYER)
+  assert.ok(actor.leftArm.rotation.x < helpArm)
+  assert.ok(actor.headRig.rotation.x < -0.2)
+
+  actor.dispose()
   resources.dispose()
 })
 

@@ -1,3 +1,7 @@
+const FAR_UPDATE_DISTANCE_SQUARED = 30 * 30
+const FAR_UPDATE_INTERVAL = 0.24
+const SHADOW_DETAIL_DISTANCE_SQUARED = 18 * 18
+
 export class NpcManager {
   constructor(playerPosition) {
     this.playerPosition = playerPosition
@@ -21,6 +25,8 @@ export class NpcManager {
       role,
       desiredActive: Boolean(active),
       activationVersion: 0,
+      farUpdateElapsed: 0,
+      shadowDetailed: null,
     }
     actor.setActive(false)
     this.entries.push(entry)
@@ -72,7 +78,27 @@ export class NpcManager {
         continue
       }
       this.context.playerPosition = this.playerPosition
-      entry.actor.update(delta, this.context)
+      const position = entry.actor.position
+      const hasPosition = Number.isFinite(position?.x) && Number.isFinite(position?.z)
+      const distanceSquared = hasPosition
+        ? (position.x - this.playerPosition.x) ** 2
+          + (position.z - this.playerPosition.z) ** 2
+        : 0
+      const shadowDetailed = distanceSquared <= SHADOW_DETAIL_DISTANCE_SQUARED
+      if (entry.shadowDetailed !== shadowDetailed) {
+        entry.shadowDetailed = shadowDetailed
+        entry.actor.setShadowDetail?.(shadowDetailed)
+      }
+      let updateDelta = delta
+      if (distanceSquared > FAR_UPDATE_DISTANCE_SQUARED) {
+        entry.farUpdateElapsed += delta
+        if (entry.farUpdateElapsed < FAR_UPDATE_INTERVAL) continue
+        updateDelta = entry.farUpdateElapsed
+        entry.farUpdateElapsed = 0
+      } else {
+        entry.farUpdateElapsed = 0
+      }
+      entry.actor.update(updateDelta, this.context)
       this.lastUpdatedCount += 1
     }
     this.profiler?.addCount('npcUpdates', this.lastUpdatedCount)

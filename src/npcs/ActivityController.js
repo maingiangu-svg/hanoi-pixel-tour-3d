@@ -14,6 +14,7 @@ export const NPC_ACTIVITY_TYPES = Object.freeze([
   'pose',
   'point',
   'takePhoto',
+  'recordVideo',
   'viewPhoto',
   'drink',
   'read',
@@ -23,6 +24,11 @@ export const NPC_ACTIVITY_TYPES = Object.freeze([
   'giveItem',
   'receiveItem',
   'lookAtLandmark',
+  'help',
+  'cycle',
+  'openAwning',
+  'feedBirds',
+  'respectfulPause',
 ])
 
 const DEFAULT_DURATIONS = Object.freeze({
@@ -34,6 +40,7 @@ const DEFAULT_DURATIONS = Object.freeze({
   pose: 4,
   point: 2.5,
   takePhoto: 3.5,
+  recordVideo: 5,
   viewPhoto: 4,
   drink: 3,
   read: 6,
@@ -43,14 +50,23 @@ const DEFAULT_DURATIONS = Object.freeze({
   giveItem: 2.5,
   receiveItem: 2.5,
   lookAtLandmark: 5,
+  help: 3.5,
+  cycle: 6,
+  openAwning: 3,
+  feedBirds: 4.5,
+  respectfulPause: 4,
 })
 
 const DEFAULT_ACTIVITY_PROPS = Object.freeze({
   takePhoto: Object.freeze(['camera']),
+  recordVideo: Object.freeze(['phone']),
   viewPhoto: Object.freeze(['phone']),
   drink: Object.freeze(['cup']),
   read: Object.freeze(['newspaper']),
   draw: Object.freeze(['drawingBoard', 'pencil']),
+  cycle: Object.freeze([
+    Object.freeze({ type: 'bicycle', mount: 'root' }),
+  ]),
 })
 
 const POSE_KEYS = Object.freeze([
@@ -230,6 +246,14 @@ function samplePose(activity, elapsed, out) {
       out.rightElbowX = -0.72
       out.headX = -0.08
       break
+    case 'recordVideo':
+      out.rightArmX = -1.34
+      out.rightArmZ = 0.08
+      out.rightElbowX = -0.18
+      out.leftArmX = -0.34
+      out.headX = -0.06
+      out.headY = Math.sin(phase * 0.45) * 0.05
+      break
     case 'viewPhoto':
       out.rightArmX = -0.96
       out.rightArmZ = 0.16
@@ -295,6 +319,60 @@ function samplePose(activity, elapsed, out) {
       break
     case 'lookAtLandmark':
       out.headX = -0.04
+      break
+    case 'help':
+      out.visualX = -0.16
+      out.leftArmX = -1.05
+      out.rightArmX = -1.05
+      out.leftArmZ = -0.28
+      out.rightArmZ = 0.28
+      out.leftElbowX = -0.5
+      out.rightElbowX = -0.5
+      out.headX = -0.12
+      break
+    case 'cycle': {
+      const pedal = Math.sin(phase * 6.4) * 0.55
+      out.visualY = 0.02
+      out.leftArmX = -1.12
+      out.rightArmX = -1.12
+      out.leftArmZ = -0.18
+      out.rightArmZ = 0.18
+      out.leftElbowX = -0.35
+      out.rightElbowX = -0.35
+      out.leftLegX = -0.82 + pedal
+      out.rightLegX = -0.82 - pedal
+      out.leftKneeX = 0.95 - pedal * 0.45
+      out.rightKneeX = 0.95 + pedal * 0.45
+      out.headX = -0.06
+      break
+    }
+    case 'openAwning':
+      out.leftArmX = -1.45
+      out.rightArmX = -1.45
+      out.leftArmZ = -0.28
+      out.rightArmZ = 0.28
+      out.leftElbowX = -0.2 + Math.sin(phase * 2.8) * 0.18
+      out.rightElbowX = -0.2 + Math.sin(phase * 2.8) * 0.18
+      out.headX = -0.28
+      break
+    case 'feedBirds': {
+      const scatter = (Math.sin(phase * 3.2) + 1) * 0.5
+      out.visualX = -0.12
+      out.rightArmX = -0.7 - scatter * 0.42
+      out.rightArmZ = 0.16
+      out.rightElbowX = -0.38
+      out.leftArmX = -0.45
+      out.headX = -0.2
+      break
+    }
+    case 'respectfulPause':
+      out.leftArmX = -0.82
+      out.rightArmX = -0.82
+      out.leftArmZ = -0.3
+      out.rightArmZ = 0.3
+      out.leftElbowX = -0.5
+      out.rightElbowX = -0.5
+      out.headX = -0.24
       break
     case 'idle':
     default:
@@ -487,14 +565,18 @@ export class ActivityController {
   attachProp(type, {
     id = `${this.id}:${type}`,
     hand = DEFAULT_PROP_HAND[type],
+    mount = type === 'bicycle' ? 'root' : 'hand',
     activityOwned = false,
   } = {}) {
     if (this.disposed) return null
     if (!HANDHELD_PROP_TYPES.includes(type)) {
       throw new RangeError(`Unknown handheld prop type: ${type}`)
     }
-    if (hand !== 'left' && hand !== 'right') {
+    if (mount !== 'root' && hand !== 'left' && hand !== 'right') {
       throw new RangeError('Handheld prop hand must be left or right')
+    }
+    if (mount !== 'hand' && mount !== 'root') {
+      throw new RangeError('Activity prop mount must be hand or root')
     }
     const propId = String(id)
     const existing = this.heldProps.get(propId)
@@ -503,8 +585,8 @@ export class ActivityController {
     if (owner && owner !== this) return null
 
     const group = createHandheldProp(this.resources, type, propId)
-    const record = { id: propId, type, hand, group, activityOwned }
-    this.#mountProp(record, hand)
+    const record = { id: propId, type, hand, mount, group, activityOwned }
+    this.#mountProp(record, hand, mount)
     this.heldProps.set(propId, record)
     PROP_OWNERS.set(propId, this)
     if (activityOwned) this.activityPropIds.add(propId)
@@ -524,7 +606,7 @@ export class ActivityController {
     return true
   }
 
-  transferProp(idOrType, recipient, { hand = null } = {}) {
+  transferProp(idOrType, recipient, { hand = null, mount = null } = {}) {
     const target = recipient?.activityController ?? recipient
     if (!(target instanceof ActivityController) || target === this || target.disposed) {
       return false
@@ -541,7 +623,8 @@ export class ActivityController {
     }
     record.activityOwned = false
     record.hand = hand ?? DEFAULT_PROP_HAND[record.type]
-    target.#mountProp(record, record.hand)
+    record.mount = mount ?? (record.type === 'bicycle' ? 'root' : 'hand')
+    target.#mountProp(record, record.hand, record.mount)
     target.heldProps.set(record.id, record)
     PROP_OWNERS.set(record.id, target)
     return true
@@ -656,6 +739,7 @@ export class ActivityController {
       const record = this.attachProp(type, {
         id,
         hand: descriptor.hand ?? DEFAULT_PROP_HAND[type],
+        mount: descriptor.mount ?? (type === 'bicycle' ? 'root' : 'hand'),
         activityOwned: true,
       })
       if (record) this.activityPropIds.add(record.id)
@@ -674,8 +758,12 @@ export class ActivityController {
     return [...this.heldProps.values()].find((record) => record.type === key) ?? null
   }
 
-  #mountProp(record, hand) {
-    const anchor = hand === 'left' ? this.anchors.left : this.anchors.right
+  #mountProp(record, hand, mount = 'hand') {
+    const anchor = mount === 'root'
+      ? this.actor.group
+      : hand === 'left'
+        ? this.anchors.left
+        : this.anchors.right
     applyHandheldPropTransform(record.group, record.type, hand)
     anchor.add(record.group)
     this.actor?.setHandheldPropOverride?.(record.type, true)

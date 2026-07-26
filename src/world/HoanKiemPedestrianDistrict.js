@@ -32,6 +32,14 @@ export class HoanKiemPedestrianDistrict {
     this.#buildOuterVehicleMarkings()
   }
 
+  isNearActivityZone(position, margin = 24) {
+    if (!position) return false
+    return HOAN_KIEM_PEDESTRIAN_ZONES.some((zone) => (
+      Math.abs(position.x - zone.x) <= zone.width / 2 + margin
+      && Math.abs(position.z - zone.z) <= zone.depth / 2 + margin
+    ))
+  }
+
   #buildLakesidePath() {
     const geometry = createHorizontalRingGeometry(
       HOAN_KIEM_LAKESIDE_OUTLINE,

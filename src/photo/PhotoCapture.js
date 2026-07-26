@@ -21,6 +21,8 @@ export class PhotoCapture {
     clock,
     world,
     dayNight,
+    momentSystem = null,
+    sceneMomentSystem = null,
     now = () => new Date(),
     metadataBuilder = null,
   }) {
@@ -40,6 +42,8 @@ export class PhotoCapture {
       clock,
       world,
       dayNight,
+      momentSystem,
+      sceneMomentSystem,
       now,
     })
     this.lastCapture = null
@@ -81,6 +85,7 @@ export class PhotoCapture {
       subjects: metadata.subjects,
       landmarks: metadata.landmarks,
       eventContext: metadata.eventContext,
+      sceneMomentContext: metadata.sceneMomentContext,
       classification: metadata.classification,
       scoring,
       // Compatibility aliases for existing Photo Mode and album consumers.

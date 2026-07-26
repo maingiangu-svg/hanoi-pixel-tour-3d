@@ -22,6 +22,7 @@ export class HoanKiemPhotoCompositions {
 
     this.geometries = []
     this.materials = []
+    this.transientEffectGroups = new Map()
     this.clusterGroups = new Map(CLUSTER_LAYOUTS.map((layout) => {
       const group = new THREE.Group()
       group.name = layout.name
@@ -55,6 +56,22 @@ export class HoanKiemPhotoCompositions {
       const threshold = entry.radius + (entry.group.visible ? 10 : 0)
       entry.group.visible = dx * dx + dz * dz <= threshold ** 2
     }
+  }
+
+  setTransientEffectActive(id, active) {
+    const group = this.transientEffectGroups.get(id)
+    if (!group) return false
+    group.visible = Boolean(active)
+    return true
+  }
+
+  #transientEffect(id, parent) {
+    const group = new THREE.Group()
+    group.name = `Bố cục tạm thời · ${id}`
+    group.visible = false
+    parent.add(group)
+    this.transientEffectGroups.set(id, group)
+    return group
   }
 
   #cluster(id) {
@@ -108,7 +125,11 @@ export class HoanKiemPhotoCompositions {
   }
 
   #buildTowerReflection() {
-    this.kit.instancedBoxes(this.#cluster('lake-reflection'), {
+    const parent = this.#transientEffect(
+      'towerReflection',
+      this.#cluster('lake-reflection'),
+    )
+    this.kit.instancedBoxes(parent, {
       name: 'Vệt phản chiếu dài dẫn mắt tới Tháp Rùa',
       material: 'waterReflection',
       instances: HOAN_KIEM_PHOTO_REFLECTION_STRIPS,

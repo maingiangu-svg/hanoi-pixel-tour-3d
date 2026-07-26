@@ -137,9 +137,85 @@ test('buildPhotoMetadata snapshots camera, clock, lighting, subjects and landmar
   assert.deepEqual(metadata.landmarks.map(({ name }) => name), ['Nhà thờ Lớn Hà Nội'])
   assert.deepEqual(metadata.eventContext, {
     active: true,
-    events: [{ id: 'church-service', name: 'Thánh lễ buổi tối' }],
+    momentId: 'church-service',
+    state: null,
+    inClimax: false,
+    primarySubjectIds: [],
+    momentType: null,
+    photoType: null,
+    region: null,
+    timingBonus: 0,
+    climaxWindow: null,
+    location: null,
+    events: [{
+      id: 'church-service',
+      name: 'Thánh lễ buổi tối',
+      state: null,
+      inClimax: false,
+      climaxProgress: 0,
+      primarySubjectIds: [],
+      momentType: null,
+      photoType: null,
+      region: null,
+      timingBonus: 0,
+      climaxWindow: null,
+      location: null,
+      paused: false,
+    }],
   })
   assert.equal(metadata.classification.label, 'người–cảnh')
+})
+
+test('photo metadata snapshots the active Moment System climax context', () => {
+  const camera = createCamera()
+  const builder = new PhotoMetadataBuilder({
+    camera,
+    clock: { minutes: 720, hour: 12, minute: 0, formatted: '12:00' },
+    world: {
+      activeMapId: 'hoanKiem',
+      activeAreaName: 'outdoor',
+      getActiveDistrictNames: () => ['hoanKiem'],
+      getPhotoSubjectCandidates: () => [],
+      getPhotoLandmarkCandidates: () => [],
+    },
+    dayNight: { getLightingPhase: () => 'day' },
+    momentSystem: {
+      getActiveMoments: () => [{
+        id: 'photo-climax',
+        state: 'climax',
+        stateElapsed: 1,
+        stateDuration: 2,
+        durations: { climax: 2 },
+        paused: false,
+        type: 'portrait',
+        metadata: {
+          name: 'Khoảnh khắc tạo dáng',
+          momentType: 'group-pose',
+          primarySubjectIds: ['npc-a', 'npc-b'],
+          timingBonus: 1.2,
+        },
+      }],
+    },
+    now: () => new Date('2026-07-26T05:00:00.000Z'),
+  })
+
+  const metadata = builder.buildPhotoMetadata({
+    focalLength: 50,
+    width: 800,
+    height: 450,
+  })
+
+  assert.equal(metadata.eventContext.momentId, 'photo-climax')
+  assert.equal(metadata.eventContext.state, 'climax')
+  assert.equal(metadata.eventContext.inClimax, true)
+  assert.deepEqual(metadata.eventContext.primarySubjectIds, ['npc-a', 'npc-b'])
+  assert.equal(metadata.eventContext.momentType, 'group-pose')
+  assert.ok(metadata.eventContext.timingBonus > 1)
+  assert.equal(metadata.eventContext.events[0].climaxProgress, 0.5)
+  assert.deepEqual(metadata.eventContext.climaxWindow, {
+    state: 'climax',
+    duration: 2,
+  })
 })
 
 test('a capture without an NPC keeps an empty subject list and scene classification', () => {
@@ -166,4 +242,79 @@ test('a capture without an NPC keeps an empty subject list and scene classificat
   assert.deepEqual(metadata.subjects, [])
   assert.deepEqual(metadata.landmarks, [])
   assert.equal(metadata.classification.label, 'cảnh–cảnh')
+})
+
+test('photo metadata snapshots scene moment angle, time and climax at capture time', () => {
+  const camera = createCamera()
+  const sceneContext = {
+    active: true,
+    available: true,
+    sceneMomentId: 'scene-church-puddle-reflection',
+    region: 'sceneChurch',
+    landmarkId: 'nhaThoLon',
+    angleMatched: true,
+    facingAlignment: 0.96,
+    timeMatched: true,
+    lightingMatched: true,
+    requiredLightingPhase: 'blueHour',
+    landmarkVisible: true,
+    state: 'climax',
+    inClimax: true,
+    climaxProgress: 0.5,
+    timingBonus: 1.55,
+    photoType: 'scene-scene',
+    moments: [{
+      id: 'scene-church-puddle-reflection',
+      name: 'Nhà thờ phản chiếu trong vũng nước',
+      region: 'sceneChurch',
+      landmarkId: 'nhaThoLon',
+      angleMatched: true,
+      facingAlignment: 0.96,
+      timeMatched: true,
+      lightingMatched: true,
+      requiredLightingPhase: 'blueHour',
+      landmarkVisible: true,
+      state: 'climax',
+      active: true,
+      inClimax: true,
+      climaxProgress: 0.5,
+      timingBonus: 1.55,
+      photoType: 'scene-scene',
+    }],
+  }
+  const builder = new PhotoMetadataBuilder({
+    camera,
+    clock: { minutes: 1110, hour: 18, minute: 30, formatted: '18:30' },
+    world: {
+      activeMapId: 'hoanKiem',
+      activeAreaName: 'outdoor',
+      getActiveDistrictNames: () => ['hoanKiem', 'sceneChurch'],
+      getPhotoSubjectCandidates: () => [],
+      getPhotoLandmarkCandidates: () => [],
+    },
+    dayNight: { getLightingPhase: () => 'blueHour' },
+    sceneMomentSystem: {
+      getPhotoContext: () => sceneContext,
+    },
+    now: () => new Date('2026-07-26T11:30:00.000Z'),
+  })
+
+  const metadata = builder.buildPhotoMetadata({
+    focalLength: 35,
+    width: 800,
+    height: 450,
+  })
+  sceneContext.angleMatched = false
+  sceneContext.moments[0].name = 'Changed after capture'
+
+  assert.equal(metadata.sceneMomentContext.sceneMomentId, 'scene-church-puddle-reflection')
+  assert.equal(metadata.sceneMomentContext.angleMatched, true)
+  assert.equal(metadata.sceneMomentContext.timeMatched, true)
+  assert.equal(metadata.sceneMomentContext.inClimax, true)
+  assert.equal(metadata.sceneMomentContext.timingBonus, 1.55)
+  assert.equal(metadata.sceneMomentContext.photoType, 'scene-scene')
+  assert.equal(
+    metadata.sceneMomentContext.moments[0].name,
+    'Nhà thờ phản chiếu trong vũng nước',
+  )
 })

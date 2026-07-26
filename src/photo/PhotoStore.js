@@ -172,6 +172,44 @@ export class PhotoStore {
     this.#notify()
   }
 
+  exportState() {
+    return this.records.map((record) => ({
+      id: record.id,
+      fingerprint: record.fingerprint,
+      photo: record.photo,
+      thumbnail: record.thumbnail,
+    }))
+  }
+
+  restoreState(records = []) {
+    if (this.disposed) throw new Error('PhotoStore has been disposed')
+    for (const record of this.records) this.#releaseRecord(record)
+    this.records.length = 0
+    this.recordsByFingerprint.clear()
+
+    for (const saved of records.slice(0, this.limit)) {
+      if (
+        !saved?.id
+        || !saved.fingerprint
+        || !(saved.photo?.image instanceof Blob)
+        || !(saved.thumbnail instanceof Blob)
+        || this.recordsByFingerprint.has(saved.fingerprint)
+      ) continue
+      const record = {
+        id: saved.id,
+        fingerprint: saved.fingerprint,
+        photo: saved.photo,
+        thumbnail: saved.thumbnail,
+        fullUrl: this.urlApi.createObjectURL(saved.photo.image),
+        thumbnailUrl: this.urlApi.createObjectURL(saved.thumbnail),
+      }
+      this.records.push(record)
+      this.recordsByFingerprint.set(record.fingerprint, record)
+    }
+    this.#notify()
+    return this.records.length
+  }
+
   async #createRecord(photo, fingerprint) {
     const thumbnail = await this.thumbnailFactory(photo.image)
     if (!(thumbnail instanceof Blob)) {

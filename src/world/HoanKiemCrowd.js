@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { NpcActor } from '../npcs/NpcActor.js'
 import { NpcManager } from '../npcs/NpcManager.js'
 import { normalizeGameMinutes } from '../npcs/npcSchedules.js'
+import { PEDESTRIAN_MOMENT_CAST } from '../npcs/pedestrianMomentCast.js'
+import { SCENIC_MOMENT_CAST } from '../npcs/scenicMomentCast.js'
 
 const TEA_DIALOGUE = Object.freeze([
   { text: 'Uống cốc trà không cháu?' },
@@ -31,6 +33,8 @@ export class HoanKiemCrowd {
 
     this.#buildTeaCorner()
     this.#buildActors()
+    this.#buildPedestrianMomentCast()
+    this.#buildScenicMomentCast()
   }
 
   setProfiler(profiler) {
@@ -198,5 +202,42 @@ export class HoanKiemCrowd {
       preset: 'elderly', name: 'Khách Đền Ngọc Sơn 2', behavior: 'standing',
       position: [124.2, 0, 48.5], rotationY: 0, colliderRadius: 0.17,
     }, 'temple')
+  }
+
+  #buildPedestrianMomentCast() {
+    PEDESTRIAN_MOMENT_CAST.forEach((entry, index) => {
+      this.#actor({
+        preset: entry.preset,
+        name: entry.name,
+        behavior: 'standing',
+        position: [0, 0, 0],
+        rotationY: 0,
+        colliderRadius: entry.preset === 'child' ? 0.15 : 0.17,
+        animationOffset: entry.animationOffset,
+        castShadow: index < 3,
+        // Event groups are staged away from the player path and should never
+        // turn a performance crowd into a collision trap.
+        collides: false,
+      }, 'pedestrianMoment')
+    })
+  }
+
+  #buildScenicMomentCast() {
+    SCENIC_MOMENT_CAST.forEach((entry, index) => {
+      this.#actor({
+        preset: entry.preset,
+        name: entry.name,
+        behavior: 'standing',
+        position: [0, 0, 0],
+        rotationY: 0,
+        colliderRadius: entry.preset === 'child' ? 0.15 : 0.17,
+        animationOffset: entry.animationOffset,
+        castShadow: index < 4,
+        // Moment actors are placed in authored pockets beside the main route.
+        // Keeping them non-colliding preserves the narrow bridge lane and
+        // avoids turning photo staging into a player trap.
+        collides: false,
+      }, 'scenicMoment')
+    })
   }
 }

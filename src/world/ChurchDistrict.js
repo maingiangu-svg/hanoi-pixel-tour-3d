@@ -15,6 +15,7 @@ import { HoanKiemGroundExpansion } from './HoanKiemGroundExpansion.js'
 import { HoanKiemPedestrianDistrict } from './HoanKiemPedestrianDistrict.js'
 import { HoanKiemUrbanEdgeDistrict } from './HoanKiemUrbanEdgeDistrict.js'
 import { HoanKiemPhotoCompositions } from './HoanKiemPhotoCompositions.js'
+import { SceneMomentEffects } from './effects/SceneMomentEffects.js'
 import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
 import { LongBienDistrict } from './districts/LongBienDistrict.js'
 import { MAP_REGISTRY, resolveMapDestination } from './map/MapRegistry.js'
@@ -140,6 +141,11 @@ export class ChurchDistrict {
       kit: this.kit,
       parent: this.outdoor,
       colliders: outdoorColliders,
+    })
+    this.sceneMomentEffects = new SceneMomentEffects({
+      kit: this.kit,
+      parent: this.outdoor,
+      photoCompositions: this.hoanKiemPhotoCompositions,
     })
     this.baDinhDistrict = new BaDinhDistrict({
       kit: this.kit,
@@ -384,6 +390,10 @@ export class ChurchDistrict {
 
   update(deltaTime, clock = null) {
     this.#updateDistrictVisibility()
+    this.sceneMomentEffects.update(
+      deltaTime,
+      this.activeAreaName === 'outdoor',
+    )
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
@@ -516,12 +526,40 @@ export class ChurchDistrict {
     if (this.activeAreaName !== 'outdoor') {
       return [this.areas[this.activeAreaName].mapId]
     }
-    return ['hoanKiem', ...Object.entries(this.districts)
+    const names = ['hoanKiem', ...Object.entries(this.districts)
       .filter(([, district]) => Math.hypot(
         district.center.x - position.x,
         district.center.y - position.z,
       ) <= district.activationRadius)
       .map(([name]) => name)]
+    if (this.hoanKiemPedestrianDistrict.isNearActivityZone(position)) {
+      names.push('pedestrianDistrict')
+    }
+    if (
+      position.x >= 106 && position.x <= 132
+      && position.z >= 25 && position.z <= 47
+    ) {
+      names.push('theHucBridge')
+    }
+    if (
+      position.x >= 104 && position.x <= 134
+      && position.z >= 42 && position.z <= 64
+    ) {
+      names.push('ngocSonTemple')
+    }
+    if (Math.hypot(position.x, position.z + 15) <= 70) {
+      names.push('sceneChurch')
+    }
+    if (Math.hypot(position.x - 105, position.z + 10) <= 115) {
+      names.push('sceneLake')
+    }
+    if (Math.hypot(position.x - 235, position.z - 20) <= 80) {
+      names.push('sceneOldQuarter')
+    }
+    if (Math.hypot(position.x - 145, position.z - 50) <= 65) {
+      names.push('sceneNgocSon')
+    }
+    return names
   }
 
   getNamedNpc(name) {
@@ -623,6 +661,9 @@ export class ChurchDistrict {
       )
     }
     if (activeDistricts.has('ngocSonBranch')) roots.push(this.ngocSonBranch.group)
+    if (this.sceneMomentEffects.activeIds.size) {
+      roots.push(this.sceneMomentEffects.group)
+    }
     return [...new Set(roots.filter(Boolean))]
   }
 
@@ -794,6 +835,13 @@ export class ChurchDistrict {
           'oldQuarter',
           box([37, 0, 17], [70, 18, 44]),
           this.oldQuarterConnector.group,
+        ),
+        staticCandidate(
+          'phoCoMoRong',
+          'Dãy biển hiệu Phố Cổ',
+          'oldQuarter',
+          box([199, 0, 18], [294, 18, 55]),
+          this.hoanKiemUrbanEdgeDistrict.group,
         ),
       ]),
       baDinh: proceduralCandidates(this.baDinhDistrict),
@@ -1126,6 +1174,7 @@ export class ChurchDistrict {
     disposeSharedNpcResources()
     disposeSharedSpecialNpcResources()
     this.props.dispose()
+    this.sceneMomentEffects.dispose()
     this.hoanKiemPhotoCompositions.dispose()
     this.hoanKiemUrbanEdgeDistrict.dispose()
     this.hoanKiemPedestrianDistrict.dispose()

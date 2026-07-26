@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { MAP_REGISTRY } from '../world/map/MapRegistry.js'
+import { getPhotoMomentContext } from '../moments/MomentTemplates.js'
 import { PhotoSceneAnalyzer } from './PhotoSceneAnalyzer.js'
 
 export const PHOTO_CLASSIFICATIONS = Object.freeze({
@@ -20,6 +21,8 @@ const DISTRICT_LABELS = Object.freeze({
   oldQuarterConnector: 'Phố Nhà Chung',
   hoanKiemDistrict: 'Hồ Gươm',
   ngocSonBranch: 'Cầu Thê Húc – Đền Ngọc Sơn',
+  theHucBridge: 'Cầu Thê Húc',
+  ngocSonTemple: 'Đền Ngọc Sơn',
 })
 
 function copyVector(vector) {
@@ -189,10 +192,103 @@ function normalizeEventContext(context) {
   const events = rawEvents.map((event, index) => Object.freeze({
     id: event.id ?? `event-${index + 1}`,
     name: event.name ?? event.label ?? 'Sự kiện đang hoạt động',
+    state: event.state ?? null,
+    inClimax: Boolean(event.inClimax),
+    climaxProgress: Number.isFinite(event.climaxProgress)
+      ? clamp01(event.climaxProgress)
+      : 0,
+    primarySubjectIds: Object.freeze([...(event.primarySubjectIds ?? [])]),
+    momentType: event.momentType ?? null,
+    photoType: event.photoType ?? null,
+    region: event.region ?? null,
+    timingBonus: Number.isFinite(event.timingBonus)
+      ? Math.max(0, event.timingBonus)
+      : 0,
+    climaxWindow: event.climaxWindow
+      ? Object.freeze({
+          state: event.climaxWindow.state ?? 'climax',
+          duration: Number.isFinite(event.climaxWindow.duration)
+            ? Math.max(0, event.climaxWindow.duration)
+            : 0,
+        })
+      : null,
+    location: event.location ?? null,
+    paused: Boolean(event.paused),
   }))
+  const lead = events[0] ?? null
   return Object.freeze({
     active: events.length > 0,
+    momentId: context.momentId ?? lead?.id ?? null,
+    state: context.state ?? lead?.state ?? null,
+    inClimax: Boolean(context.inClimax ?? lead?.inClimax),
+    primarySubjectIds: Object.freeze([
+      ...(context.primarySubjectIds ?? lead?.primarySubjectIds ?? []),
+    ]),
+    momentType: context.momentType ?? lead?.momentType ?? null,
+    photoType: context.photoType ?? lead?.photoType ?? null,
+    region: context.region ?? lead?.region ?? null,
+    timingBonus: Number.isFinite(context.timingBonus)
+      ? Math.max(0, context.timingBonus)
+      : lead?.timingBonus ?? 0,
+    climaxWindow: context.climaxWindow ?? lead?.climaxWindow ?? null,
+    location: context.location ?? lead?.location ?? null,
     events: Object.freeze(events),
+  })
+}
+
+function normalizeSceneMomentContext(context) {
+  const rawMoments = Array.isArray(context?.moments) ? context.moments : []
+  const moments = rawMoments.map((moment) => Object.freeze({
+    id: moment.id ?? null,
+    name: moment.name ?? 'Khoảnh khắc cảnh quan',
+    region: moment.region ?? null,
+    landmarkId: moment.landmarkId ?? null,
+    angleMatched: Boolean(moment.angleMatched),
+    facingAlignment: Number.isFinite(moment.facingAlignment)
+      ? clamp01(moment.facingAlignment)
+      : 0,
+    timeMatched: Boolean(moment.timeMatched),
+    lightingMatched: Boolean(moment.lightingMatched),
+    requiredLightingPhase: moment.requiredLightingPhase ?? null,
+    landmarkVisible: Boolean(moment.landmarkVisible),
+    state: moment.state ?? 'inactive',
+    active: Boolean(moment.active),
+    inClimax: Boolean(moment.inClimax),
+    climaxProgress: Number.isFinite(moment.climaxProgress)
+      ? clamp01(moment.climaxProgress)
+      : 0,
+    timingBonus: Number.isFinite(moment.timingBonus)
+      ? Math.max(0, moment.timingBonus)
+      : 0,
+    photoType: moment.photoType ?? 'scene-scene',
+  }))
+  const lead = moments[0] ?? null
+  return Object.freeze({
+    active: Boolean(context?.active),
+    available: Boolean(context?.available),
+    sceneMomentId: context?.sceneMomentId ?? lead?.id ?? null,
+    region: context?.region ?? lead?.region ?? null,
+    landmarkId: context?.landmarkId ?? lead?.landmarkId ?? null,
+    angleMatched: Boolean(context?.angleMatched ?? lead?.angleMatched),
+    facingAlignment: Number.isFinite(context?.facingAlignment)
+      ? clamp01(context.facingAlignment)
+      : lead?.facingAlignment ?? 0,
+    timeMatched: Boolean(context?.timeMatched ?? lead?.timeMatched),
+    lightingMatched: Boolean(context?.lightingMatched ?? lead?.lightingMatched),
+    requiredLightingPhase: context?.requiredLightingPhase
+      ?? lead?.requiredLightingPhase
+      ?? null,
+    landmarkVisible: Boolean(context?.landmarkVisible ?? lead?.landmarkVisible),
+    state: context?.state ?? lead?.state ?? 'inactive',
+    inClimax: Boolean(context?.inClimax ?? lead?.inClimax),
+    climaxProgress: Number.isFinite(context?.climaxProgress)
+      ? clamp01(context.climaxProgress)
+      : lead?.climaxProgress ?? 0,
+    timingBonus: Number.isFinite(context?.timingBonus)
+      ? Math.max(0, context.timingBonus)
+      : lead?.timingBonus ?? 0,
+    photoType: context?.photoType ?? lead?.photoType ?? 'scene-scene',
+    moments: Object.freeze(moments),
   })
 }
 
@@ -242,6 +338,7 @@ export function buildPhotoMetadata({
   subjects,
   landmarks,
   eventContext,
+  sceneMomentContext,
   sceneAnalysis = null,
 } = {}) {
   if (!id) throw new TypeError('buildPhotoMetadata requires an id')
@@ -280,6 +377,7 @@ export function buildPhotoMetadata({
     subjects: Object.freeze([...subjects]),
     landmarks: Object.freeze([...landmarks]),
     eventContext: normalizeEventContext(eventContext),
+    sceneMomentContext: normalizeSceneMomentContext(sceneMomentContext),
     classification,
     sceneAnalysis: sceneAnalysis ?? Object.freeze({
       depth: Object.freeze({
@@ -301,6 +399,8 @@ export class PhotoMetadataBuilder {
     clock,
     world,
     dayNight,
+    momentSystem = null,
+    sceneMomentSystem = null,
     now = () => new Date(),
     sceneAnalyzer = null,
   }) {
@@ -308,6 +408,8 @@ export class PhotoMetadataBuilder {
     this.clock = clock
     this.world = world
     this.dayNight = dayNight
+    this.momentSystem = momentSystem
+    this.sceneMomentSystem = sceneMomentSystem
     this.now = now
     this.sequence = 0
     this.projectionView = new THREE.Matrix4()
@@ -352,7 +454,16 @@ export class PhotoMetadataBuilder {
       landmarks: visibleLandmarks,
     })
     const id = `photo-${capturedAt.getTime()}-${++this.sequence}`
-    const eventContext = this.world.getActiveEventContext?.() ?? null
+    const momentContext = getPhotoMomentContext(this.momentSystem)
+    const eventContext = momentContext.active
+      ? momentContext
+      : this.world.getActiveEventContext?.() ?? null
+    const sceneMomentContext = this.sceneMomentSystem?.getPhotoContext?.({
+      camera: this.camera,
+      gameMinutes: this.clock.minutes,
+      lightingPhase: this.dayNight.getLightingPhase(),
+      visibleLandmarkIds: sceneSnapshot.landmarks.map((landmark) => landmark.id),
+    }) ?? null
     return buildPhotoMetadata({
       id,
       capturedAt,
@@ -366,6 +477,7 @@ export class PhotoMetadataBuilder {
       subjects: sceneSnapshot.subjects,
       landmarks: sceneSnapshot.landmarks,
       eventContext,
+      sceneMomentContext,
       sceneAnalysis: sceneSnapshot.sceneAnalysis,
     })
   }

@@ -238,6 +238,9 @@ function createRuntime(definition) {
 }
 
 function snapshot(runtime) {
+  const stateDuration = runtime.state === 'cooldown'
+    ? runtime.definition.cooldown
+    : runtime.definition.durations[runtime.state] ?? 0
   return Object.freeze({
     id: runtime.definition.id,
     region: runtime.definition.region,
@@ -254,6 +257,9 @@ function snapshot(runtime) {
     waiting: runtime.waiting,
     blockedReason: runtime.blockedReason,
     lockedResources: runtime.definition.resources.length,
+    stateDuration,
+    durations: runtime.definition.durations,
+    metadata: runtime.definition.metadata,
   })
 }
 
@@ -698,6 +704,21 @@ export class MomentSystem {
       || (definition.area && definition.area !== context.areaId)
     ) {
       this.cancelMoment(definition.id, 'region-changed', context)
+      return
+    }
+
+    const cancellationReason = definition.hooks.shouldCancel?.(
+      snapshot(runtime),
+      context,
+    )
+    if (cancellationReason) {
+      this.cancelMoment(
+        definition.id,
+        typeof cancellationReason === 'string'
+          ? cancellationReason
+          : 'condition-failed',
+        context,
+      )
       return
     }
 

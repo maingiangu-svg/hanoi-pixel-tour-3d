@@ -59,3 +59,31 @@ test('actors in a hidden area stay active for schedules but stop per-frame anima
   assert.equal(manager.lastSkippedAreaCount, 1)
   manager.dispose()
 })
+
+test('far actors retain logic time with throttled detail and nearby shadows only', () => {
+  const playerPosition = { x: 0, z: 0 }
+  const manager = new NpcManager(playerPosition)
+  const actor = actorStub()
+  actor.position = { x: 50, z: 0 }
+  actor.receivedDelta = 0
+  actor.shadowStates = []
+  actor.update = (delta) => {
+    actor.updateCalls += 1
+    actor.receivedDelta += delta
+  }
+  actor.setShadowDetail = (detailed) => actor.shadowStates.push(detailed)
+  manager.add(actor, { active: true })
+
+  for (let frame = 0; frame < 13; frame += 1) {
+    manager.update(0.02, 'outdoor')
+  }
+  assert.equal(actor.updateCalls, 1)
+  assert.ok(actor.receivedDelta >= 0.24 && actor.receivedDelta <= 0.26)
+  assert.deepEqual(actor.shadowStates, [false])
+
+  playerPosition.x = 49
+  manager.update(0.02, 'outdoor')
+  assert.equal(actor.updateCalls, 2)
+  assert.deepEqual(actor.shadowStates, [false, true])
+  manager.dispose()
+})

@@ -31,6 +31,17 @@ button {
   font: inherit;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+}
+
 .render-root,
 .game-canvas {
   position: fixed;
@@ -48,6 +59,45 @@ button {
   position: relative;
   z-index: 1;
   pointer-events: none;
+}
+
+.audio-settings {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: rgba(28, 34, 32, 0.86);
+  border: 1px solid rgba(246, 240, 223, 0.22);
+  pointer-events: auto;
+}
+
+.audio-settings__mute {
+  min-height: 30px;
+  padding: 5px 8px;
+  color: rgba(246, 240, 223, 0.78);
+  font-size: 0.62rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.audio-settings__mute[aria-pressed='true'] {
+  color: #dc8068;
+}
+
+.audio-settings__volume {
+  width: 86px;
+  accent-color: var(--accent);
+}
+
+.audio-settings__mute:focus-visible,
+.audio-settings__volume:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .start-overlay {
@@ -388,7 +438,7 @@ kbd {
 .photo-album__panel {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   width: min(1180px, 100%);
   height: min(820px, 100%);
   min-height: 360px;
@@ -440,6 +490,93 @@ kbd {
   margin: 8px 0 0;
   color: rgba(246, 240, 223, 0.56);
   font-size: 0.76rem;
+}
+
+.photo-album__catalog {
+  display: grid;
+  gap: 13px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(246, 240, 223, 0.14);
+}
+
+.photo-album__filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.photo-album__filters label {
+  display: grid;
+  gap: 5px;
+}
+
+.photo-album__filters label > span {
+  color: rgba(246, 240, 223, 0.48);
+  font-size: 0.58rem;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.photo-album__filters select {
+  width: 100%;
+  min-height: 37px;
+  padding: 7px 30px 7px 10px;
+  color: #f6f0df;
+  font: inherit;
+  font-size: 0.72rem;
+  background: #2b3330;
+  border: 1px solid rgba(246, 240, 223, 0.2);
+  border-radius: 0;
+}
+
+.photo-album__filters select:hover,
+.photo-album__filters select:focus-visible {
+  border-color: var(--accent);
+}
+
+.photo-album__filters select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.photo-album__progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.photo-album-progress {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  background: rgba(246, 240, 223, 0.045);
+  border-left: 2px solid rgba(246, 240, 223, 0.18);
+}
+
+.photo-album-progress span {
+  overflow: hidden;
+  color: rgba(246, 240, 223, 0.56);
+  font-size: 0.59rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-album-progress strong {
+  color: rgba(246, 240, 223, 0.78);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-album-progress.is-complete {
+  border-left-color: var(--accent);
+}
+
+.photo-album-progress.is-complete strong {
+  color: #e8bd64;
 }
 
 .photo-album__close,
@@ -573,10 +710,35 @@ kbd {
   font-size: 0.68rem;
 }
 
+.photo-album-card__description {
+  display: -webkit-box;
+  min-height: 2.7em;
+  overflow: hidden;
+  color: rgba(246, 240, 223, 0.74) !important;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .photo-album-card__score {
   color: #e8bd64;
   font-size: 0.74rem;
   letter-spacing: 0.04em;
+}
+
+.photo-album-card__theme {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  padding-top: 7px;
+  color: rgba(246, 240, 223, 0.62);
+  font-size: 0.61rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-top: 1px solid rgba(246, 240, 223, 0.1);
 }
 
 .photo-album__detail {
@@ -611,6 +773,36 @@ kbd {
 .photo-album__figure figcaption {
   display: grid;
   gap: 20px;
+}
+
+.photo-album-theme-detail {
+  display: grid;
+  gap: 7px;
+  padding-left: 13px;
+  border-left: 3px solid var(--accent);
+}
+
+.photo-album-theme-detail__eyebrow {
+  color: var(--accent);
+  font-size: 0.57rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.photo-album-theme-detail strong {
+  font-size: 1rem;
+}
+
+.photo-album-theme-detail p,
+.photo-album-theme-detail small {
+  margin: 0;
+  color: rgba(246, 240, 223, 0.64);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.photo-album-theme-detail small {
+  color: #e8bd64;
 }
 
 .photo-album-score {
@@ -737,6 +929,238 @@ kbd {
 .game-shell.is-photo-album-active .game-clock,
 .game-shell.is-photo-album-active .debug-panel,
 .game-shell.is-photo-album-active .world-notice {
+  opacity: 0 !important;
+  visibility: hidden;
+}
+
+.photo-quest-journal[hidden] {
+  display: none;
+}
+
+.photo-quest-journal {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 3vw, 36px);
+  color: #f6f0df;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  pointer-events: auto;
+}
+
+.photo-quest-journal__backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(150deg, rgba(16, 20, 19, 0.9), rgba(31, 35, 32, 0.78)),
+    rgba(13, 16, 15, 0.84);
+  border: 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.photo-quest-journal__panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1080px, 100%);
+  height: min(820px, 100%);
+  min-height: 360px;
+  padding: clamp(18px, 3vw, 34px);
+  overflow: hidden;
+  background: rgba(35, 41, 39, 0.97);
+  border: 1px solid rgba(246, 240, 223, 0.28);
+  box-shadow: 18px 18px 0 rgba(11, 14, 13, 0.28);
+}
+
+.photo-quest-journal__panel::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 3px;
+  background: var(--accent);
+  content: '';
+}
+
+.photo-quest-journal__header,
+.photo-quest-group > header,
+.photo-quest-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.photo-quest-journal__header {
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(246, 240, 223, 0.14);
+}
+
+.photo-quest-journal__eyebrow {
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.18em;
+}
+
+.photo-quest-journal__header h2 {
+  margin: 7px 0 2px;
+  font-size: clamp(1.65rem, 4vw, 2.8rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.photo-quest-journal__summary,
+.photo-quest-group p,
+.photo-quest-card p {
+  margin: 7px 0 0;
+  color: rgba(246, 240, 223, 0.6);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.photo-quest-journal__close {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 14px;
+  color: #f6f0df;
+  background: rgba(246, 240, 223, 0.06);
+  border: 1px solid rgba(246, 240, 223, 0.24);
+  cursor: pointer;
+}
+
+.photo-quest-journal__close kbd {
+  color: var(--accent);
+}
+
+.photo-quest-journal__close:hover,
+.photo-quest-journal__close:focus-visible {
+  border-color: var(--accent);
+}
+
+.photo-quest-journal__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.photo-quest-journal__groups {
+  display: grid;
+  gap: 18px;
+  min-height: 0;
+  padding: 22px 2px 4px;
+  overflow: auto;
+}
+
+.photo-quest-group {
+  padding: 18px;
+  background: rgba(246, 240, 223, 0.035);
+  border: 1px solid rgba(246, 240, 223, 0.13);
+}
+
+.photo-quest-group.is-locked {
+  opacity: 0.58;
+}
+
+.photo-quest-group h3,
+.photo-quest-card h4 {
+  margin: 0;
+}
+
+.photo-quest-group h3 {
+  font-size: 1.1rem;
+}
+
+.photo-quest-group__progress,
+.photo-quest-card__status {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.photo-quest-group__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.photo-quest-card {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  background: rgba(13, 17, 16, 0.42);
+  border-left: 2px solid rgba(246, 240, 223, 0.16);
+}
+
+.photo-quest-card.is-active {
+  border-left-color: var(--accent);
+}
+
+.photo-quest-card.is-completed {
+  border-left-color: #72a986;
+}
+
+.photo-quest-card h4 {
+  font-size: 0.9rem;
+}
+
+.photo-quest-card small {
+  display: block;
+  margin-top: 10px;
+  color: rgba(246, 240, 223, 0.46);
+  font-size: 0.66rem;
+  line-height: 1.55;
+}
+
+.photo-quest-card__photo {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+}
+
+.photo-quest-card__photo img,
+.photo-quest-card__photo-missing {
+  display: block;
+  width: 92px;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  background: #171c1b;
+  border: 1px solid rgba(246, 240, 223, 0.16);
+}
+
+.photo-quest-card__photo-missing {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  color: rgba(246, 240, 223, 0.44);
+  font-size: 0.58rem;
+  text-align: center;
+}
+
+.photo-quest-card__photo figcaption {
+  color: #9fc3a8;
+  font-size: 0.7rem;
+}
+
+.game-shell.is-photo-quest-active .start-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-shell.is-photo-quest-active .crosshair,
+.game-shell.is-photo-quest-active .interaction-prompt,
+.game-shell.is-photo-quest-active .game-clock,
+.game-shell.is-photo-quest-active .debug-panel,
+.game-shell.is-photo-quest-active .world-notice {
   opacity: 0 !important;
   visibility: hidden;
 }
@@ -1437,6 +1861,26 @@ kbd {
     gap: 8px;
   }
 
+  .photo-quest-journal {
+    padding: 8px;
+  }
+
+  .photo-quest-journal__panel {
+    padding: 18px 14px;
+  }
+
+  .photo-quest-journal__header {
+    align-items: flex-start;
+  }
+
+  .photo-quest-journal__close span {
+    display: none;
+  }
+
+  .photo-quest-group__list {
+    grid-template-columns: 1fr;
+  }
+
   .start-rule {
     margin: 22px 0 18px;
   }
@@ -1533,6 +1977,22 @@ kbd {
   .photo-album__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+  }
+
+  .photo-album__filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .photo-album__filters label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .photo-album__progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .photo-album-progress:last-child {
+    grid-column: 1 / -1;
   }
 
   .photo-album-card__summary {

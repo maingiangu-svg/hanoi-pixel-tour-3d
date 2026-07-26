@@ -1,5 +1,6 @@
 const BLOCKED_WHILE_OPEN = new Set([
   'KeyC',
+  'KeyJ',
   'KeyM',
   'KeyP',
   'Space',
@@ -22,6 +23,7 @@ export class PhotoAlbum {
     input,
     player,
     gameUi,
+    catalog = null,
     canOpen = () => true,
     eventTarget = window,
   }) {
@@ -30,6 +32,7 @@ export class PhotoAlbum {
     this.input = input
     this.player = player
     this.gameUi = gameUi
+    this.catalog = catalog
     this.canOpen = canOpen
     this.eventTarget = eventTarget
     this.isOpen = false
@@ -37,6 +40,9 @@ export class PhotoAlbum {
     this.resumePointerLock = false
     this.disposed = false
     this.records = []
+    this.themeFilter = 'all'
+    this.starsFilter = 0
+    this.sortMode = 'newest'
 
     this.handleKeyDown = this.handleKeyDown.bind(this)
     this.ui.setHandlers({
@@ -44,13 +50,20 @@ export class PhotoAlbum {
       select: (id) => this.select(id),
       delete: (id) => this.delete(id),
       back: () => this.back(),
+      themeFilter: (id) => this.setThemeFilter(id),
+      starsFilter: (stars) => this.setStarsFilter(stars),
+      sort: (mode) => this.setSortMode(mode),
     })
     this.unsubscribe = this.store.subscribe((records) => {
       this.records = records
+      this.catalog?.syncRecords?.(records)
       if (this.selectedId && !this.store.get(this.selectedId)) {
         this.selectedId = null
       }
-      if (this.isOpen) this.ui.render(records, this.selectedId)
+      if (this.isOpen) this.#render()
+    })
+    this.unsubscribeCatalog = this.catalog?.subscribe?.(() => {
+      if (this.isOpen) this.#render()
     })
     this.eventTarget.addEventListener('keydown', this.handleKeyDown, true)
   }
@@ -63,7 +76,7 @@ export class PhotoAlbum {
     this.input.setEnabled(false)
     this.input.reset?.()
     this.gameUi.setInteraction(null)
-    this.ui.render(this.records, null)
+    this.#render()
     this.ui.setOpen(true)
     if (this.player.controls.isLocked) this.player.controls.unlock()
     return true
@@ -92,14 +105,41 @@ export class PhotoAlbum {
   select(id) {
     if (!this.isOpen || !this.store.get(id)) return false
     this.selectedId = id
-    this.ui.render(this.records, id)
+    this.#render()
     return true
   }
 
   back() {
     if (!this.isOpen || !this.selectedId) return false
     this.selectedId = null
-    this.ui.render(this.records, null)
+    this.#render()
+    return true
+  }
+
+  setThemeFilter(themeId) {
+    if (!this.isOpen) return false
+    this.themeFilter = themeId || 'all'
+    this.selectedId = null
+    this.#render()
+    return true
+  }
+
+  setStarsFilter(stars) {
+    if (!this.isOpen) return false
+    const value = Number(stars)
+    this.starsFilter = Number.isFinite(value)
+      ? Math.max(0, Math.min(5, Math.round(value)))
+      : 0
+    this.selectedId = null
+    this.#render()
+    return true
+  }
+
+  setSortMode(mode) {
+    if (!this.isOpen) return false
+    this.sortMode = mode === 'highest' ? 'highest' : 'newest'
+    this.selectedId = null
+    this.#render()
     return true
   }
 
@@ -139,6 +179,35 @@ export class PhotoAlbum {
     this.close({ resumePointerLock: false })
     this.disposed = true
     this.unsubscribe?.()
+    this.unsubscribeCatalog?.()
     this.eventTarget.removeEventListener('keydown', this.handleKeyDown, true)
+  }
+
+  #render() {
+    const decorated = this.catalog?.decorate?.(this.records) ?? this.records
+    const filtered = decorated.filter((record) => {
+      const themeMatched = this.themeFilter === 'all'
+        || record.album?.themeIds?.includes(this.themeFilter)
+      const starsMatched = (record.album?.stars ?? 0) >= this.starsFilter
+      return themeMatched && starsMatched
+    })
+    if (this.sortMode === 'highest') {
+      filtered.sort((left, right) => (
+        (right.album?.score ?? -1) - (left.album?.score ?? -1)
+      ))
+    }
+    if (
+      this.selectedId
+      && !filtered.some((record) => record.id === this.selectedId)
+    ) {
+      this.selectedId = null
+    }
+    this.ui.render(filtered, this.selectedId, {
+      totalCount: this.records.length,
+      themeFilter: this.themeFilter,
+      starsFilter: this.starsFilter,
+      sortMode: this.sortMode,
+      themeProgress: this.catalog?.getThemeProgress?.(this.records) ?? [],
+    })
   }
 }
