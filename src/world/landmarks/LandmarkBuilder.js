@@ -221,6 +221,37 @@ export class LandmarkBuilder {
 
   #buildPlaza(group, landmark) {
     const rect = this.coordinates.rect(this.mapData.id, landmark)
+    const plazaBands = []
+    for (let index = 1; index <= 5; index += 1) {
+      plazaBands.push({
+        size: [rect.width * 0.72, 0.018, 0.12],
+        position: [
+          rect.x,
+          0.045,
+          rect.minZ + rect.depth * index / 6,
+        ],
+      })
+    }
+    this.kit.instancedBoxes(group, {
+      name: 'Nhịp lát nghi lễ Quảng trường Ba Đình',
+      material: 'stoneLight',
+      instances: plazaBands,
+      receiveShadow: false,
+    })
+    const lawnDepth = Math.max(3, rect.depth * 0.14)
+    for (const side of [-1, 1]) {
+      this.kit.box(group, {
+        name: 'Dải xanh Quảng trường Ba Đình',
+        size: [rect.width * 0.74, 0.055, lawnDepth],
+        position: [
+          rect.x,
+          0.035,
+          rect.z + side * (rect.depth / 2 - lawnDepth * 0.58),
+        ],
+        material: 'foliageDark',
+        receiveShadow: false,
+      })
+    }
     const flagCount = 9
     for (let index = 0; index < flagCount; index += 1) {
       const x = rect.minX + rect.width * (index + 1) / (flagCount + 1)
@@ -251,6 +282,14 @@ export class LandmarkBuilder {
       name: 'Mái Lăng Bác', size: [width + 2, 1.2, depth + 2],
       position: [rect.x, 9.25, rect.z], material: 'stoneDark',
     })
+    for (let step = 0; step < 3; step += 1) {
+      this.kit.box(group, {
+        name: `Bậc nền Lăng Bác ${step + 1}`,
+        size: [width + 7 - step * 1.5, 0.18, depth + 7 - step * 1.45],
+        position: [rect.x, 0.09 + step * 0.16, rect.z + 0.9],
+        material: step === 2 ? 'stoneLight' : 'stoneWarm',
+      })
+    }
     const frontZ = rect.z + depth / 2 + 0.04
     for (let index = -4; index <= 4; index += 1) {
       this.kit.box(group, {
@@ -258,6 +297,12 @@ export class LandmarkBuilder {
         position: [rect.x + index * (width / 11), 4, frontZ], material: 'stoneLight',
       })
     }
+    this.kit.box(group, {
+      name: 'Dải tối mặt tiền Lăng Bác',
+      size: [width * 0.76, 1.08, 0.34],
+      position: [rect.x, 7.65, frontZ + 0.03],
+      material: 'soot',
+    })
     this.#addLabel(group, 'HỒ CHÍ MINH', { x: rect.x, z: frontZ + 0.7 }, '#43484e')
   }
 
@@ -352,6 +397,31 @@ export class LandmarkBuilder {
     }
     this.kit.instancedBoxes(group, {
       name: 'Tà vẹt Cầu Long Biên', material: 'wood', instances,
+    })
+    const frameCount = Math.max(4, Math.floor(deck.width / 22))
+    const frameInstances = []
+    for (let index = 0; index <= frameCount; index += 1) {
+      const x = deck.minX + deck.width * index / frameCount
+      frameInstances.push(
+        { size: [0.32, 5.4, 0.32], position: [x, 2.9, deck.z - 2.3] },
+        { size: [0.32, 5.4, 0.32], position: [x, 2.9, deck.z + 2.3] },
+        { size: [0.32, 0.32, 4.9], position: [x, 5.48, deck.z] },
+        {
+          size: [0.2, 6.2, 0.2],
+          position: [x, 2.9, deck.z],
+          rotation: [Math.PI / 4.6, 0, 0],
+        },
+        {
+          size: [0.2, 6.2, 0.2],
+          position: [x, 2.9, deck.z],
+          rotation: [-Math.PI / 4.6, 0, 0],
+        },
+      )
+    }
+    this.kit.instancedBoxes(group, {
+      name: 'Khung thép nhận diện Cầu Long Biên',
+      material: 'metal',
+      instances: frameInstances,
     })
     this.#addLabel(group, landmark.name, { x: rect.minX + 8, z: rect.z }, '#6f2b26')
   }

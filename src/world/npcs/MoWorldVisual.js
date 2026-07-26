@@ -36,7 +36,9 @@ export class MoWorldVisual {
 
     this.geometry = new THREE.PlaneGeometry(1, 1)
     this.material = new THREE.MeshLambertMaterial({
-      color: 0xffffff,
+      // A restrained warm grade keeps the authored illustration in the same
+      // material family as the low-poly masonry without changing the asset.
+      color: 0xf5eee5,
       transparent: true,
       alphaTest: 0.08,
       depthWrite: true,

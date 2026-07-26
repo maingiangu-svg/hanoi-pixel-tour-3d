@@ -57,6 +57,10 @@ export class DebugPanel {
     const crowdLine = this.world.crowd?.lastChurchState
       ? `Nhà thờ · ${this.world.crowd.lastChurchState}`
       : null
+    const ambient = worldStats.ambient
+    const ambientLine = ambient
+      ? `Ambient ${ambient.quality.toUpperCase()} · gần ${ambient.near} · vừa ${ambient.mid} · xa ${ambient.far} · ${ambient.regionLabel ?? 'ngoài vùng'}`
+      : null
     const districtLine = this.world.getActiveDistrictNames
       ? this.world.getActiveDistrictNames(this.player.camera.position).join(' · ')
       : null
@@ -87,6 +91,7 @@ export class DebugPanel {
       npcLine,
       scheduleLine,
       crowdLine,
+      ambientLine,
       districtLine,
       momentLine,
       blockedMomentLine,

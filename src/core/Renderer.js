@@ -1,18 +1,19 @@
 import * as THREE from 'three'
 
 const MAX_PIXEL_RATIO = 1.75
+const OUTDOOR_VIEW_DISTANCE = 150
 
 export class Renderer {
   constructor(container) {
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x687586)
-    this.scene.fog = new THREE.Fog(0x687586, 52, 92)
+    this.scene.background = new THREE.Color(0x53647b)
+    this.scene.fog = new THREE.Fog(0x53647b, 70, 145)
 
     this.camera = new THREE.PerspectiveCamera(
       68,
       window.innerWidth / window.innerHeight,
       0.05,
-      120,
+      OUTDOOR_VIEW_DISTANCE,
     )
     this.activeCamera = this.camera
 

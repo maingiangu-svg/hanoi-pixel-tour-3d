@@ -3,7 +3,12 @@ const FAR_UPDATE_INTERVAL = 0.24
 const SHADOW_DETAIL_DISTANCE_SQUARED = 18 * 18
 
 export class NpcManager {
-  constructor(playerPosition) {
+  constructor(playerPosition, {
+    farUpdateDistance = Math.sqrt(FAR_UPDATE_DISTANCE_SQUARED),
+    farUpdateInterval = FAR_UPDATE_INTERVAL,
+    shadowDetailDistance = Math.sqrt(SHADOW_DETAIL_DISTANCE_SQUARED),
+    shadowLimit = Infinity,
+  } = {}) {
     this.playerPosition = playerPosition
     this.entries = []
     this.elapsed = 0
@@ -12,10 +17,19 @@ export class NpcManager {
     this.profiler = null
     this.lastUpdatedCount = 0
     this.lastSkippedAreaCount = 0
+    this.farUpdateDistanceSquared = farUpdateDistance * farUpdateDistance
+    this.farUpdateInterval = farUpdateInterval
+    this.shadowDetailDistanceSquared = shadowDetailDistance * shadowDetailDistance
+    this.shadowLimit = shadowLimit
+    this.shadowCandidates = []
   }
 
   setProfiler(profiler) {
     this.profiler = profiler
+  }
+
+  setShadowLimit(limit) {
+    this.shadowLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : Infinity
   }
 
   add(actor, { area = 'outdoor', role = 'ambient', active = false } = {}) {
@@ -27,6 +41,8 @@ export class NpcManager {
       activationVersion: 0,
       farUpdateElapsed: 0,
       shadowDetailed: null,
+      distanceSquared: Infinity,
+      wantsDetailedShadow: false,
     }
     actor.setActive(false)
     this.entries.push(entry)
@@ -70,6 +86,7 @@ export class NpcManager {
     this.#flushActivationQueue()
     this.lastUpdatedCount = 0
     this.lastSkippedAreaCount = 0
+    this.shadowCandidates.length = 0
 
     for (const entry of this.entries) {
       if (!entry.actor.active) continue
@@ -84,15 +101,15 @@ export class NpcManager {
         ? (position.x - this.playerPosition.x) ** 2
           + (position.z - this.playerPosition.z) ** 2
         : 0
-      const shadowDetailed = distanceSquared <= SHADOW_DETAIL_DISTANCE_SQUARED
-      if (entry.shadowDetailed !== shadowDetailed) {
-        entry.shadowDetailed = shadowDetailed
-        entry.actor.setShadowDetail?.(shadowDetailed)
+      entry.distanceSquared = distanceSquared
+      entry.wantsDetailedShadow = false
+      if (distanceSquared <= this.shadowDetailDistanceSquared) {
+        this.shadowCandidates.push(entry)
       }
       let updateDelta = delta
-      if (distanceSquared > FAR_UPDATE_DISTANCE_SQUARED) {
+      if (distanceSquared > this.farUpdateDistanceSquared) {
         entry.farUpdateElapsed += delta
-        if (entry.farUpdateElapsed < FAR_UPDATE_INTERVAL) continue
+        if (entry.farUpdateElapsed < this.farUpdateInterval) continue
         updateDelta = entry.farUpdateElapsed
         entry.farUpdateElapsed = 0
       } else {
@@ -100,6 +117,20 @@ export class NpcManager {
       }
       entry.actor.update(updateDelta, this.context)
       this.lastUpdatedCount += 1
+    }
+    this.shadowCandidates.sort((a, b) => a.distanceSquared - b.distanceSquared)
+    const detailedShadowCount = Math.min(
+      this.shadowCandidates.length,
+      this.shadowLimit,
+    )
+    for (let index = 0; index < detailedShadowCount; index += 1) {
+      this.shadowCandidates[index].wantsDetailedShadow = true
+    }
+    for (const entry of this.entries) {
+      const shadowDetailed = entry.wantsDetailedShadow
+      if (entry.shadowDetailed === shadowDetailed) continue
+      entry.shadowDetailed = shadowDetailed
+      entry.actor.setShadowDetail?.(shadowDetailed)
     }
     this.profiler?.addCount('npcUpdates', this.lastUpdatedCount)
     this.profiler?.end('npc', startedAt)

@@ -173,6 +173,24 @@ export class HoanKiemDistrict {
         position: [0, tier.y + tier.size[1] / 2 + 0.04, 0],
         material: 'stoneDark',
       })
+      if (index < 2) {
+        const pilasterX = tier.size[0] / 2 - 0.22
+        const pilasterZ = tier.size[2] / 2 + 0.045
+        this.kit.instancedBoxes(tower, {
+          name: `Trụ góc tầng ${index + 1} Tháp Rùa`,
+          material: 'stoneTrim',
+          instances: [
+            [-1, -1], [-1, 1], [1, -1], [1, 1],
+          ].map(([sideX, sideZ]) => ({
+            size: [0.32, tier.size[1] * 0.9, 0.25],
+            position: [
+              sideX * pilasterX,
+              tier.y,
+              sideZ * pilasterZ,
+            ],
+          })),
+        })
+      }
     })
     this.kit.gable(tower, {
       name: 'Mái chính Tháp Rùa',
@@ -188,6 +206,12 @@ export class HoanKiemDistrict {
       size: [0.3, 0.55, 0.3],
       position: [0, 5.15, 0],
       material: 'stoneLight',
+    })
+    this.kit.box(tower, {
+      name: 'Diềm mái Tháp Rùa',
+      size: [3.7, 0.16, 3.04],
+      position: [0, 4.34, 0],
+      material: 'brick',
     })
 
     for (const x of [-1.8, 1.8]) {
@@ -218,26 +242,14 @@ export class HoanKiemDistrict {
       [130, -37.8, 0.94], [119, -39, 1.08], [105, -38.7, 0.82], [89, -39, 1.1],
     ]
     trees.forEach(([x, z, scale], index) => {
-      this.kit.cylinder(this.group, {
-        name: 'Thân cây ven Hồ Gươm',
-        radius: 0.28 * scale,
-        height: 4.4 * scale,
-        position: [x, 2.2 * scale, z],
-        material: 'wood',
-        castShadow: index % 5 === 0,
-      })
-      this.kit.sphere(this.group, {
-        name: 'Tán cây ven Hồ Gươm',
-        scale: [1.8 * scale, 1.55 * scale, 1.55 * scale],
-        position: [x - 0.3 * scale, 4.65 * scale, z],
+      this.kit.tree(this.group, {
+        name: 'Cây ven Hồ Gươm',
+        position: [x, 0, z],
+        scale,
+        variant: index + 2,
         material: index % 3 === 0 ? 'foliageLight' : 'foliage',
+        secondaryMaterial: index % 2 === 0 ? 'foliageDark' : 'foliage',
         castShadow: index % 5 === 0,
-      })
-      this.kit.sphere(this.group, {
-        name: 'Tán cây phụ ven Hồ Gươm',
-        scale: [1.25 * scale, 1.15 * scale, 1.35 * scale],
-        position: [x + 1.05 * scale, 4.25 * scale, z + 0.45 * scale],
-        material: index % 2 === 0 ? 'foliageDark' : 'foliage',
       })
       this.kit.addCollider(this.colliders, x, z, 0.65 * scale, 0.65 * scale, 'Cây ven Hồ Gươm')
     })
@@ -245,22 +257,12 @@ export class HoanKiemDistrict {
 
   #buildBenches() {
     for (const [z, facing] of [[-25, 1], [-11, 1], [7, 1], [22, 1]]) {
-      const bench = new THREE.Group()
-      bench.name = 'Ghế đá ven Hồ Gươm'
-      bench.position.set(68.2, 0, z)
-      bench.rotation.y = Math.PI / 2 * facing
-      this.group.add(bench)
-      this.kit.box(bench, {
-        name: 'Mặt ghế đá', size: [2.15, 0.16, 0.52], position: [0, 0.58, 0], material: 'stoneLight',
+      this.kit.bench(this.group, {
+        name: 'Ghế ven Hồ Gươm',
+        position: [68.2, 0, z],
+        rotationY: Math.PI / 2 * facing,
+        variant: Math.round(Math.abs(z)),
       })
-      this.kit.box(bench, {
-        name: 'Lưng ghế đá', size: [2.15, 0.78, 0.14], position: [0, 0.95, 0.25], material: 'stoneWarm',
-      })
-      for (const x of [-0.78, 0.78]) {
-        this.kit.box(bench, {
-          name: 'Chân ghế đá', size: [0.18, 0.55, 0.45], position: [x, 0.27, 0], material: 'stoneDark',
-        })
-      }
       this.kit.addCollider(this.colliders, 68.2, z, 0.9, 2.35, 'Ghế đá ven hồ')
     }
   }
@@ -321,11 +323,37 @@ export class HoanKiemDistrict {
         position: [x, height / 2, z], material,
         collision: true, colliders: this.colliders,
       })
+      this.kit.box(this.group, {
+        name: 'Chân tường nhà phố xa',
+        size: [7.08, 0.46, 11.08],
+        position: [x, 0.23, z],
+        material: 'stoneDark',
+      })
+      this.kit.box(this.group, {
+        name: 'Diềm mái nhà phố xa',
+        size: [7.34, 0.28, 11.34],
+        position: [x, height + 0.05, z],
+        material: index % 2 === 0 ? 'brick' : 'stoneDark',
+      })
+      this.kit.box(this.group, {
+        name: 'Nẹp đứng nhà phố xa',
+        size: [0.22, height - 0.65, 0.24],
+        position: [135.42, height / 2 + 0.1, z - 2.3],
+        material: 'stoneDark',
+      })
       for (const y of [3.2, 6.2].filter((level) => level < height - 1)) {
         this.kit.box(this.group, {
           name: 'Cửa sổ phố xa', size: [0.12, 1.2, 2.8],
           position: [135.45, y, z], material: (index + Math.round(y)) % 2 === 0 ? 'warmGlass' : 'glass',
         })
+        if ((index + Math.round(y)) % 2 === 0) {
+          this.kit.box(this.group, {
+            name: 'Ban công nhà phố xa',
+            size: [0.72, 0.14, 3.4],
+            position: [135.15, y - 0.86, z],
+            material: 'metal',
+          })
+        }
       }
     })
   }

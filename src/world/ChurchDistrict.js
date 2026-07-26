@@ -14,6 +14,7 @@ import { HoanKiemCoverageDistrict } from './districts/HoanKiemCoverageDistrict.j
 import { HoanKiemGroundExpansion } from './HoanKiemGroundExpansion.js'
 import { HoanKiemPedestrianDistrict } from './HoanKiemPedestrianDistrict.js'
 import { HoanKiemUrbanEdgeDistrict } from './HoanKiemUrbanEdgeDistrict.js'
+import { CentralHanoiBackdrop } from './CentralHanoiBackdrop.js'
 import { HoanKiemPhotoCompositions } from './HoanKiemPhotoCompositions.js'
 import { SceneMomentEffects } from './effects/SceneMomentEffects.js'
 import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
@@ -24,8 +25,9 @@ import { disposeSharedSpecialNpcResources } from '../npcs/SpecialNpcResources.js
 import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
+import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
 
-const OUTDOOR_SKY = 0x596777
+const OUTDOOR_SKY = 0x53647b
 const INTERIOR_SKY = 0x17191b
 const DISTRICT_VISIBILITY_HYSTERESIS = 10
 
@@ -137,6 +139,10 @@ export class ChurchDistrict {
       colliders: outdoorColliders,
       shopManager: this.shops,
     })
+    this.centralHanoiBackdrop = new CentralHanoiBackdrop({
+      kit: this.kit,
+      parent: this.outdoor,
+    })
     this.hoanKiemPhotoCompositions = new HoanKiemPhotoCompositions({
       kit: this.kit,
       parent: this.outdoor,
@@ -225,6 +231,14 @@ export class ChurchDistrict {
       batchStaticMeshes(this.hoanKiemUrbanEdgeDistrict.roadGroup, {
         cellSize: 60,
         name: 'Ngõ Hoàn Kiếm mở rộng · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.baDinhDistrict.group, {
+        cellSize: 54,
+        name: 'Ba Đình · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.longBienDistrict.group, {
+        cellSize: 54,
+        name: 'Long Biên · mesh tĩnh theo ô',
       }),
       ...this.hoanKiemUrbanEdgeDistrict.clusterGroups.map((entry) => (
         batchStaticMeshes(entry.group, {
@@ -326,6 +340,17 @@ export class ChurchDistrict {
     }
     this.activeAreaName = 'outdoor'
     this.activeMapId = MAP_REGISTRY.hoanKiem.id
+    this.ambientLife = camera
+      ? new AmbientLifeSystem({
+          areaRoots: {
+            outdoor: this.outdoor,
+            baDinh: this.baDinhDistrict.group,
+            longBien: this.longBienDistrict.group,
+          },
+          areaDefinitions: this.areas,
+          playerPosition: camera.position,
+        })
+      : null
     this.profiler = null
     this.practicalLightsByArea = null
     this.practicalLightAreaNames = []
@@ -342,6 +367,7 @@ export class ChurchDistrict {
     this.profiler = profiler
     this.crowd?.setProfiler(profiler)
     this.hoanKiemCrowd?.setProfiler(profiler)
+    this.ambientLife?.setProfiler(profiler)
     this.shops.setProfiler(profiler)
   }
 
@@ -396,6 +422,7 @@ export class ChurchDistrict {
     )
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
+    if (clock) this.ambientLife?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
     const moStartedAt = this.profiler?.begin() ?? 0
     this.mo?.update(deltaTime, this.activeAreaName)
@@ -421,14 +448,20 @@ export class ChurchDistrict {
       })
       return { total, shadowCasters }
     }
+    const ambient = this.ambientLife?.getStats() ?? null
     return {
       activeNpc: this.getActiveNpcCount(),
       npcPool: (this.crowd?.manager.entries.length ?? 0)
         + (this.hoanKiemCrowd?.manager.entries.length ?? 0)
-        + (this.mo ? 1 : 0),
+        + (this.mo ? 1 : 0)
+        + (ambient?.near ?? 0)
+        + (ambient?.mid ?? 0)
+        + (ambient?.far ?? 0),
       npcUpdated: (this.crowd?.manager.lastUpdatedCount ?? 0)
         + (this.hoanKiemCrowd?.manager.lastUpdatedCount ?? 0)
-        + (this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0),
+        + (this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0)
+        + (ambient?.nearUpdated ?? 0)
+        + (ambient?.midUpdated ?? 0),
       npcUpdatedOutsideArea: (this.crowd?.manager.lastSkippedAreaCount ?? 0)
         + (this.hoanKiemCrowd?.manager.lastSkippedAreaCount ?? 0),
       shopsTotal: this.shops.shops.length,
@@ -438,6 +471,7 @@ export class ChurchDistrict {
         total + (shop.customerPool?.customers.length ?? 0)
       ), 0),
       colliderPool: this.colliders.length,
+      ambient,
       groups: {
         church: countMeshes(this.church.group),
         street: countMeshes(this.oldQuarterConnector.group),
@@ -446,6 +480,7 @@ export class ChurchDistrict {
         expansion: countMeshes(this.hoanKiemGroundExpansion.group),
         pedestrian: countMeshes(this.hoanKiemPedestrianDistrict.group),
         urbanEdge: countMeshes(this.hoanKiemUrbanEdgeDistrict.group),
+        centralHanoi: countMeshes(this.centralHanoiBackdrop.group),
         photoCompositions: countMeshes(this.hoanKiemPhotoCompositions.group),
         interior: countMeshes(this.interior.group),
       },
@@ -465,6 +500,11 @@ export class ChurchDistrict {
       'waterReflection',
       'shopInterior',
       'shopGlass',
+      'premiumGlass',
+      'cityWindow',
+      'skylineGlass',
+      'signGlow',
+      'cityLightPool',
     ].map((role) => ({
       material: this.kit.material(role),
       role,
@@ -520,6 +560,9 @@ export class ChurchDistrict {
       this.mo?.ready && this.mo.areaName === this.activeAreaName ? 1 : 0
     ) + (this.hoanKiemCrowd?.getActiveCount(this.activeAreaName) ?? 0)
       + (this.activeAreaName === 'outdoor' ? this.shops.getActiveCount() : 0)
+      + (this.ambientLife?.getStats().near ?? 0)
+      + (this.ambientLife?.getStats().mid ?? 0)
+      + (this.ambientLife?.getStats().far ?? 0)
   }
 
   getActiveDistrictNames(position) {
@@ -609,6 +652,9 @@ export class ChurchDistrict {
     }
     appendManager(this.crowd?.manager, 'church-npc')
     appendManager(this.hoanKiemCrowd?.manager, 'hoan-kiem-npc')
+    subjects.push(...(
+      this.ambientLife?.getNearbyPhotoSubjects(this.playerPosition, 42) ?? []
+    ))
 
     if (this.activeAreaName === 'outdoor') {
       this.shops.shops.forEach((shop) => {
@@ -1127,6 +1173,10 @@ export class ChurchDistrict {
       this.playerPosition,
       this.activeAreaName === 'outdoor',
     )
+    this.centralHanoiBackdrop.updateVisibility(
+      this.playerPosition,
+      this.activeAreaName === 'outdoor',
+    )
     this.hoanKiemPhotoCompositions.updateVisibility(
       this.playerPosition,
       this.activeAreaName === 'outdoor',
@@ -1163,12 +1213,13 @@ export class ChurchDistrict {
     this.scene.background = new THREE.Color(indoor ? INTERIOR_SKY : OUTDOOR_SKY)
     this.scene.fog = indoor
       ? new THREE.Fog(INTERIOR_SKY, 22, 42)
-      : new THREE.Fog(OUTDOOR_SKY, 52, 92)
+      : new THREE.Fog(OUTDOOR_SKY, 70, 145)
   }
 
   dispose() {
     this.crowd?.dispose()
     this.hoanKiemCrowd?.dispose()
+    this.ambientLife?.dispose()
     this.shops.dispose()
     this.mo?.dispose()
     disposeSharedNpcResources()
@@ -1176,6 +1227,7 @@ export class ChurchDistrict {
     this.props.dispose()
     this.sceneMomentEffects.dispose()
     this.hoanKiemPhotoCompositions.dispose()
+    this.centralHanoiBackdrop.dispose()
     this.hoanKiemUrbanEdgeDistrict.dispose()
     this.hoanKiemPedestrianDistrict.dispose()
     this.hoanKiemGroundExpansion.dispose()

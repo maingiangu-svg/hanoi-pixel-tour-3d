@@ -388,13 +388,13 @@ export class NpcActor {
     const skin = this.preset.skin
     const torso = this.#mesh('Thân', 'tapered', this.preset.top, this.visual)
     torso.position.set(0, 1.02, 0)
-    torso.scale.set(0.52, 0.62, 0.32)
+    torso.scale.set(0.49, 0.62, 0.31)
     torso.castShadow = this.castShadow
     if (this.castShadow) this.shadowMeshes.push(torso)
 
     const hips = this.#mesh('Hông', 'box', this.preset.bottom, this.visual)
     hips.position.set(0, 0.72, 0)
-    hips.scale.set(0.38, 0.17, 0.25)
+    hips.scale.set(0.4, 0.17, 0.25)
 
     const neck = this.#mesh('Cổ', 'cylinder', skin, this.visual)
     neck.position.set(0, 1.35, 0)
@@ -405,7 +405,7 @@ export class NpcActor {
     this.headRig.position.set(0, 1.53, 0)
     this.visual.add(this.headRig)
     const head = this.#mesh('Khuôn mặt', 'head', skin, this.headRig)
-    head.scale.set(0.37, 0.43, 0.37)
+    head.scale.set(0.34, 0.39, 0.34)
     head.castShadow = this.castShadow
     if (this.castShadow) this.shadowMeshes.push(head)
     this.#buildHair()
@@ -420,7 +420,7 @@ export class NpcActor {
   #buildArm(label, side) {
     const shoulder = new THREE.Group()
     shoulder.name = `Vai ${label}`
-    shoulder.position.set(side * 0.31, 1.25, 0)
+    shoulder.position.set(side * 0.29, 1.25, 0)
     this.visual.add(shoulder)
 
     const upperArm = this.#mesh(`Cánh tay ${label}`, 'cylinder', this.preset.top, shoulder)
@@ -436,7 +436,7 @@ export class NpcActor {
     forearm.scale.set(0.13, 0.27, 0.13)
     const hand = this.#mesh(`Bàn tay ${label}`, 'sphere', this.preset.skin, elbow)
     hand.position.y = -0.295
-    hand.scale.setScalar(0.15)
+    hand.scale.setScalar(0.11)
 
     const handAnchor = new THREE.Group()
     handAnchor.name = `Điểm cầm ${label}`

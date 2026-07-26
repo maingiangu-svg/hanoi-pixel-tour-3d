@@ -1,9 +1,12 @@
 import * as THREE from 'three'
+import { getFacadeKit, getSignFamily } from '../style/HanoiVisualTokens.js'
 
 export class StreetBuilding {
   constructor({ kit, parent, colliders, config, shopManager = null }) {
     this.kit = kit
     this.config = config
+    this.facadeKit = getFacadeKit(config.detailSeed ?? 0)
+    this.signFamily = getSignFamily(config.detailSeed ?? 0)
     this.lights = []
     this.group = new THREE.Group()
     this.group.name = config.name
@@ -51,11 +54,25 @@ export class StreetBuilding {
         position: [x + side * (width / 2 - 0.16), height / 2 + 0.15, frontZ],
       })),
     })
+    // A shallow side return prevents the facade reading as a flat decal when
+    // approached from the narrow Hanoi streets.
+    for (const side of [-1, 1]) {
+      this.kit.box(this.group, {
+        name: 'Hồi tường mặt tiền nhà phố',
+        size: [0.2, Math.min(4.1, height - 0.6), 0.5],
+        position: [
+          x + side * (width / 2 - 0.11),
+          Math.min(2.2, height / 2),
+          frontZ - 0.2,
+        ],
+        material: side > 0 ? 'stoneWarm' : 'stoneDark',
+      })
+    }
   }
 
   #buildFrontage() {
     const { x, z, width, depth, variant, sign } = this.config
-    const frontZ = z - depth / 2 - 0.07
+    const frontZ = z - depth / 2 - 0.07 - this.facadeKit.recess
 
     if (variant === 'cafe') {
       const windowWidth = (width - 1.2) / 2
@@ -132,8 +149,8 @@ export class StreetBuilding {
         height: 0.78,
         position: [x, 3.75, frontZ - 0.12],
         rotation: [0, Math.PI, 0],
-        background: this.config.signColor ?? '#315c55',
-        foreground: '#f4dfad',
+        background: this.config.signColor ?? this.signFamily.background,
+        foreground: this.signFamily.foreground,
       })
     }
     this.kit.box(this.group, {
@@ -151,13 +168,14 @@ export class StreetBuilding {
     const floors = Math.max(1, Math.floor((height - 3.8) / 2.55))
     const windowFrames = []
     const mullions = []
+    const columns = width < 5.4 ? 2 : this.facadeKit.bayCount
 
     for (let floor = 0; floor < floors; floor += 1) {
       const y = 5.1 + floor * 2.45
       const windowMaterial = variant === 'cafe' && floor === 0 ? 'warmGlass' : 'glass'
-      for (const side of [-1, 1]) {
-        const windowWidth = Math.min(1.45, width * 0.25)
-        const windowX = x + side * width * 0.25
+      for (let column = 0; column < columns; column += 1) {
+        const windowWidth = Math.min(1.34, width / (columns + 1.35))
+        const windowX = x + (column - (columns - 1) / 2) * (width * 0.68 / Math.max(1, columns - 0.25))
         windowFrames.push({
           size: [windowWidth + 0.24, 1.74, 0.1],
           position: [windowX, y, frontZ + 0.045],
@@ -174,15 +192,20 @@ export class StreetBuilding {
         })
         this.kit.box(this.group, {
           name: 'Bậu cửa sổ',
-          size: [Math.min(1.65, width * 0.28), 0.12, 0.3],
-          position: [x + side * width * 0.25, y - 0.83, frontZ - 0.05],
+          size: [windowWidth + 0.22, 0.12, 0.3],
+          position: [windowX, y - 0.83, frontZ - 0.05],
           material: 'stoneLight',
         })
       }
 
-      if ((floor + this.config.detailSeed) % 2 === 0) {
+      const balcony = this.facadeKit.balcony
+      const hasBalcony = balcony === 'stacked'
+        || balcony === 'single' && floor === 0
+        || balcony === 'alternating' && (floor + this.config.detailSeed) % 2 === 0
+        || balcony === 'sparse' && floor === 1
+      if (hasBalcony) {
         this.#addBalcony(y - 0.95)
-      } else {
+      } else if (balcony !== 'none') {
         this.#addAirConditioner(y - 0.6)
       }
     }
@@ -254,7 +277,8 @@ export class StreetBuilding {
       material: 'stoneDark',
       castShadow: true,
     })
-    if (roof === 'tile') {
+    const roofline = this.facadeKit.roofline
+    if (roof === 'tile' || roofline === 'tile') {
       const roofMesh = this.kit.box(this.group, {
         name: 'Mái ngói nhà phố',
         size: [width + 0.45, 0.34, depth * 0.62],
@@ -263,6 +287,19 @@ export class StreetBuilding {
         castShadow: true,
       })
       roofMesh.rotation.x = -0.1
+    } else if (roofline === 'stepped') {
+      this.kit.box(this.group, {
+        name: 'Bậc mái nhà phố',
+        size: [width * 0.56, 0.72, 0.36],
+        position: [x, height + 0.48, z - depth / 2 - 0.02],
+        material: this.config.material,
+      })
+      this.kit.box(this.group, {
+        name: 'Chóp mái nhà phố',
+        size: [width * 0.24, 0.38, 0.4],
+        position: [x, height + 1, z - depth / 2 - 0.02],
+        material: 'stoneDark',
+      })
     } else {
       for (const side of [-1, 1]) {
         this.kit.box(this.group, {

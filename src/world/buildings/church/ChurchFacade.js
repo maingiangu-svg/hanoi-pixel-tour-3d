@@ -244,7 +244,7 @@ export class ChurchFacade {
       position: [0, 6.02, facadeZ + 0.405],
       width: centralFacadeWidth * 0.9,
       height: 1.7,
-      count: 12,
+      count: 7,
     })
     addWeatheringStreaks({
       kit: this.kit,
@@ -253,7 +253,7 @@ export class ChurchFacade {
       position: [0, naveWallHeight - 0.3, facadeZ + 0.4],
       width: centralFacadeWidth * 0.82,
       height: 2.2,
-      count: 10,
+      count: 6,
     })
   }
 }

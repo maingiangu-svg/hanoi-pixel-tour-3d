@@ -89,3 +89,28 @@ test('static batching preserves intentionally hidden composition groups', () => 
   geometry.dispose()
   material.dispose()
 })
+
+test('static instanced meshes join compatible cell and material batches', () => {
+  const root = new THREE.Group()
+  const geometry = new THREE.BoxGeometry(1, 1, 1)
+  const material = new THREE.MeshStandardMaterial({ color: 0xffffff })
+  const transform = new THREE.Object3D()
+  for (let groupIndex = 0; groupIndex < 2; groupIndex += 1) {
+    const mesh = new THREE.InstancedMesh(geometry, material, 3)
+    for (let index = 0; index < 3; index += 1) {
+      transform.position.set(groupIndex * 5 + index, 0, 0)
+      transform.updateMatrix()
+      mesh.setMatrixAt(index, transform.matrix)
+    }
+    root.add(mesh)
+  }
+
+  const batches = batchStaticMeshes(root, { cellSize: 20 })
+  assert.equal(batches.sourceMeshCount, 6)
+  assert.equal(batches.batchCount, 1)
+  assert.equal(root.children.filter((child) => child.isInstancedMesh).length, 0)
+
+  batches.dispose()
+  geometry.dispose()
+  material.dispose()
+})

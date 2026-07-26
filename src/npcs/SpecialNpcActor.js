@@ -50,6 +50,7 @@ export class SpecialNpcActor {
     hideDuringDialogue = true,
     castShadow = true,
     animationOffset = 0,
+    allowPhotoFace = typeof window === 'undefined',
   } = {}) {
     this.profile = typeof profile === 'string' ? getSpecialNpcProfile(profile) : profile
     this.name = name ?? this.profile.label
@@ -149,7 +150,7 @@ export class SpecialNpcActor {
     }
 
     this.group.visible = false
-    this.readyPromise = this.#loadFace(faceLoader)
+    this.readyPromise = this.#loadFace(allowPhotoFace ? faceLoader : null)
   }
 
   async #loadFace(faceLoader) {
@@ -301,7 +302,7 @@ export class SpecialNpcActor {
     this.headRig.position.set(0, 1.53, 0)
     this.body.add(this.headRig)
     this.headMesh = this.#mesh('Special.HeadBacking', 'head', this.materials.skin, this.headRig, {
-      scale: [0.37, 0.43, 0.34],
+      scale: [0.34, 0.39, 0.32],
     })
     this.#mesh('Special.HairBacking', 'sphere', this.materials.hair, this.headRig, {
       position: [0, 0.095, -0.06],
@@ -359,7 +360,7 @@ export class SpecialNpcActor {
   #buildArm(label, side, bulk, shirtSleeve) {
     const shoulder = new THREE.Group()
     shoulder.name = `Special.Shoulder.${label}`
-    shoulder.position.set(side * 0.31 * this.profile.bodyWidth, 1.25, 0)
+    shoulder.position.set(side * 0.29 * this.profile.bodyWidth, 1.25, 0)
     this.body.add(shoulder)
 
     const upperMaterial = shirtSleeve ? this.materials.black : this.materials.skin
@@ -378,7 +379,7 @@ export class SpecialNpcActor {
     })
     this.#mesh(`Special.Hand.${label}`, 'sphere', this.materials.skin, elbow, {
       position: [0, -0.31, 0],
-      scale: [0.15 * bulk, 0.16 * bulk, 0.14 * bulk],
+      scale: [0.11 * bulk, 0.118 * bulk, 0.105 * bulk],
     })
 
     const handAnchor = new THREE.Group()

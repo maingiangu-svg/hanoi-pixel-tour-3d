@@ -144,6 +144,26 @@ export class NgocSonBranch {
       material: 'tileRed',
       castShadow: true,
     })
+    this.kit.box(this.group, {
+      name: 'Diềm mái đỏ Đền Ngọc Sơn',
+      size: [11.35, 0.2, 7.55],
+      position: [119, 4.48, 53.6],
+      material: 'bridgeRed',
+    })
+    for (const side of [-1, 1]) {
+      this.kit.box(this.group, {
+        name: 'Cột hiên Đền Ngọc Sơn',
+        size: [0.38, 3.35, 0.38],
+        position: [119 + side * 3.55, 1.7, 50.15],
+        material: 'bridgeRed',
+      })
+    }
+    this.kit.box(this.group, {
+      name: 'Xà hiên Đền Ngọc Sơn',
+      size: [8.1, 0.34, 0.44],
+      position: [119, 3.35, 50.15],
+      material: 'bridgeRed',
+    })
     this.kit.arch(this.group, {
       name: 'Cửa chính Đền Ngọc Sơn', width: 2.2, height: 2.8,
       position: [119, 0.25, 50.52], material: 'darkWood', rotationY: Math.PI,

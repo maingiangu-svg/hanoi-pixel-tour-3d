@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createNoticePoint } from './interactions/WorldActionPoints.js'
+import { getFacadeKit, getSignFamily } from './style/HanoiVisualTokens.js'
 
 const HOUSE_MATERIALS = ['oldYellow', 'plaster', 'brick', 'sage']
 const SHOP_SIGNS = ['BÚN CHẢ', 'CÀ PHÊ NGÕ', 'ĐỒ THỦ CÔNG', 'HIỆU ẢNH', 'TẠP HÓA']
@@ -109,6 +110,8 @@ export class OldQuarterConnector {
 
   #tubeHouse({ x, z, w, d, h, side, sign }, index) {
     const material = HOUSE_MATERIALS[index % HOUSE_MATERIALS.length]
+    const facadeKit = getFacadeKit(index)
+    const signFamily = getSignFamily(index)
     const legacyName = `Nhà ống tuyến Hồ Gươm ${index + 1}`
     const houseGroup = new THREE.Group()
     houseGroup.name = `Cụm ${legacyName}`
@@ -134,30 +137,93 @@ export class OldQuarterConnector {
     })
 
     const facade = this.#facadeTransform({ x, z, w, d, side })
+    const recess = facadeKit.recess
+    facade.x -= facade.outwardX * recess
+    facade.z -= facade.outwardZ * recess
+    const facadeSpan = facade.horizontal ? w : d
+    const trimSize = facade.horizontal ? [0.2, h - 0.65, 0.34] : [0.34, h - 0.65, 0.2]
+    for (const edge of [-1, 1]) {
+      this.kit.box(houseGroup, {
+        name: 'Nẹp nhịp dọc nhà ống',
+        size: trimSize,
+        position: facade.horizontal
+          ? [x + edge * (w / 2 - 0.13), h / 2 + 0.12, facade.z]
+          : [facade.x, h / 2 + 0.12, z + edge * (d / 2 - 0.13)],
+        material: 'stoneDark',
+      })
+    }
+    const sideWindows = []
+    const sideFrames = []
+    const sideLevels = [4.8, 7.4, 10].filter((level) => level < h - 1)
+    for (const sideFace of [-1, 1]) {
+      for (const y of sideLevels) {
+        if (facade.horizontal) {
+          sideFrames.push({
+            size: [0.11, 1.54, 1.45],
+            position: [x + sideFace * (w / 2 + 0.035), y, z],
+          })
+          sideWindows.push({
+            size: [0.12, 1.28, 1.18],
+            position: [x + sideFace * (w / 2 + 0.085), y, z],
+          })
+        } else {
+          sideFrames.push({
+            size: [1.45, 1.54, 0.11],
+            position: [x, y, z + sideFace * (d / 2 + 0.035)],
+          })
+          sideWindows.push({
+            size: [1.18, 1.28, 0.12],
+            position: [x, y, z + sideFace * (d / 2 + 0.085)],
+          })
+        }
+      }
+    }
+    this.kit.instancedBoxes(houseGroup, {
+      name: 'Viền cửa sổ hồi nhà ống',
+      material: 'stoneDark',
+      instances: sideFrames,
+    })
+    this.kit.instancedBoxes(houseGroup, {
+      name: 'Cửa sổ hồi nhà ống',
+      material: index % 3 === 0 ? 'warmGlass' : 'glass',
+      instances: sideWindows,
+    })
     this.kit.box(houseGroup, {
       name: 'Cửa cuốn nhà ống',
       size: facade.horizontal ? [w * 0.62, 2.7, 0.14] : [0.14, 2.7, d * 0.62],
       position: [facade.x, 1.5, facade.z],
       material: index % 2 === 0 ? 'greenDoor' : 'metal',
     })
-    for (const y of [4.8, 7.4].filter((level) => level < h - 1)) {
-      this.kit.box(houseGroup, {
-        name: 'Cửa sổ nhà ống',
-        size: facade.horizontal ? [Math.min(2.8, w * 0.55), 1.5, 0.14] : [0.14, 1.5, Math.min(2.8, d * 0.55)],
-        position: [facade.x, y, facade.z],
-        material: (index + Math.round(y)) % 3 === 0 ? 'warmGlass' : 'glass',
-      })
-      this.kit.box(houseGroup, {
-        name: 'Ban công nhà ống',
-        size: facade.horizontal ? [Math.min(3.5, w * 0.7), 0.15, 0.75] : [0.75, 0.15, Math.min(3.5, d * 0.7)],
-        position: [
-          facade.x + (facade.horizontal ? 0 : facade.outwardX * 0.32),
-          y - 1.02,
-          facade.z + (facade.horizontal ? facade.outwardZ * 0.32 : 0),
-        ],
-        material: 'stoneDark',
-        castShadow: false,
-      })
+    for (const [floor, y] of [4.8, 7.4, 10].filter((level) => level < h - 1).entries()) {
+      const bayCount = facadeSpan < 5.5 ? 2 : facadeKit.bayCount
+      for (let bay = 0; bay < bayCount; bay += 1) {
+        const along = (bay - (bayCount - 1) / 2) * (facadeSpan * 0.62 / Math.max(1, bayCount - 0.2))
+        this.kit.box(houseGroup, {
+          name: 'Cửa sổ nhà ống',
+          size: facade.horizontal ? [Math.min(1.2, facadeSpan / (bayCount + 1)), 1.5, 0.14] : [0.14, 1.5, Math.min(1.2, facadeSpan / (bayCount + 1))],
+          position: facade.horizontal
+            ? [facade.x + along, y, facade.z]
+            : [facade.x, y, facade.z + along],
+          material: (index + bay + floor) % 4 === 0 ? 'warmGlass' : 'glass',
+        })
+      }
+      const hasBalcony = facadeKit.balcony === 'stacked'
+        || facadeKit.balcony === 'single' && floor === 0
+        || facadeKit.balcony === 'alternating' && (floor + index) % 2 === 0
+        || facadeKit.balcony === 'sparse' && floor === 1
+      if (hasBalcony) {
+        this.kit.box(houseGroup, {
+          name: 'Ban công nhà ống',
+          size: facade.horizontal ? [Math.min(3.8, w * 0.74), 0.15, 0.75] : [0.75, 0.15, Math.min(3.8, d * 0.74)],
+          position: [
+            facade.x + (facade.horizontal ? 0 : facade.outwardX * 0.32),
+            y - 1.02,
+            facade.z + (facade.horizontal ? facade.outwardZ * 0.32 : 0),
+          ],
+          material: 'stoneDark',
+          castShadow: false,
+        })
+      }
     }
     if (sign) {
       this.kit.sign(houseGroup, {
@@ -170,8 +236,8 @@ export class OldQuarterConnector {
           facade.z + facade.outwardZ * 0.12,
         ],
         rotation: facade.rotation,
-        background: index % 2 === 0 ? '#8a463c' : '#315c55',
-        foreground: '#f6e4b9',
+        background: signFamily.background,
+        foreground: signFamily.foreground,
       })
       const shopRotationY = Math.atan2(-facade.outwardX, -facade.outwardZ)
       this.shopManager?.addShop({

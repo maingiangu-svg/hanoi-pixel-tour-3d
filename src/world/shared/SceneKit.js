@@ -1,27 +1,33 @@
 import * as THREE from 'three'
+import {
+  HANOI_COLORS,
+  HANOI_VISUAL_TOKENS,
+  getBenchVariant,
+  getTreeVariant,
+} from '../style/HanoiVisualTokens.js'
 
 const COLORS = {
-  stone: 0x9b9b91,
-  stoneLight: 0xc0bdb0,
-  stoneDark: 0x686b68,
-  soot: 0x363b3b,
-  roof: 0x4a4b49,
-  brick: 0x925548,
-  oldYellow: 0xc59c57,
-  plaster: 0xc8bda8,
-  sage: 0x71877a,
-  greenDoor: 0x315c55,
+  stone: HANOI_COLORS.warmStone,
+  stoneLight: HANOI_COLORS.agedCream,
+  stoneDark: 0x74736d,
+  soot: HANOI_COLORS.charcoal,
+  roof: 0x484b49,
+  brick: HANOI_COLORS.brickRed,
+  oldYellow: HANOI_COLORS.limeYellow,
+  plaster: HANOI_COLORS.agedCream,
+  sage: 0x789080,
+  greenDoor: HANOI_COLORS.doorGreen,
   wood: 0x613f2f,
-  darkWood: 0x3b2923,
-  glass: 0x66828a,
-  warmGlass: 0xe3a95f,
+  darkWood: 0x5a4034,
+  glass: 0x617a7e,
+  warmGlass: HANOI_COLORS.lampYellow,
   asphalt: 0x373d40,
-  sidewalk: 0x8d8980,
-  plaza: 0x9e9a90,
-  curb: 0xc2baaa,
-  metal: 0x343a3a,
-  foliage: 0x4e6957,
-  terracotta: 0x9f5c43,
+  sidewalk: 0x9b968b,
+  plaza: HANOI_COLORS.warmStone,
+  curb: HANOI_COLORS.agedCream,
+  metal: HANOI_COLORS.charcoal,
+  foliage: HANOI_COLORS.foliageGreen,
+  terracotta: HANOI_COLORS.brickRed,
   altar: 0xb39262,
   pew: 0x51372b,
 }
@@ -42,33 +48,33 @@ export class SceneKit {
     this.geometries.set('arch', this.#createArchGeometry())
     this.geometries.set('gable', this.#createGableGeometry())
 
-    const plazaTexture = this.#createPavingTexture('#9e9a90', '#817e77', 128, 32, 16)
+    const plazaTexture = this.#createPavingTexture('#aaa79d', '#8f8b82', 128, 32, 16)
     plazaTexture.repeat.set(12, 10)
-    const sidewalkTexture = this.#createPavingTexture('#8d8980', '#716e68', 128, 24, 16)
+    const sidewalkTexture = this.#createPavingTexture('#9b968b', '#7d7971', 128, 24, 16)
     sidewalkTexture.repeat.set(24, 5)
     const roadTexture = this.#createRoadTexture()
     roadTexture.repeat.set(20, 5)
     const weatheredStoneTexture = this.#createStoneTexture({
       seed: 1886,
-      base: [143, 142, 134],
-      variation: 18,
-      streakStrength: 0.12,
-      mossStrength: 0.025,
+      base: [165, 163, 154],
+      variation: 10,
+      streakStrength: 0.07,
+      mossStrength: 0.012,
       repeat: [3, 4],
     })
     const agedStoneTexture = this.#createStoneTexture({
       seed: 2022,
-      base: [108, 109, 103],
-      variation: 25,
-      streakStrength: 0.27,
-      mossStrength: 0.07,
+      base: [137, 137, 130],
+      variation: 14,
+      streakStrength: 0.16,
+      mossStrength: 0.035,
       repeat: [3, 4],
     })
     const trimStoneTexture = this.#createStoneTexture({
       seed: 315,
-      base: [177, 174, 163],
-      variation: 12,
-      streakStrength: 0.06,
+      base: [192, 188, 176],
+      variation: 8,
+      streakStrength: 0.04,
       mossStrength: 0.01,
       repeat: [4, 3],
     })
@@ -78,7 +84,7 @@ export class SceneKit {
     this.#standard('stone', COLORS.stone)
     this.#standard('stoneLight', COLORS.stoneLight)
     this.#standard('stoneDark', COLORS.stoneDark)
-    this.#standard('stoneWarm', 0xada693)
+    this.#standard('stoneWarm', COLORS.stone)
     this.#standard('stoneWeathered', 0xffffff, {
       map: weatheredStoneTexture,
       roughness: 0.98,
@@ -92,19 +98,20 @@ export class SceneKit {
       roughness: 0.94,
     })
     this.#standard('soot', COLORS.soot)
-    this.#standard('roof', COLORS.roof, { roughness: 0.82 })
+    this.#standard('churchRecess', 0x454948, { roughness: 0.96 })
+    this.#standard('roof', COLORS.roof, HANOI_VISUAL_TOKENS.materials.masonry)
     this.#standard('churchRoofTile', 0xffffff, {
       map: churchRoofTexture,
       roughness: 0.96,
     })
-    this.#standard('brick', COLORS.brick)
-    this.#standard('oldYellow', COLORS.oldYellow)
-    this.#standard('plaster', COLORS.plaster)
+    this.#standard('brick', COLORS.brick, HANOI_VISUAL_TOKENS.materials.masonry)
+    this.#standard('oldYellow', COLORS.oldYellow, HANOI_VISUAL_TOKENS.materials.masonry)
+    this.#standard('plaster', COLORS.plaster, HANOI_VISUAL_TOKENS.materials.masonry)
     this.#standard('sage', COLORS.sage)
-    this.#standard('greenDoor', COLORS.greenDoor)
-    this.#standard('wood', COLORS.wood)
-    this.#standard('darkWood', COLORS.darkWood)
-    this.#standard('glass', COLORS.glass, { roughness: 0.3, metalness: 0.08 })
+    this.#standard('greenDoor', COLORS.greenDoor, HANOI_VISUAL_TOKENS.materials.paintedWood)
+    this.#standard('wood', COLORS.wood, HANOI_VISUAL_TOKENS.materials.paintedWood)
+    this.#standard('darkWood', COLORS.darkWood, HANOI_VISUAL_TOKENS.materials.paintedWood)
+    this.#standard('glass', COLORS.glass, HANOI_VISUAL_TOKENS.materials.glass)
     this.#standard('warmGlass', COLORS.warmGlass, {
       emissive: COLORS.warmGlass,
       emissiveIntensity: 0.55,
@@ -123,25 +130,58 @@ export class SceneKit {
       transparent: true,
       opacity: 0.76,
     })
+    this.#standard('premiumGlass', 0x4f6969, {
+      emissive: HANOI_COLORS.lampYellow,
+      emissiveIntensity: 0.38,
+      roughness: 0.28,
+      metalness: 0.06,
+      transparent: true,
+      opacity: 0.78,
+    })
+    this.#standard('cityWindow', 0x6f7772, {
+      emissive: 0xd19a55,
+      emissiveIntensity: 0.31,
+      roughness: 0.4,
+      metalness: 0.02,
+    })
+    this.#standard('skylineGlass', 0x586a70, {
+      emissive: 0x8a7655,
+      emissiveIntensity: 0.28,
+      roughness: 0.5,
+      metalness: 0.04,
+    })
+    this.#standard('signGlow', HANOI_COLORS.limeYellow, {
+      emissive: HANOI_COLORS.lampYellow,
+      emissiveIntensity: 0.52,
+      roughness: 0.66,
+    })
+    this.#standard('cityLightPool', HANOI_COLORS.lampYellow, {
+      emissive: HANOI_COLORS.lampYellow,
+      emissiveIntensity: 0.42,
+      transparent: true,
+      opacity: 0.105,
+      depthWrite: false,
+    })
+    this.#standard('skylineFacade', 0x58646a, { roughness: 0.94 })
+    this.#standard('skylineFacadeWarm', 0x71685c, { roughness: 0.94 })
     this.#standard('creamPaint', 0xe4d7bc)
     this.#standard('asphalt', 0xffffff, { map: roadTexture, roughness: 1 })
     this.#standard('sidewalk', 0xffffff, { map: sidewalkTexture, roughness: 1 })
     this.#standard('plaza', 0xffffff, { map: plazaTexture, roughness: 1 })
     this.#standard('curb', COLORS.curb)
-    this.#standard('metal', COLORS.metal, { roughness: 0.55, metalness: 0.45 })
+    this.#standard('metal', COLORS.metal, HANOI_VISUAL_TOKENS.materials.metal)
     this.#standard('foliage', COLORS.foliage)
-    this.#standard('foliageLight', 0x668267)
-    this.#standard('foliageDark', 0x344f45)
+    this.#standard('foliageLight', 0x6f8a70)
+    this.#standard('foliageDark', 0x3d5949)
     this.#standard('terracotta', COLORS.terracotta)
     this.#standard('altar', COLORS.altar)
     this.#standard('pew', COLORS.pew)
     this.#standard('whiteMarking', 0xd7d2c3)
     this.#standard('roadPatch', 0x454a4b)
-    this.#standard('lakeWater', 0x315f69, {
+    this.#standard('lakeWater', HANOI_COLORS.lakeWater, {
       emissive: 0x17343b,
       emissiveIntensity: 0.18,
-      roughness: 0.36,
-      metalness: 0.08,
+      ...HANOI_VISUAL_TOKENS.materials.water,
       transparent: true,
       opacity: 0.94,
     })
@@ -155,8 +195,8 @@ export class SceneKit {
     this.#standard('bridgeRed', 0xa53f35, { roughness: 0.78 })
     this.#standard('templeWall', 0xd2b879)
     this.#standard('tileRed', 0x75443e, { roughness: 0.86 })
-    this.#standard('lampGlow', 0xf1bf73, {
-      emissive: 0xe9a856,
+    this.#standard('lampGlow', HANOI_COLORS.lampYellow, {
+      emissive: HANOI_COLORS.lampYellow,
       emissiveIntensity: 0.9,
       roughness: 0.42,
     })
@@ -249,6 +289,74 @@ export class SceneKit {
     mesh.instanceMatrix.needsUpdate = true
     parent.add(mesh)
     return mesh
+  }
+
+  /**
+   * Shared low-poly tree kit. Three authored silhouettes are selected by seed;
+   * all use the SceneKit geometry/material pool.
+   */
+  tree(parent, options) {
+    const variant = getTreeVariant(options.variant ?? 0)
+    const scale = options.scale ?? 1
+    const [x, y, z] = options.position
+    this.cylinder(parent, {
+      name: options.name ? `${options.name} · thân` : 'Thân cây Hà Nội',
+      radius: 0.25 * scale,
+      height: 4.2 * scale,
+      position: [x, y + 2.1 * scale, z],
+      material: 'wood',
+      castShadow: options.castShadow ?? false,
+    })
+    const crown = variant.crownScale
+    const offset = variant.crownOffset
+    this.sphere(parent, {
+      name: options.name ? `${options.name} · tán chính` : 'Tán cây Hà Nội',
+      scale: [crown[0] * scale, crown[1] * scale, crown[2] * scale],
+      position: [
+        x + offset[0] * scale,
+        y + (4.45 + offset[1]) * scale,
+        z + offset[2] * scale,
+      ],
+      material: options.material ?? 'foliage',
+      castShadow: options.castShadow ?? false,
+    })
+    const secondary = variant.secondaryScale
+    this.sphere(parent, {
+      name: options.name ? `${options.name} · tán phụ` : 'Tán cây phụ Hà Nội',
+      scale: [1.3 * secondary * scale, 1.08 * secondary * scale, 1.2 * secondary * scale],
+      position: [x + 0.94 * scale, y + 4.05 * scale, z + 0.34 * scale],
+      material: options.secondaryMaterial ?? 'foliageDark',
+    })
+  }
+
+  bench(parent, options) {
+    const variant = getBenchVariant(options.variant ?? 0)
+    const group = new THREE.Group()
+    group.name = options.name ?? `Ghế ${variant.id}`
+    group.position.set(...options.position)
+    group.rotation.y = options.rotationY ?? 0
+    parent.add(group)
+    this.box(group, {
+      name: 'Mặt ghế',
+      size: [2.15, 0.16, 0.52],
+      position: [0, 0.58, 0],
+      material: variant.seat,
+    })
+    this.box(group, {
+      name: 'Lưng ghế',
+      size: [2.15, 0.68, 0.14],
+      position: [0, 0.93, 0.24],
+      material: variant.back,
+    })
+    this.instancedBoxes(group, {
+      name: 'Chân ghế',
+      material: variant.legs,
+      instances: [-0.76, 0.76].map((offset) => ({
+        size: [0.16, 0.55, 0.42],
+        position: [offset, 0.28, 0],
+      })),
+    })
+    return group
   }
 
   cylinder(parent, options) {

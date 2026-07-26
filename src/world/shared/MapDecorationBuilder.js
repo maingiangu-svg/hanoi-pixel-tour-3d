@@ -119,16 +119,26 @@ export class MapDecorationBuilder {
   }
 
   #tree(group, point, index) {
-    this.kit.cylinder(group, {
-      name: 'Thân cây', radius: 0.28, height: 4.2,
-      position: [point.x, 2.1, point.z], material: 'wood', castShadow: index % 7 === 0,
-    })
-    this.kit.sphere(group, {
-      name: 'Tán cây', scale: [1.65, 1.45, 1.55],
-      position: [point.x, 4.55, point.z],
-      material: index % 3 === 0 ? 'foliageLight' : 'foliage',
-      castShadow: index % 7 === 0,
-    })
+    if (typeof this.kit.tree === 'function') {
+      this.kit.tree(group, {
+        name: 'Cây đường phố',
+        position: [point.x, 0, point.z],
+        variant: index,
+        material: index % 3 === 0 ? 'foliageLight' : 'foliage',
+        castShadow: index % 7 === 0,
+      })
+    } else {
+      this.kit.cylinder(group, {
+        name: 'Thân cây', radius: 0.28, height: 4.2,
+        position: [point.x, 2.1, point.z], material: 'wood', castShadow: index % 7 === 0,
+      })
+      this.kit.sphere(group, {
+        name: 'Tán cây', scale: [1.65, 1.45, 1.55],
+        position: [point.x, 4.55, point.z],
+        material: index % 3 === 0 ? 'foliageLight' : 'foliage',
+        castShadow: index % 7 === 0,
+      })
+    }
     this.kit.addCollider(this.colliders, point.x, point.z, 0.68, 0.68, 'Cây đường phố')
   }
 
@@ -151,14 +161,22 @@ export class MapDecorationBuilder {
   }
 
   #bench(group, point) {
-    this.kit.box(group, {
-      name: 'Mặt ghế', size: [2.4, 0.18, 0.58],
-      position: [point.x, 0.62, point.z], material: 'wood', castShadow: true,
-    })
-    this.kit.box(group, {
-      name: 'Lưng ghế', size: [2.4, 0.82, 0.14],
-      position: [point.x, 1.02, point.z + 0.28], material: 'darkWood',
-    })
+    if (typeof this.kit.bench === 'function') {
+      this.kit.bench(group, {
+        name: 'Ghế công cộng Hà Nội',
+        position: [point.x, 0, point.z],
+        variant: Math.round(Math.abs(point.x + point.z)),
+      })
+    } else {
+      this.kit.box(group, {
+        name: 'Mặt ghế', size: [2.4, 0.18, 0.58],
+        position: [point.x, 0.62, point.z], material: 'wood', castShadow: true,
+      })
+      this.kit.box(group, {
+        name: 'Lưng ghế', size: [2.4, 0.82, 0.14],
+        position: [point.x, 1.02, point.z + 0.28], material: 'darkWood',
+      })
+    }
     this.kit.addCollider(this.colliders, point.x, point.z, 2.55, 0.9, 'Ghế công cộng')
   }
 

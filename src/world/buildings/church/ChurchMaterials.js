@@ -2,7 +2,7 @@ export const CHURCH_MATERIALS = Object.freeze({
   weatheredStone: 'stoneWeathered',
   agedStone: 'stoneAged',
   trimStone: 'stoneTrim',
-  recess: 'soot',
+  recess: 'churchRecess',
   roofTile: 'churchRoofTile',
   darkWood: 'darkWood',
   metal: 'metal',

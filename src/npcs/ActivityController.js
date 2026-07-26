@@ -739,7 +739,9 @@ export class ActivityController {
       const record = this.attachProp(type, {
         id,
         hand: descriptor.hand ?? DEFAULT_PROP_HAND[type],
-        mount: descriptor.mount ?? (type === 'bicycle' ? 'root' : 'hand'),
+        mount: descriptor.mount ?? (
+          type === 'bicycle' || type === 'motorbike' ? 'root' : 'hand'
+        ),
         activityOwned: true,
       })
       if (record) this.activityPropIds.add(record.id)

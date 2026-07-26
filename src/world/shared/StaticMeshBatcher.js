@@ -15,7 +15,6 @@ function canBatch(mesh, root) {
   }
   return (
     mesh.isMesh
-    && !mesh.isInstancedMesh
     && !mesh.isSkinnedMesh
     && !Array.isArray(mesh.material)
     && !mesh.material.transparent
@@ -33,6 +32,8 @@ export function batchStaticMeshes(root, {
   root.updateWorldMatrix(true, true)
   const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert()
   const relativeMatrix = new THREE.Matrix4()
+  const instanceMatrix = new THREE.Matrix4()
+  const instanceWorldMatrix = new THREE.Matrix4()
   const worldPosition = new THREE.Vector3()
   const groups = new Map()
 
@@ -73,12 +74,29 @@ export function batchStaticMeshes(root, {
   let sourceMeshCount = 0
 
   for (const group of groups.values()) {
-    if (group.meshes.length < 2) continue
-    const transformed = group.meshes.map((mesh) => {
-      relativeMatrix.multiplyMatrices(inverseRoot, mesh.matrixWorld)
-      const geometry = mesh.geometry.clone()
-      geometry.applyMatrix4(relativeMatrix)
-      return geometry
+    const sourceGeometryCount = group.meshes.reduce(
+      (count, mesh) => count + (mesh.isInstancedMesh ? mesh.count : 1),
+      0,
+    )
+    if (group.meshes.length < 2 && sourceGeometryCount < 2) continue
+    const transformed = group.meshes.flatMap((mesh) => {
+      if (!mesh.isInstancedMesh) {
+        relativeMatrix.multiplyMatrices(inverseRoot, mesh.matrixWorld)
+        const geometry = mesh.geometry.clone()
+        geometry.applyMatrix4(relativeMatrix)
+        return [geometry]
+      }
+
+      const geometries = []
+      for (let index = 0; index < mesh.count; index += 1) {
+        mesh.getMatrixAt(index, instanceMatrix)
+        instanceWorldMatrix.multiplyMatrices(mesh.matrixWorld, instanceMatrix)
+        relativeMatrix.multiplyMatrices(inverseRoot, instanceWorldMatrix)
+        const geometry = mesh.geometry.clone()
+        geometry.applyMatrix4(relativeMatrix)
+        geometries.push(geometry)
+      }
+      return geometries
     })
     const merged = mergeGeometries(transformed, false)
     transformed.forEach((geometry) => geometry.dispose())
@@ -104,7 +122,7 @@ export function batchStaticMeshes(root, {
     group.meshes.forEach((source) => {
       source.removeFromParent()
     })
-    sourceMeshCount += group.meshes.length
+    sourceMeshCount += sourceGeometryCount
   }
 
   return {

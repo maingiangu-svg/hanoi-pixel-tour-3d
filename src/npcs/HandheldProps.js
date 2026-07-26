@@ -11,6 +11,7 @@ export const HANDHELD_PROP_TYPES = Object.freeze([
   'drawingBoard',
   'shoppingBag',
   'bicycle',
+  'motorbike',
   'book',
 ])
 
@@ -25,6 +26,7 @@ export const DEFAULT_PROP_HAND = Object.freeze({
   drawingBoard: 'left',
   shoppingBag: 'left',
   bicycle: 'right',
+  motorbike: 'right',
   book: 'left',
 })
 
@@ -249,6 +251,45 @@ const BUILDERS = Object.freeze({
       scale: [0.045, 0.42, 0.045],
     })
   },
+  motorbike(resources, root) {
+    for (const z of [-0.62, 0.62]) {
+      addPart(resources, root, {
+        name: 'Bánh xe máy ambient',
+        geometry: 'cylinder',
+        material: 'charcoal',
+        position: [0, 0.32, z],
+        rotation: [0, 0, Math.PI / 2],
+        scale: [0.31, 0.11, 0.31],
+      })
+    }
+    addPart(resources, root, {
+      name: 'Thân xe máy ambient',
+      material: 'terracotta',
+      position: [0, 0.57, 0],
+      scale: [0.36, 0.34, 0.88],
+    })
+    addPart(resources, root, {
+      name: 'Yên xe máy ambient',
+      material: 'darkBrown',
+      position: [0, 0.82, -0.12],
+      scale: [0.34, 0.1, 0.58],
+    })
+    addPart(resources, root, {
+      name: 'Cổ xe máy ambient',
+      material: 'teal',
+      position: [0, 0.79, 0.48],
+      rotation: [0.2, 0, 0],
+      scale: [0.22, 0.46, 0.22],
+    })
+    addPart(resources, root, {
+      name: 'Ghi-đông xe máy ambient',
+      geometry: 'cylinder',
+      material: 'metal',
+      position: [0, 1.02, 0.56],
+      rotation: [0, 0, Math.PI / 2],
+      scale: [0.045, 0.48, 0.045],
+    })
+  },
 })
 
 export function createHandheldProp(resources, type, id) {
@@ -290,7 +331,7 @@ export function applyHandheldPropTransform(root, type, hand) {
     root.rotation.set(-0.12, side * -0.12, side * -0.08)
   } else if (type === 'shoppingBag') {
     root.position.set(0, -0.2, 0)
-  } else if (type === 'bicycle') {
+  } else if (type === 'bicycle' || type === 'motorbike') {
     root.position.set(0, 0, 0)
   }
 }

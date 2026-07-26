@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mapCoordinates } from '../map/MapCoordinateSystem.js'
 import { getNavigationOpenings, subtractSourceRects } from './collisionHelpers.js'
+import { getFacadeKit, getSignFamily } from '../style/HanoiVisualTokens.js'
 
 const FACADE_MATERIALS = ['oldYellow', 'plaster', 'brick', 'sage']
 
@@ -68,6 +69,9 @@ export class MapStructureBuilder {
     if (building.kind === 'tubeHouse' || building.kind === 'collective' || building.kind === 'apartment') {
       this.#addFacade(parent, building, world, height, index)
     }
+    if (building.kind !== 'admin' && building.kind !== 'marketHall') {
+      this.#addSideFacade(parent, building, world, height, index)
+    }
     if (building.kind === 'admin') this.#addAdminFacade(parent, building, world, height)
     if (building.kind === 'marketHall') this.#addMarketFacade(parent, building, world, height)
     if (building.kind === 'cafeFront' || building.sign) this.#addSign(parent, building, world, height, index)
@@ -126,11 +130,25 @@ export class MapStructureBuilder {
   }
 
   #addFacade(parent, building, world, height, index) {
-    const frontZ = world.z + world.depth / 2 + 0.035
+    const facadeKit = getFacadeKit(index)
+    const frontZ = world.z + world.depth / 2 + 0.035 - facadeKit.recess
     const floorCount = Math.max(1, Math.floor((height - 2) / 2.6))
+    const columns = Math.max(1, Math.min(facadeKit.bayCount, Math.floor(world.width / 1.9)))
+    const verticalRhythm = []
+    for (let column = 0; column <= columns; column += 1) {
+      const x = world.x - world.width * 0.42 + column * world.width * 0.84 / columns
+      verticalRhythm.push({
+        size: [0.16, Math.max(2.8, height - 0.7), 0.22],
+        position: [x, height / 2 + 0.1, frontZ],
+      })
+    }
+    this.kit.instancedBoxes(parent, {
+      name: `Nhịp đứng ${building.id}`,
+      material: 'stoneDark',
+      instances: verticalRhythm,
+    })
     for (let floor = 0; floor < floorCount; floor += 1) {
       const y = 2.2 + floor * 2.45
-      const columns = Math.max(1, Math.min(3, Math.floor(world.width / 2.4)))
       for (let column = 0; column < columns; column += 1) {
         const x = world.x + (column - (columns - 1) / 2) * Math.min(2.4, world.width / columns)
         this.kit.box(parent, {
@@ -138,6 +156,19 @@ export class MapStructureBuilder {
           size: [Math.min(1.1, world.width / (columns + 1)), 1.05, 0.1],
           position: [x, y, frontZ],
           material: (floor + column + index) % 3 === 0 ? 'warmGlass' : 'glass',
+        })
+      }
+      const balcony = facadeKit.balcony
+      const hasBalcony = balcony === 'stacked'
+        || balcony === 'single' && floor === 0
+        || balcony === 'alternating' && (floor + index) % 2 === 0
+        || balcony === 'sparse' && floor === 1
+      if (hasBalcony && floor > 0) {
+        this.kit.box(parent, {
+          name: `Ban công ${building.id}`,
+          size: [Math.min(world.width * 0.74, 4.8), 0.14, 0.68],
+          position: [world.x, y - 0.76, frontZ + 0.26],
+          material: 'stoneDark',
         })
       }
     }
@@ -165,6 +196,40 @@ export class MapStructureBuilder {
     }
   }
 
+  #addSideFacade(parent, building, world, height, index) {
+    if (world.depth < 4 || height < 6) return
+    const floors = Math.max(1, Math.min(4, Math.floor((height - 2.5) / 2.55)))
+    const windows = []
+    const frames = []
+    for (const side of [-1, 1]) {
+      const sideX = world.x + side * (world.width / 2 + 0.035)
+      for (let floor = 0; floor < floors; floor += 1) {
+        const y = 2.4 + floor * 2.45
+        for (const along of [-0.24, 0.24]) {
+          const z = world.z + along * world.depth
+          frames.push({
+            size: [0.11, 1.42, Math.min(1.38, world.depth * 0.19)],
+            position: [sideX, y, z],
+          })
+          windows.push({
+            size: [0.12, 1.18, Math.min(1.12, world.depth * 0.16)],
+            position: [sideX + side * 0.065, y, z],
+          })
+        }
+      }
+    }
+    this.kit.instancedBoxes(parent, {
+      name: `Viền cửa hồi nhà ${building.id}`,
+      material: 'stoneDark',
+      instances: frames,
+    })
+    this.kit.instancedBoxes(parent, {
+      name: `Cửa sổ hồi nhà ${building.id}`,
+      material: index % 3 === 0 ? 'warmGlass' : 'glass',
+      instances: windows,
+    })
+  }
+
   #addMarketFacade(parent, building, world, height) {
     const frontZ = world.z + world.depth / 2 + 0.04
     for (const ratio of [-0.32, 0, 0.32]) {
@@ -189,13 +254,14 @@ export class MapStructureBuilder {
   #addSign(parent, building, world, height, index) {
     const text = building.sign ?? (building.kind === 'cafeFront' ? 'CÀ PHÊ' : null)
     if (!text) return
+    const signFamily = getSignFamily(index)
     this.kit.sign(parent, {
       text,
       width: Math.min(5.8, Math.max(2.1, world.width * 0.72)),
       height: 0.58,
       position: [world.x, Math.min(height - 0.7, 3.25), world.z + world.depth / 2 + 0.09],
-      background: index % 2 ? '#315c55' : '#82443b',
-      foreground: '#f5e5bd',
+      background: signFamily.background,
+      foreground: signFamily.foreground,
     })
   }
 }
