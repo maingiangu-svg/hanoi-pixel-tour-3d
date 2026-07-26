@@ -95,10 +95,6 @@ export const CENTRAL_HANOI_COMMERCIAL_ZONES = deepFreeze([
     center: [272, -18],
     activationRadius: 92,
     fronts: [
-      { position: [246, 1.62, -89.8], axis: 'x', width: 5.2, normal: 1, label: 'SÁCH & LỤA', family: 'green' },
-      { position: [258.5, 1.62, -89.8], axis: 'x', width: 5.4, normal: 1, label: 'CÀ PHÊ NGÕ', family: 'cream' },
-      { position: [246.5, 1.62, -76.4], axis: 'x', width: 5.0, normal: -1, label: 'TIỆM BÁNH', family: 'brick' },
-      { position: [259, 1.62, -76.4], axis: 'x', width: 5.5, normal: -1, label: 'THỜI TRANG', family: 'green' },
       { position: [271.88, 1.62, -86], axis: 'z', width: 4.6, normal: -1, label: 'LỤA HÀ NỘI', family: 'cream' },
       { position: [271.88, 1.62, -47], axis: 'z', width: 4.8, normal: -1, label: 'THỜI TRANG', family: 'brick' },
       { position: [271.88, 1.62, -7], axis: 'z', width: 4.8, normal: -1, label: 'MINIMART 24H', family: 'green' },

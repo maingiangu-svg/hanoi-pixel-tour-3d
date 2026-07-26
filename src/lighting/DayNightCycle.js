@@ -130,8 +130,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 1.12,
     reflectionScale: 1.05,
     waterRoughness: 0.38,
-    fogNear: 50,
-    fogFar: 102,
+    fogNear: 68,
+    fogFar: 132,
   }),
   dawn: state({
     sky: 0x8b9cab,
@@ -149,8 +149,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.74,
     reflectionScale: 0.82,
     waterRoughness: 0.31,
-    fogNear: 48,
-    fogFar: 102,
+    fogNear: 62,
+    fogFar: 128,
   }),
   day: state({
     sky: 0x91afc2,
@@ -168,8 +168,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.28,
     reflectionScale: 0.58,
     waterRoughness: 0.4,
-    fogNear: 68,
-    fogFar: 118,
+    fogNear: 78,
+    fogFar: 145,
   }),
   goldenHour: state({
     sky: 0xb4aa96,
@@ -187,8 +187,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.64,
     reflectionScale: 1.28,
     waterRoughness: 0.25,
-    fogNear: 64,
-    fogFar: 112,
+    fogNear: 72,
+    fogFar: 138,
   }),
   sunset: state({
     sky: 0x7c7682,
@@ -206,8 +206,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.88,
     reflectionScale: 1.18,
     waterRoughness: 0.28,
-    fogNear: 58,
-    fogFar: 106,
+    fogNear: 68,
+    fogFar: 134,
   }),
   blueHour: state({
     sky: HANOI_COLORS.blueHour,
@@ -225,8 +225,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 1.08,
     reflectionScale: 1.3,
     waterRoughness: 0.3,
-    fogNear: 54,
-    fogFar: 104,
+    fogNear: 70,
+    fogFar: 136,
   }),
 })
 
@@ -457,6 +457,7 @@ function normalizeLighting(source = {}) {
     hemisphere: source.hemisphere ?? null,
     directional: source.directional ?? null,
     rim: source.rim ?? null,
+    skyGradient: source.skyGradient ?? null,
     practicalLights,
     emissiveMaterials,
   }
@@ -620,7 +621,7 @@ export class DayNightCycle {
     const to = palette[toKeyframe.phase]
     this._phase = getPhaseForHour(gameHour)
 
-    this.#applyAtmosphere(from, to, amount)
+    this.#applyAtmosphere(from, to, amount, this.lighting[this._area])
     this.#applyLighting(
       this.lighting[this._area],
       from,
@@ -632,9 +633,16 @@ export class DayNightCycle {
     )
   }
 
-  #applyAtmosphere(from, to, amount) {
+  #applyAtmosphere(from, to, amount, context) {
     this.scene.background.lerpColors(from.sky, to.sky, amount)
     this.scene.fog.color.lerpColors(from.fog, to.fog, amount)
+    context.skyGradient?.setTransition(
+      from.sky,
+      to.sky,
+      from.fog,
+      to.fog,
+      amount,
+    )
 
     if (this.scene.fog.isFog) {
       this.scene.fog.near = lerp(from.fogNear, to.fogNear, amount)

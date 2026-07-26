@@ -78,7 +78,7 @@ test('backdrop batches repeated detail and distance-culls whole zones', () => wi
 
   assert.equal(parent.children.includes(backdrop.group), true)
   assert.equal(stats.skylineBuildings, 25)
-  assert.equal(stats.commercialFronts, 15)
+  assert.equal(stats.commercialFronts, 11)
   assert.ok(backdrop.drawMeshes.filter((mesh) => mesh.isInstancedMesh).length >= 20)
   assert.ok(backdrop.drawMeshes.filter((mesh) => !mesh.isInstancedMesh).length <= 8)
 

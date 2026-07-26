@@ -15,6 +15,7 @@ import { HoanKiemGroundExpansion } from './HoanKiemGroundExpansion.js'
 import { HoanKiemPedestrianDistrict } from './HoanKiemPedestrianDistrict.js'
 import { HoanKiemUrbanEdgeDistrict } from './HoanKiemUrbanEdgeDistrict.js'
 import { CentralHanoiBackdrop } from './CentralHanoiBackdrop.js'
+import { OldQuarterStreetCanyon } from './OldQuarterStreetCanyon.js'
 import { HoanKiemPhotoCompositions } from './HoanKiemPhotoCompositions.js'
 import { SceneMomentEffects } from './effects/SceneMomentEffects.js'
 import { BaDinhDistrict } from './districts/BaDinhDistrict.js'
@@ -26,6 +27,7 @@ import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
 import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
+import { GradientSky } from './sky/GradientSky.js'
 
 const OUTDOOR_SKY = 0x53647b
 const INTERIOR_SKY = 0x17191b
@@ -65,6 +67,7 @@ export class ChurchDistrict {
     this.outdoor.name = 'Khu Nhà thờ Lớn'
     this.root.add(this.outdoor)
     scene.add(this.root)
+    this.gradientSky = new GradientSky({ parent: this.root })
 
     const outdoorColliders = []
     this.shops = new ShopManager({
@@ -142,6 +145,11 @@ export class ChurchDistrict {
     this.centralHanoiBackdrop = new CentralHanoiBackdrop({
       kit: this.kit,
       parent: this.outdoor,
+    })
+    this.oldQuarterStreetCanyon = new OldQuarterStreetCanyon({
+      kit: this.kit,
+      parent: this.outdoor,
+      colliders: outdoorColliders,
     })
     this.hoanKiemPhotoCompositions = new HoanKiemPhotoCompositions({
       kit: this.kit,
@@ -231,6 +239,10 @@ export class ChurchDistrict {
       batchStaticMeshes(this.hoanKiemUrbanEdgeDistrict.roadGroup, {
         cellSize: 60,
         name: 'Ngõ Hoàn Kiếm mở rộng · mesh tĩnh theo ô',
+      }),
+      batchStaticMeshes(this.oldQuarterStreetCanyon.group, {
+        cellSize: 192,
+        name: 'Street canyon Phố Cổ · mesh tĩnh gộp theo material',
       }),
       batchStaticMeshes(this.baDinhDistrict.group, {
         cellSize: 54,
@@ -415,6 +427,7 @@ export class ChurchDistrict {
   }
 
   update(deltaTime, clock = null) {
+    this.gradientSky.updatePosition(this.playerPosition)
     this.#updateDistrictVisibility()
     this.sceneMomentEffects.update(
       deltaTime,
@@ -481,6 +494,7 @@ export class ChurchDistrict {
         pedestrian: countMeshes(this.hoanKiemPedestrianDistrict.group),
         urbanEdge: countMeshes(this.hoanKiemUrbanEdgeDistrict.group),
         centralHanoi: countMeshes(this.centralHanoiBackdrop.group),
+        oldQuarterCanyon: countMeshes(this.oldQuarterStreetCanyon.group),
         photoCompositions: countMeshes(this.hoanKiemPhotoCompositions.group),
         interior: countMeshes(this.interior.group),
       },
@@ -518,6 +532,7 @@ export class ChurchDistrict {
       pointLights,
       spotLights,
       emissiveMaterials,
+      skyGradient: this.gradientSky,
     })
 
     const contexts = {
@@ -707,6 +722,9 @@ export class ChurchDistrict {
       )
     }
     if (activeDistricts.has('ngocSonBranch')) roots.push(this.ngocSonBranch.group)
+    if (Math.hypot(position.x - 254, position.z + 90) < 112) {
+      roots.push(this.oldQuarterStreetCanyon.group)
+    }
     if (this.sceneMomentEffects.activeIds.size) {
       roots.push(this.sceneMomentEffects.group)
     }
@@ -1149,6 +1167,7 @@ export class ChurchDistrict {
       area.group.visible = areaName === activeAreaName
     })
     this.outdoorLighting.group.visible = activeAreaName !== 'interior'
+    this.gradientSky.setVisible(activeAreaName !== 'interior')
   }
 
   #updateDistrictVisibility() {
@@ -1174,6 +1193,10 @@ export class ChurchDistrict {
       this.activeAreaName === 'outdoor',
     )
     this.centralHanoiBackdrop.updateVisibility(
+      this.playerPosition,
+      this.activeAreaName === 'outdoor',
+    )
+    this.oldQuarterStreetCanyon.updateVisibility(
       this.playerPosition,
       this.activeAreaName === 'outdoor',
     )
@@ -1227,11 +1250,13 @@ export class ChurchDistrict {
     this.props.dispose()
     this.sceneMomentEffects.dispose()
     this.hoanKiemPhotoCompositions.dispose()
+    this.oldQuarterStreetCanyon.dispose()
     this.centralHanoiBackdrop.dispose()
     this.hoanKiemUrbanEdgeDistrict.dispose()
     this.hoanKiemPedestrianDistrict.dispose()
     this.hoanKiemGroundExpansion.dispose()
     this.staticBatches.forEach((batch) => batch.dispose())
+    this.gradientSky.dispose()
     this.kit.dispose()
     this.scene.remove(this.root)
   }
