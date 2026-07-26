@@ -1,5 +1,9 @@
 import * as THREE from 'three'
-import { SpecialNpcActor } from '../../npcs/SpecialNpcActor.js'
+import {
+  MO_WORLD_FOCUS_RATIO,
+  MO_WORLD_HEIGHT,
+  MoWorldVisual,
+} from './MoWorldVisual.js'
 
 const TALK_RADIUS = 2.35
 const WALK_SPEED = 0.92
@@ -21,10 +25,11 @@ export class MoNpc {
     parent,
     camera,
     colliders,
-    assetLoader = null,
+    assetLoader,
     position = [6.2, 0.07, -4.2],
   }) {
     this.camera = camera
+    this.assetLoader = assetLoader
     this.outdoorColliders = colliders
     this.interiorColliders = null
     this.outdoorParent = parent
@@ -44,26 +49,17 @@ export class MoNpc {
     parent.add(this.group)
 
     this.pose = new THREE.Group()
-    this.pose.name = 'Model 3D Mơ'
+    this.pose.name = 'Billboard Mơ'
     this.group.add(this.pose)
 
-    this.actor = new SpecialNpcActor({
+    this.actor = new MoWorldVisual({
       parent: this.pose,
-      profile: 'mo',
-      name: 'Mơ visual',
-      position: [0, 0, 0],
-      colliders: null,
-      active: true,
-      faceLoader: (profileId) => assetLoader?.getSpecialFace(profileId),
-      dialogueLines: null,
-      castShadow: true,
+      assetLoader,
     })
-    this.actor.interaction.target = this
     this.visual = this.actor.visual
-    this.headRoot = this.actor.headRoot
-    this.headMesh = this.actor.headMesh
-    this.faceCard = this.actor.faceCard
+    this.faceCard = this.actor.billboard
     this.contactShadow = this.actor.contactShadow
+    this.profile = this.actor.profile
 
     this.elapsed = 0
     this.ready = false
@@ -79,6 +75,8 @@ export class MoNpc {
     this.outfitPromise = Promise.resolve(false)
     this.baseYaw = 0
     this.movementYaw = 0
+    this.activity = null
+    this.activityQueue = []
     this.interaction = {
       type: 'dialogue',
       position: this.position,
@@ -104,24 +102,17 @@ export class MoNpc {
     this.collider = this.outdoorCollider
     this.outdoorColliders.push(this.outdoorCollider)
 
-    this.readyPromise = this.#finishModelLoad()
+    this.readyPromise = this.#finishVisualLoad()
   }
 
-  async #finishModelLoad() {
-    await this.actor.readyPromise
+  async #finishVisualLoad() {
+    const texture = await this.assetLoader?.getWorldOutfit('idle')
     if (this.disposed) return false
-    this.ready = this.actor.ready
-    this.disabled = this.actor.disabled
-    this.currentOutfit = this.desiredOutfit
-    this.actor.setOutfit(this.currentOutfit)
+    this.ready = this.actor.applyOutfit(texture, 'idle')
+    this.disabled = !this.ready
+    this.currentOutfit = this.ready ? 'idle' : null
     this.#syncColliderState()
-    this.group.visible = (
-      this.ready &&
-      !this.disabled &&
-      this.areaName === this.lastActiveAreaName &&
-      !this.dialogueActive &&
-      !this.debugHidden
-    )
+    this.#syncVisibility()
     return this.ready
   }
 
@@ -130,14 +121,7 @@ export class MoNpc {
     const clampedDelta = Math.min(Math.max(deltaTime, 0), 0.05)
     const walking = !this.dialogueActive && this.#updateScheduledMovement(clampedDelta)
     this.actor.setWalking(walking)
-    const visible = (
-      this.ready &&
-      !this.disabled &&
-      activeAreaName === this.areaName &&
-      !this.dialogueActive &&
-      !this.debugHidden
-    )
-    this.group.visible = visible
+    const visible = this.#syncVisibility()
     if (!visible) return
 
     this.elapsed += clampedDelta
@@ -168,20 +152,24 @@ export class MoNpc {
       }
     }
 
-    // The outer Mơ group already handles travel/player-facing yaw. The inner
-    // legacy body only needs its breathing and walking animation here.
-    this.actor.update(clampedDelta)
-    this.pose.rotation.z = 0
+    this.actor.update(this.elapsed)
+    this.pose.rotation.set(0, 0, 0)
   }
 
   getInteraction() {
     if (
-      !this.ready ||
-      this.disabled ||
-      this.dialogueActive ||
-      this.areaName !== this.lastActiveAreaName
+      !this.ready
+      || this.disabled
+      || this.dialogueActive
+      || this.areaName !== this.lastActiveAreaName
     ) return null
     return this.interaction
+  }
+
+  setActive(active) {
+    this.disabled = !active
+    this.#syncColliderState()
+    this.#syncVisibility()
   }
 
   setDebugLookFrozen(frozen) {
@@ -192,13 +180,13 @@ export class MoNpc {
 
   setDebugHidden(hidden) {
     this.debugHidden = Boolean(hidden)
-    if (this.debugHidden) this.group.visible = false
+    this.#syncVisibility()
   }
 
   getFocusPoint(target = new THREE.Vector3()) {
     return target.set(
       this.position.x,
-      this.position.y + this.actor.profile.height * this.actor.profile.focusRatio,
+      this.position.y + MO_WORLD_HEIGHT * MO_WORLD_FOCUS_RATIO,
       this.position.z,
     )
   }
@@ -206,10 +194,10 @@ export class MoNpc {
   setDialogueActive(active) {
     const nextActive = Boolean(active)
     if (
-      nextActive &&
-      !this.dialogueActive &&
-      this.currentOutfit &&
-      this.desiredOutfit !== this.currentOutfit
+      nextActive
+      && !this.dialogueActive
+      && this.currentOutfit
+      && this.desiredOutfit !== this.currentOutfit
     ) {
       this.pendingOutfit = this.desiredOutfit
       this.desiredOutfit = this.currentOutfit
@@ -217,15 +205,8 @@ export class MoNpc {
     }
 
     this.dialogueActive = nextActive
-    this.actor.setDialogueActive(nextActive)
     this.#syncColliderState()
-    this.group.visible = (
-      this.ready &&
-      !this.disabled &&
-      !nextActive &&
-      this.areaName === this.lastActiveAreaName &&
-      !this.debugHidden
-    )
+    this.#syncVisibility()
     if (!nextActive && this.pendingScheduleState) {
       const pending = this.pendingScheduleState
       this.pendingScheduleState = null
@@ -246,19 +227,25 @@ export class MoNpc {
       this.pendingOutfit = outfitId === this.currentOutfit ? null : outfitId
       return Promise.resolve(false)
     }
+    if (outfitId === this.currentOutfit && this.ready) {
+      this.desiredOutfit = outfitId
+      this.pendingOutfit = null
+      return Promise.resolve(true)
+    }
 
     this.pendingOutfit = null
     this.desiredOutfit = outfitId
     const requestVersion = ++this.outfitRequestVersion
-    this.outfitPromise = this.readyPromise.then(() => {
+    this.outfitPromise = this.readyPromise.then(async () => {
+      const texture = await this.assetLoader?.getWorldOutfit(outfitId)
       if (
-        this.disposed ||
-        requestVersion !== this.outfitRequestVersion ||
-        outfitId !== this.desiredOutfit
+        this.disposed
+        || requestVersion !== this.outfitRequestVersion
+        || outfitId !== this.desiredOutfit
       ) return false
-      this.actor.setOutfit(outfitId)
-      this.currentOutfit = outfitId
-      return true
+      const applied = this.actor.applyOutfit(texture, outfitId)
+      if (applied) this.currentOutfit = outfitId
+      return applied
     })
     return this.outfitPromise
   }
@@ -298,6 +285,61 @@ export class MoNpc {
     return true
   }
 
+  playActivity(activity, options = {}) {
+    this.activityQueue.length = 0
+    this.activity = {
+      id: typeof activity === 'string' ? activity : activity?.id,
+      options,
+    }
+    return this.getActivityState()
+  }
+
+  queueActivity(activity, options = {}) {
+    const queued = {
+      id: typeof activity === 'string' ? activity : activity?.id,
+      options,
+    }
+    if (!this.activity) this.activity = queued
+    else this.activityQueue.push(queued)
+    return this.getActivityState()
+  }
+
+  stopActivity() {
+    const wasActive = Boolean(this.activity || this.activityQueue.length)
+    this.activity = null
+    this.activityQueue.length = 0
+    return wasActive
+  }
+
+  attachProp() {
+    return null
+  }
+
+  detachProp() {
+    return false
+  }
+
+  transferProp() {
+    return false
+  }
+
+  getActivityState() {
+    return Object.freeze({
+      activity: this.activity?.id ?? null,
+      queued: this.activityQueue.length,
+      props: Object.freeze([]),
+    })
+  }
+
+  resetMomentState() {
+    this.stopActivity()
+    return true
+  }
+
+  releaseMomentLock() {
+    return this.resetMomentState()
+  }
+
   #moveToArea(areaName, parent, position) {
     if (!parent) return
     parent.add(this.group)
@@ -334,6 +376,18 @@ export class MoNpc {
     this.group.position.copy(this.position)
     this.#updateCollider()
     return true
+  }
+
+  #syncVisibility() {
+    const visible = (
+      this.ready
+      && !this.disabled
+      && this.lastActiveAreaName === this.areaName
+      && !this.dialogueActive
+      && !this.debugHidden
+    )
+    this.group.visible = visible
+    return visible
   }
 
   #updateCollider() {

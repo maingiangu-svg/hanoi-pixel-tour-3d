@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { MoNpc } from '../src/world/npcs/MoNpc.js'
+import { MO_WORLD_HEIGHT } from '../src/world/npcs/MoWorldVisual.js'
 
 function deferred() {
   let resolve
@@ -11,26 +12,39 @@ function deferred() {
   return { promise, resolve }
 }
 
-function faceTexture() {
+function worldTexture(width = 446, height = 1493) {
   const texture = new THREE.Texture()
-  texture.image = { naturalWidth: 1254, naturalHeight: 1254 }
+  texture.image = { naturalWidth: width, naturalHeight: height }
+  texture.colorSpace = THREE.SRGBColorSpace
   return texture
 }
 
-function faceAssetLoader(result = faceTexture()) {
-  return { getSpecialFace: () => Promise.resolve(result) }
+function worldAssetLoader({
+  idle = worldTexture(),
+  church = worldTexture(445, 1495),
+} = {}) {
+  return {
+    getWorldOutfit: (outfitId) => Promise.resolve(
+      outfitId === 'church' ? church : idle,
+    ),
+  }
 }
 
-test('Mơ keeps collision in the scheduled area when the face card loads late', async () => {
+test('Mơ keeps collision in the scheduled area while clean assets load', async () => {
   const load = deferred()
   const outdoor = new THREE.Group()
   const interior = new THREE.Group()
   const outdoorColliders = []
   const interiorColliders = []
+  const church = worldTexture(445, 1495)
   const mo = new MoNpc({
     parent: outdoor,
     camera: new THREE.PerspectiveCamera(),
-    assetLoader: { getSpecialFace: () => load.promise },
+    assetLoader: {
+      getWorldOutfit: (outfitId) => (
+        outfitId === 'idle' ? load.promise : Promise.resolve(church)
+      ),
+    },
     colliders: outdoorColliders,
   })
 
@@ -48,19 +62,17 @@ test('Mơ keeps collision in the scheduled area when the face card loads late', 
   assert.equal(mo.outdoorCollider.disabled, true)
   assert.equal(mo.interiorCollider.disabled, true)
 
-  load.resolve(faceTexture())
+  load.resolve(worldTexture())
   await mo.readyPromise
   await mo.outfitPromise
 
   assert.equal(mo.group.parent, interior)
   assert.equal(mo.currentOutfit, 'church')
   assert.equal(mo.faceCard.visible, true)
-  assert.equal(mo.actor.fallbackFace.visible, false)
   assert.equal(mo.outdoorCollider.disabled, true)
   assert.equal(mo.interiorCollider.disabled, false)
 
   mo.setDialogueActive(true)
-  assert.equal(mo.outdoorCollider.disabled, true)
   assert.equal(mo.interiorCollider.disabled, true)
   assert.equal(mo.group.visible, false)
   mo.setDialogueActive(false)
@@ -71,17 +83,21 @@ test('Mơ keeps collision in the scheduled area when the face card loads late', 
   assert.equal(interiorColliders.length, 0)
 })
 
-test('Mơ keeps the same body and face card while outfit state changes', async () => {
+test('outfit changes replace only the cached billboard texture', async () => {
+  const idle = worldTexture()
+  const church = worldTexture(445, 1495)
   const mo = new MoNpc({
     parent: new THREE.Group(),
     camera: new THREE.PerspectiveCamera(),
-    assetLoader: faceAssetLoader(),
+    assetLoader: worldAssetLoader({ idle, church }),
     colliders: [],
   })
   await mo.readyPromise
 
   const visual = mo.visual
-  const faceCard = mo.faceCard
+  const billboard = mo.faceCard
+  const material = billboard.material
+  assert.equal(material.map, idle)
   mo.setDialogueActive(true)
   assert.equal(await mo.setWorldOutfit('church'), false)
   assert.equal(mo.currentOutfit, 'idle')
@@ -89,21 +105,22 @@ test('Mơ keeps the same body and face card while outfit state changes', async (
   mo.setDialogueActive(false)
   await mo.outfitPromise
   assert.equal(mo.visual, visual)
-  assert.equal(mo.faceCard, faceCard)
+  assert.equal(mo.faceCard, billboard)
+  assert.equal(mo.faceCard.material, material)
+  assert.equal(material.map, church)
   assert.equal(mo.currentOutfit, 'church')
-  assert.equal(mo.actor.currentOutfit, 'church')
   assert.throws(() => mo.setWorldOutfit('raincoat'), RangeError)
 
   mo.dispose()
 })
 
-test('Mơ faces her travel direction and toggles the legacy-body walk pose', async () => {
+test('Mơ faces travel direction without tilting the full-body billboard', async () => {
   const camera = new THREE.PerspectiveCamera()
   camera.position.set(7.5, 2, -4.2)
   const mo = new MoNpc({
     parent: new THREE.Group(),
     camera,
-    assetLoader: faceAssetLoader(),
+    assetLoader: worldAssetLoader(),
     colliders: [],
   })
   await mo.readyPromise
@@ -124,18 +141,17 @@ test('Mơ faces her travel direction and toggles the legacy-body walk pose', asy
   )
   assert.equal(mo.group.rotation.x, 0)
   assert.equal(mo.pose.rotation.z, 0)
-  assert.equal(typeof mo.actor.setDebugLookFrozen, 'function')
-
+  assert.equal(mo.faceCard.rotation.x, 0)
   mo.dispose()
 })
 
-test('Mơ keeps the existing restrained player-facing behavior while idle', async () => {
+test('idle billboard keeps restrained yaw and feet-anchored breathing', async () => {
   const camera = new THREE.PerspectiveCamera()
   camera.position.set(20, 2, -4.2)
   const mo = new MoNpc({
     parent: new THREE.Group(),
     camera,
-    assetLoader: faceAssetLoader(),
+    assetLoader: worldAssetLoader(),
     colliders: [],
   })
   await mo.readyPromise
@@ -146,54 +162,52 @@ test('Mơ keeps the existing restrained player-facing behavior while idle', asyn
 
   assert.equal(mo.actor.walking, false)
   assert.ok(Math.abs(mo.group.rotation.y - Math.PI * 0.42) < 0.03)
-  assert.ok(Math.abs(mo.actor.visual.scale.y - mo.actor.bodyScale) < 0.008)
+  assert.ok(Math.abs(mo.visual.scale.y - 1) < 0.005)
+  assert.equal(mo.faceCard.position.y, MO_WORLD_HEIGHT * 0.5)
   mo.dispose()
 })
 
-test('a failed optional face texture keeps Mơ visible and interactive', async () => {
+test('a missing clean full-body asset disables Mơ safely', async () => {
   const mo = new MoNpc({
     parent: new THREE.Group(),
     camera: new THREE.PerspectiveCamera(),
-    assetLoader: faceAssetLoader(null),
+    assetLoader: worldAssetLoader({ idle: null, church: null }),
     colliders: [],
   })
   await mo.readyPromise
   mo.update(0, 'outdoor')
 
-  assert.equal(mo.ready, true)
-  assert.equal(mo.disabled, false)
+  assert.equal(mo.ready, false)
+  assert.equal(mo.disabled, true)
   assert.equal(mo.faceCard.visible, false)
-  assert.equal(mo.actor.fallbackFace.visible, true)
-  assert.equal(mo.group.visible, true)
-  assert.equal(mo.getInteraction()?.target, mo)
+  assert.equal(mo.group.visible, false)
+  assert.equal(mo.getInteraction(), null)
   mo.dispose()
 })
 
-test('Mơ uses a transparent face card on the grounded camisole-and-shorts body', async () => {
+test('Mơ is one clean transparent full-body billboard at 1.72m', async () => {
   const mo = new MoNpc({
     parent: new THREE.Group(),
     camera: new THREE.PerspectiveCamera(),
-    assetLoader: faceAssetLoader(),
+    assetLoader: worldAssetLoader(),
     colliders: [],
   })
   await mo.readyPromise
   mo.group.updateMatrixWorld(true)
 
-  const bounds = new THREE.Box3().setFromObject(mo.actor.visual)
-  assert.ok(Math.abs((bounds.max.y - mo.position.y) - mo.actor.profile.height) < 0.02)
+  const bounds = new THREE.Box3().setFromObject(mo.visual)
+  assert.ok(Math.abs((bounds.max.y - mo.position.y) - MO_WORLD_HEIGHT) < 0.02)
   assert.ok(Math.abs(bounds.min.y - mo.position.y) < 0.02)
-  assert.ok(mo.group.getObjectByName('Special.Outfit.Top'))
-  assert.ok(mo.group.getObjectByName('Special.Outfit.Strap.L'))
-  assert.ok(mo.group.getObjectByName('Special.Outfit.Strap.R'))
-  assert.ok(mo.group.getObjectByName('Special.Outfit.Shorts.L'))
-  assert.ok(mo.group.getObjectByName('Special.Outfit.Shorts.R'))
+  assert.equal(mo.group.getObjectByName('Special.Outfit.Top'), undefined)
+  assert.equal(mo.group.getObjectByName('Special.HeadBacking'), undefined)
   assert.equal(mo.faceCard.geometry.type, 'PlaneGeometry')
   assert.equal(mo.faceCard.material.transparent, true)
+  assert.ok(mo.faceCard.material.alphaTest > 0)
   assert.equal(mo.faceCard.material.map.colorSpace, THREE.SRGBColorSpace)
-  assert.equal(mo.actor.headRoot, mo.actor.headRig)
-  assert.equal(mo.actor.headMesh.name, 'Special.HeadBacking')
+  assert.equal(mo.faceCard.material.map.image.naturalWidth, 446)
+  assert.equal(mo.faceCard.material.map.image.naturalHeight, 1493)
 
   const focus = mo.getFocusPoint(new THREE.Vector3())
-  assert.ok(focus.y > 1.35 && focus.y < 1.5)
+  assert.ok(focus.y > 1.4 && focus.y < 1.5)
   mo.dispose()
 })

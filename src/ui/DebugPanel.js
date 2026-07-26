@@ -9,6 +9,7 @@ export class DebugPanel {
     clock = null,
     dayNight = null,
     profiler = null,
+    momentSystem = null,
   ) {
     this.element = element
     this.player = player
@@ -17,6 +18,7 @@ export class DebugPanel {
     this.clock = clock
     this.dayNight = dayNight
     this.profiler = profiler
+    this.momentSystem = momentSystem
     this.frustum = new THREE.Frustum()
     this.projectionView = new THREE.Matrix4()
     this.frames = 0
@@ -36,6 +38,7 @@ export class DebugPanel {
     const sceneStats = this.#collectVisibleSceneStats()
     const worldStats = this.world.getPerformanceStats?.() ?? {}
     const profile = this.profiler?.snapshot
+    const momentDebug = this.momentSystem?.getDebugSnapshot()
     const timeLine = this.clock
       ? `${this.clock.formatted} x${this.clock.speed} · ${this.dayNight?.phase ?? '—'}`
       : null
@@ -57,6 +60,15 @@ export class DebugPanel {
     const districtLine = this.world.getActiveDistrictNames
       ? this.world.getActiveDistrictNames(this.player.camera.position).join(' · ')
       : null
+    const momentLine = momentDebug
+      ? `Moment ${momentDebug.running.length} chạy · ${momentDebug.waiting.length} chờ · ${momentDebug.locks.length} lock`
+      : null
+    const blockedMomentLine = momentDebug?.blocked.length
+      ? `Chặn ${momentDebug.blocked
+        .slice(0, 3)
+        .map((moment) => `${moment.id}: ${moment.reason}`)
+        .join(' · ')}`
+      : null
     this.element.textContent = [
       `${fps} FPS · ${this.world.activeAreaName}`,
       `${renderInfo.calls} calls · ${renderInfo.triangles} tris`,
@@ -76,6 +88,8 @@ export class DebugPanel {
       scheduleLine,
       crowdLine,
       districtLine,
+      momentLine,
+      blockedMomentLine,
       `X ${x.toFixed(1)} · Z ${z.toFixed(1)}`,
     ].filter(Boolean).join('\n')
     this.element.dataset.profile = JSON.stringify({
@@ -105,6 +119,7 @@ export class DebugPanel {
       },
       cpuMs: profile?.cpuMs ?? null,
       counts: profile?.counts ?? null,
+      moments: momentDebug ?? null,
     })
     this.frames = 0
     this.elapsed = 0

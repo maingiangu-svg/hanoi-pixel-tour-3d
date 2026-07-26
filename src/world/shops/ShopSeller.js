@@ -45,6 +45,7 @@ export class ShopSeller extends NpcActor {
   update(deltaTime, context = null) {
     super.update(deltaTime, context)
     if (!this.ready || this.disabled || !this.active || this.dialogueActive) return
+    if (this.activityController.isControllingPose) return
 
     const slowCycle = this.elapsed * 0.72
     const gesture = Math.max(0, Math.sin(slowCycle)) ** 5

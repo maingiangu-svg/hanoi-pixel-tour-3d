@@ -1,12 +1,5 @@
-import * as THREE from 'three'
-
-function copyVector(vector) {
-  return Object.freeze({
-    x: vector.x,
-    y: vector.y,
-    z: vector.z,
-  })
-}
+import { PhotoMetadataBuilder } from './PhotoMetadataBuilder.js'
+import { scorePhoto } from './PhotoScoring.js'
 
 function encodeCanvas(canvas, type = 'image/png', quality) {
   if (!canvas?.toBlob) {
@@ -29,6 +22,7 @@ export class PhotoCapture {
     world,
     dayNight,
     now = () => new Date(),
+    metadataBuilder = null,
   }) {
     if (!renderer?.instance?.domElement || typeof renderer.render !== 'function') {
       throw new TypeError('PhotoCapture requires the active game renderer')
@@ -41,7 +35,13 @@ export class PhotoCapture {
     this.world = world
     this.dayNight = dayNight
     this.now = now
-    this.direction = new THREE.Vector3()
+    this.metadataBuilder = metadataBuilder ?? new PhotoMetadataBuilder({
+      camera,
+      clock,
+      world,
+      dayNight,
+      now,
+    })
     this.lastCapture = null
   }
 
@@ -55,28 +55,44 @@ export class PhotoCapture {
     // are never part of this WebGL canvas.
     this.renderer.render()
     const canvas = this.renderer.instance.domElement
-    const image = await encodeCanvas(canvas)
-    this.camera.getWorldDirection(this.direction)
-
     const capturedAt = this.now()
+    const capturedMetadata = this.metadataBuilder.buildPhotoMetadata({
+      focalLength,
+      width: canvas.width,
+      height: canvas.height,
+      capturedAt,
+    })
+    const scoring = scorePhoto(capturedMetadata)
+    const metadata = Object.freeze({
+      ...capturedMetadata,
+      scoring,
+    })
+    const image = await encodeCanvas(canvas)
     const result = {
+      id: metadata.capture.id,
       image,
       mimeType: image.type || 'image/png',
       width: canvas.width,
       height: canvas.height,
-      timestamp: capturedAt.toISOString(),
-      gameTime: Object.freeze({
-        minutes: this.clock.minutes,
-        hour: this.clock.hour,
-        minute: this.clock.minute,
-        formatted: this.clock.formatted,
-      }),
-      playerPosition: copyVector(this.camera.position),
-      cameraDirection: copyVector(this.direction),
-      focalLength,
-      area: this.world.activeAreaName,
-      mapId: this.world.activeMapId,
-      lightingPhase: this.dayNight.getLightingPhase(),
+      metadata,
+      capture: metadata.capture,
+      location: metadata.location,
+      lighting: metadata.lighting,
+      subjects: metadata.subjects,
+      landmarks: metadata.landmarks,
+      eventContext: metadata.eventContext,
+      classification: metadata.classification,
+      scoring,
+      // Compatibility aliases for existing Photo Mode and album consumers.
+      timestamp: metadata.capture.timestamp,
+      gameTime: metadata.capture.gameTime,
+      playerPosition: metadata.capture.playerPosition,
+      cameraDirection: metadata.capture.cameraDirection,
+      focalLength: metadata.capture.focalLength,
+      fov: metadata.capture.fov,
+      area: metadata.location.areaId,
+      mapId: metadata.location.mapId,
+      lightingPhase: metadata.lighting.phase,
     }
     this.lastCapture = result
     return result

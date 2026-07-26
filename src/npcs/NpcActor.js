@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { ActivityController } from './ActivityController.js'
 import { getSharedNpcResources } from './NpcResources.js'
 import { getNpcPreset, NPC_BEHAVIORS } from './npcPresets.js'
 
@@ -97,10 +98,34 @@ export class NpcActor {
     this.rightLeg = null
     this.leftKnee = null
     this.rightKnee = null
+    this.leftHandAnchor = null
+    this.rightHandAnchor = null
+    this.builtInHandheldProps = new Map()
 
     this.#buildBody()
     this.#applyStaticPose()
     this.visual.scale.setScalar(this.bodyScale)
+    this.activityController = new ActivityController({
+      actor: this,
+      rig: {
+        visual: this.visual,
+        head: this.headRig,
+        leftArm: this.leftArm,
+        rightArm: this.rightArm,
+        leftElbow: this.leftElbow,
+        rightElbow: this.rightElbow,
+        leftLeg: this.leftLeg,
+        rightLeg: this.rightLeg,
+        leftKnee: this.leftKnee,
+        rightKnee: this.rightKnee,
+      },
+      anchors: {
+        left: this.leftHandAnchor,
+        right: this.rightHandAnchor,
+      },
+      resources: this.resources,
+      bodyScale: this.bodyScale,
+    })
     this.setWaypoints(waypoints)
 
     this.collider = {
@@ -147,22 +172,35 @@ export class NpcActor {
       playerDistanceSquared = playerX * playerX + playerZ * playerZ
     }
 
-    if (this.behavior === 'walker') {
+    const activityControlsPose = this.activityController.isControllingPose
+    const activityIsWalking = this.activityController.currentActivity === 'walk'
+    if (activityIsWalking || (!activityControlsPose && this.behavior === 'walker')) {
       if (this.pausedForPlayer) {
         if (playerDistanceSquared > this.resumeRadiusSquared) this.pausedForPlayer = false
       } else if (playerDistanceSquared < this.pauseRadiusSquared) {
         this.pausedForPlayer = true
       }
-      this.walking = !this.pausedForPlayer && this.#walk(delta)
+      const activitySpeed = activityIsWalking
+        ? this.activityController.activitySpeed
+        : 1
+      this.walking = !this.pausedForPlayer && this.#walk(delta, activitySpeed)
     } else {
       this.walking = false
     }
 
-    if ((!this.walking || this.behavior !== 'walker') && playerDistanceSquared < 11.56) {
+    if (
+      !activityControlsPose
+      && (!this.walking || this.behavior !== 'walker')
+      && playerDistanceSquared < 11.56
+    ) {
       this.#turnToward(playerPosition.x, playerPosition.z, delta, 2.5)
     }
 
-    this.#animatePose()
+    this.activityController.update(
+      delta,
+      !playerPosition || playerDistanceSquared <= 144,
+    )
+    if (!this.activityController.isControllingPose) this.#animatePose()
     this.#syncCollider()
   }
 
@@ -188,7 +226,11 @@ export class NpcActor {
     this.behavior = behavior
     this.walking = false
     this.pausedForPlayer = false
-    this.#applyStaticPose()
+    this.activityController?.setDefaultBehaviorPose(behavior)
+    if (!this.activityController?.isControllingPose) {
+      this.#applyStaticPose()
+      this.activityController?.captureDefaultPose()
+    }
   }
 
   setPosition(x, y, z) {
@@ -242,11 +284,76 @@ export class NpcActor {
     return this.dialogueLines
   }
 
+  playActivity(activity, options = {}) {
+    return this.activityController.playActivity(activity, options)
+  }
+
+  queueActivity(activity, options = {}) {
+    return this.activityController.queueActivity(activity, options)
+  }
+
+  stopActivity(options = {}) {
+    return this.activityController.stopActivity(options)
+  }
+
+  attachProp(type, options = {}) {
+    return this.activityController.attachProp(type, options)
+  }
+
+  detachProp(idOrType) {
+    return this.activityController.detachProp(idOrType)
+  }
+
+  transferProp(idOrType, recipient, options = {}) {
+    return this.activityController.transferProp(idOrType, recipient, options)
+  }
+
+  getActivityState() {
+    return this.activityController.getState()
+  }
+
+  setHandheldPropOverride(type, attached) {
+    const builtIn = this.builtInHandheldProps.get(type)
+    if (builtIn) builtIn.visible = !attached
+  }
+
+  resetMomentState() {
+    this.activityController.stopActivity({
+      clearQueue: true,
+      detachProps: true,
+      transitionDuration: 0,
+    })
+    this.walking = false
+    this.pausedForPlayer = false
+    this.#applyStaticPose()
+    this.activityController.captureDefaultPose()
+    return true
+  }
+
+  releaseMomentLock() {
+    return this.resetMomentState()
+  }
+
+  faceToward(target, deltaTime, speed = 3.5) {
+    if (!target) return
+    this.#turnToward(target.x, target.z, deltaTime, speed)
+  }
+
+  faceYaw(yaw, deltaTime, speed = 3.5) {
+    if (!Number.isFinite(yaw)) return
+    const yawDelta = Math.atan2(
+      Math.sin(yaw - this.group.rotation.y),
+      Math.cos(yaw - this.group.rotation.y),
+    )
+    this.group.rotation.y += yawDelta * (1 - Math.exp(-speed * deltaTime))
+  }
+
   dispose() {
     if (this.disposed) return
     this.disposed = true
     this.ready = false
     this._disabled = true
+    this.activityController.dispose()
     if (this.colliderList) {
       const index = this.colliderList.indexOf(this.collider)
       if (index >= 0) this.colliderList.splice(index, 1)
@@ -306,8 +413,18 @@ export class NpcActor {
     hand.position.y = -0.295
     hand.scale.setScalar(0.15)
 
-    if (side < 0) this.leftElbow = elbow
-    else this.rightElbow = elbow
+    const handAnchor = new THREE.Group()
+    handAnchor.name = `Điểm cầm ${label}`
+    handAnchor.position.set(0, -0.295, 0.02)
+    elbow.add(handAnchor)
+
+    if (side < 0) {
+      this.leftElbow = elbow
+      this.leftHandAnchor = handAnchor
+    } else {
+      this.rightElbow = elbow
+      this.rightHandAnchor = handAnchor
+    }
     return shoulder
   }
 
@@ -376,13 +493,17 @@ export class NpcActor {
   #buildAccessory() {
     switch (this.preset.accessory) {
       case 'camera': {
-        const camera = this.#mesh('Máy ảnh', 'box', 'charcoal', this.visual)
+        const cameraRoot = new THREE.Group()
+        cameraRoot.name = 'Phụ kiện máy ảnh'
+        this.visual.add(cameraRoot)
+        const camera = this.#mesh('Máy ảnh', 'box', 'charcoal', cameraRoot)
         camera.position.set(0, 1.06, 0.31)
         camera.scale.set(0.28, 0.2, 0.16)
-        const lens = this.#mesh('Ống kính', 'cylinder', 'metal', this.visual)
+        const lens = this.#mesh('Ống kính', 'cylinder', 'metal', cameraRoot)
         lens.position.set(0, 1.06, 0.41)
         lens.rotation.x = Math.PI / 2
         lens.scale.set(0.13, 0.18, 0.13)
+        this.builtInHandheldProps.set('camera', cameraRoot)
         break
       }
       case 'cane': {
@@ -467,7 +588,7 @@ export class NpcActor {
     }
   }
 
-  #walk(delta) {
+  #walk(delta, speedMultiplier = 1) {
     if (this.waypoints.length === 0 || this.pathComplete) return false
     let waypoint = this.waypoints[this.currentWaypointIndex]
     let offsetX = waypoint.x - this.position.x
@@ -496,7 +617,7 @@ export class NpcActor {
     )
     this.group.rotation.y += yawDelta * (1 - Math.exp(-4.2 * delta))
     const alignment = Math.max(0.18, Math.cos(yawDelta))
-    const step = Math.min(distance, this.speed * alignment * delta)
+    const step = Math.min(distance, this.speed * speedMultiplier * alignment * delta)
     this.position.x += (offsetX / distance) * step
     this.position.z += (offsetZ / distance) * step
     return step > 0

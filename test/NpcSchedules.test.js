@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   getAmbientDensity,
   getChurchCrowdState,
+  getMoOutfitForContext,
   getMoOutfitForTime,
   getMoScheduleState,
 } from '../src/npcs/npcSchedules.js'
@@ -37,4 +38,32 @@ test('Mơ wears the church outfit from 17:00 until returning to normal life at 2
   assert.equal(getMoOutfitForTime(19 * 60 + 59), 'church')
   assert.equal(getMoOutfitForTime(20 * 60), 'idle')
   assert.equal(getMoOutfitForTime(24 * 60 + 17 * 60 + 30), 'church')
+})
+
+test('church outfit selection also requires a church-related context', () => {
+  assert.equal(getMoOutfitForContext({
+    minutes: 17 * 60,
+    scheduleState: 'withChildren',
+    areaName: 'outdoor',
+  }), 'church')
+  assert.equal(getMoOutfitForContext({
+    minutes: 18 * 60 + 30,
+    scheduleState: 'insideChurch',
+    areaName: 'interior',
+  }), 'church')
+  assert.equal(getMoOutfitForContext({
+    minutes: 19 * 60,
+    scheduleState: 'returningToPlaza',
+    areaName: 'outdoor',
+  }), 'church')
+  assert.equal(getMoOutfitForContext({
+    minutes: 17 * 60 + 30,
+    scheduleState: 'dayStroll',
+    areaName: 'outdoor',
+  }), 'idle')
+  assert.equal(getMoOutfitForContext({
+    minutes: 20 * 60,
+    scheduleState: 'courtyardIdle',
+    areaName: 'outdoor',
+  }), 'idle')
 })

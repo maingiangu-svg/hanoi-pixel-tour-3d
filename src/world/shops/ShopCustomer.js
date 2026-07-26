@@ -96,7 +96,7 @@ export class ShopCustomer extends NpcActor {
       if (this.stateElapsed >= this.stateDuration) this.#advanceState()
     }
 
-    this.#applyActivityPose()
+    if (!this.activityController.isControllingPose) this.#applyActivityPose()
   }
 
   say(text) {

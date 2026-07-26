@@ -41,6 +41,7 @@ function createModeHarness({ canOpen = true, pointerLocked = true } = {}) {
     notices: [],
     states: [],
     captures: 0,
+    stored: 0,
   }
   const capture = {
     lastCapture: null,
@@ -67,6 +68,7 @@ function createModeHarness({ canOpen = true, pointerLocked = true } = {}) {
     canOpen: () => canOpen,
     isPointerLocked: () => pointerLocked,
     onStateChange: (active) => calls.states.push(active),
+    onPhotoCaptured: async () => { calls.stored += 1 },
     eventTarget,
     wheelTarget,
   })
@@ -98,9 +100,10 @@ test('Space captures without jumping in photo mode and jumps again after closing
   const harness = createModeHarness()
   dispatchKey(harness.eventTarget, 'KeyC')
   dispatchKey(harness.eventTarget, 'Space')
-  await Promise.resolve()
+  await new Promise((resolve) => setImmediate(resolve))
 
   assert.equal(harness.calls.captures, 1)
+  assert.equal(harness.calls.stored, 1)
   assert.equal(harness.input.consumeJump(), false)
   assert.equal(harness.calls.flashes, 1)
   assert.match(harness.calls.notices.at(-1), /35mm/)
@@ -216,5 +219,21 @@ test('PhotoCapture encodes the WebGL canvas directly and records temporary metad
   assert.equal(photo.area, 'outdoor')
   assert.equal(photo.mapId, 'hoanKiem')
   assert.equal(photo.lightingPhase, 'goldenHour')
+  assert.equal(photo.id, photo.capture.id)
+  assert.equal(photo.capture.fov, 50)
+  assert.equal(photo.location.mapId, 'hoanKiem')
+  assert.equal(photo.lighting.phase, 'goldenHour')
+  assert.deepEqual(photo.subjects, [])
+  assert.deepEqual(photo.landmarks, [])
+  assert.deepEqual(photo.eventContext, { active: false, events: [] })
+  assert.equal(photo.classification.label, 'cảnh–cảnh')
+  assert.equal(photo.scoring, photo.metadata.scoring)
+  assert.ok(photo.scoring.total >= 0 && photo.scoring.total <= 100)
+  assert.ok(photo.scoring.stars >= 1 && photo.scoring.stars <= 5)
+  assert.equal(
+    Object.values(photo.scoring.criteria)
+      .reduce((total, criterion) => total + criterion.max, 0),
+    100,
+  )
   assert.equal(capture.lastCapture, photo)
 })

@@ -5,7 +5,7 @@ import { SpecialNpcActor } from '../npcs/SpecialNpcActor.js'
 import {
   getAmbientDensity,
   getChurchCrowdState,
-  getMoOutfitForTime,
+  getMoOutfitForContext,
   getMoScheduleState,
 } from '../npcs/npcSchedules.js'
 
@@ -94,7 +94,11 @@ export class ChurchCrowd {
       this.lastMoState = moState
     }
 
-    const moOutfit = getMoOutfitForTime(clock.minutes)
+    const moOutfit = getMoOutfitForContext({
+      minutes: clock.minutes,
+      scheduleState: moState,
+      areaName: this.mo?.areaName,
+    })
     if (moOutfit !== this.lastMoOutfit) {
       this.mo?.setWorldOutfit(moOutfit)
       this.lastMoOutfit = moOutfit

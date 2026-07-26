@@ -17,7 +17,10 @@ import { GameClock } from '../time/GameClock.js'
 import { DayNightCycle } from '../lighting/DayNightCycle.js'
 import { PhotoCapture } from '../photo/PhotoCapture.js'
 import { PhotoMode } from '../photo/PhotoMode.js'
+import { PhotoStore } from '../photo/PhotoStore.js'
+import { PhotoAlbum } from '../photo/PhotoAlbum.js'
 import { PhotoModeUI } from '../ui/PhotoModeUI.js'
+import { PhotoAlbumUI } from '../ui/PhotoAlbumUI.js'
 import {
   MAP_INSPECTION_TARGETS,
   createMapInspectionTarget,
@@ -30,6 +33,7 @@ import {
   performChurchDebugTeleport,
 } from '../debug/DebugTeleport.js'
 import { PerformanceProfiler } from '../debug/PerformanceProfiler.js'
+import { MomentSystem } from '../moments/MomentSystem.js'
 
 export class Game {
   constructor(container, uiRoot) {
@@ -66,6 +70,34 @@ export class Game {
       spawn: new THREE.Vector3(CHURCH_PLAZA_SPAWN.x, 0, CHURCH_PLAZA_SPAWN.z),
     })
     this.player.lookAt(CHURCH_FACADE_LOOK_AT)
+    this.momentSystem = new MomentSystem({
+      resourceResolver: (type, id) => {
+        if (type === 'npc') return Boolean(this.world.getNamedNpc(id))
+        if (type === 'prop') return Boolean(this.world.getNamedProp?.(id))
+        // Staging zones, performance areas, audio channels and interaction
+        // points are logical resources declared by a moment, not spawned assets.
+        return true
+      },
+      resourceResetter: (type, id, definition, context, reason) => {
+        const resource = type === 'npc'
+          ? this.world.getNamedNpc(id)
+          : type === 'prop'
+            ? this.world.getNamedProp?.(id)
+            : null
+        if (resource?.releaseMomentLock) {
+          resource.releaseMomentLock(definition.id, reason, context)
+        } else {
+          resource?.resetMomentState?.(definition.id, reason, context)
+        }
+      },
+    })
+    this.momentContext = {
+      playerPosition: this.player.camera.position,
+      regionIds: [],
+      areaId: this.world.activeAreaName,
+      gameMinutes: this.clock.minutes,
+      paused: false,
+    }
     this.ui = new StartOverlay(uiRoot, () => this.player.lock())
     this.clockUi = new GameClockUI(this.ui.shell)
     this.clockUi.update(this.clock)
@@ -101,6 +133,7 @@ export class Game {
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
         && !this.photoMode?.isActive()
+        && !this.photoAlbum?.isOpen
         && (
           this.player.isMotorbikeMounted
           || this.world.activeAreaName !== 'interior'
@@ -115,6 +148,7 @@ export class Game {
       area: this.world.activeAreaName,
     })
     this.photoUi = new PhotoModeUI(this.ui.shell)
+    this.photoStore = new PhotoStore()
     this.photoCapture = new PhotoCapture({
       renderer: this.renderer,
       camera: this.player.camera,
@@ -135,6 +169,25 @@ export class Game {
         this.player.controls.isLocked
         && !this.player.isMotorbikeMounted
         && !this.mapUi.isOpen
+        && !this.photoAlbum?.isOpen
+        && !this.dialogue.isActive()
+        && !this.interactions.transitioning
+      ),
+      onPhotoCaptured: (photo) => this.photoStore.add(photo),
+    })
+    this.photoAlbumUi = new PhotoAlbumUI(this.ui.shell)
+    this.photoAlbum = new PhotoAlbum({
+      store: this.photoStore,
+      ui: this.photoAlbumUi,
+      input: this.input,
+      player: this.player,
+      gameUi: this.ui,
+      eventTarget: window,
+      canOpen: () => (
+        this.player.controls.isLocked
+        && !this.player.isMotorbikeMounted
+        && !this.photoMode.isActive()
+        && !this.mapUi.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
       ),
@@ -148,6 +201,7 @@ export class Game {
           this.clock,
           this.dayNight,
           this.profiler,
+          this.momentSystem,
         )
       : null
     if (import.meta.env.DEV) this.#applyInspectionView()
@@ -190,6 +244,15 @@ export class Game {
     this.dayNight.update(this.world.activeAreaName)
     this.profiler?.end('dayNight', dayNightStartedAt)
     this.photoMode.update(deltaTime)
+    if (this.momentSystem.size > 0) {
+      this.momentContext.regionIds = this.world.getActiveDistrictNames(
+        this.player.camera.position,
+      )
+      this.momentContext.areaId = this.world.activeAreaName
+      this.momentContext.gameMinutes = this.clock.minutes
+      this.momentContext.paused = this.clock.paused
+      this.momentSystem.update(deltaTime, this.momentContext)
+    }
     if (this.mapUi.isOpen) {
       this.player.camera.getWorldDirection(this.mapDirection)
       this.mapUi.updatePosition(
@@ -215,7 +278,7 @@ export class Game {
   }
 
   handleMapKeyDown(event) {
-    if (this.photoMode.isActive()) return
+    if (this.photoMode.isActive() || this.photoAlbum.isOpen) return
     const action = getMapHotkeyAction(event, this.mapUi.isOpen)
     if (!action) return
     if (action === 'open') {
@@ -469,8 +532,12 @@ export class Game {
     this.dialogue.dispose()
     this.interactions.dispose()
     this.motorcycleMode.dispose()
+    this.photoAlbum.dispose()
     this.photoMode.dispose()
+    this.photoAlbumUi.dispose()
     this.photoUi.dispose()
+    this.photoStore.dispose()
+    this.momentSystem.dispose()
     this.player.dispose()
     this.dialogueUi.dispose()
     this.mapUi.dispose()

@@ -13,6 +13,14 @@ export const MO_OUTFIT_TIMES = Object.freeze({
   idleOutfitReturns: 20 * 60,
 })
 
+export const MO_CHURCH_OUTFIT_STATES = Object.freeze([
+  'withChildren',
+  'walkingToChurch',
+  'insideChurch',
+  'returningToPlaza',
+  'courtyardIdle',
+])
+
 export function normalizeGameMinutes(minutes) {
   return ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
 }
@@ -36,8 +44,29 @@ export function getMoScheduleState(minutes) {
 }
 
 export function getMoOutfitForTime(minutes) {
+  return getMoOutfitForContext({
+    minutes,
+    churchContext: true,
+  })
+}
+
+export function getMoOutfitForContext({
+  minutes,
+  scheduleState = null,
+  areaName = null,
+  churchContext = false,
+}) {
   const time = normalizeGameMinutes(minutes)
-  return time >= MO_OUTFIT_TIMES.churchOutfitBegins && time < MO_OUTFIT_TIMES.idleOutfitReturns
+  const withinChurchOutfitTime = (
+    time >= MO_OUTFIT_TIMES.churchOutfitBegins
+    && time < MO_OUTFIT_TIMES.idleOutfitReturns
+  )
+  const hasChurchContext = (
+    churchContext
+    || areaName === 'interior'
+    || MO_CHURCH_OUTFIT_STATES.includes(scheduleState)
+  )
+  return withinChurchOutfitTime && hasChurchContext
     ? 'church'
     : 'idle'
 }

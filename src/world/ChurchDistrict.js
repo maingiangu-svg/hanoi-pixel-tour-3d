@@ -22,6 +22,7 @@ import { disposeSharedNpcResources } from '../npcs/NpcResources.js'
 import { disposeSharedSpecialNpcResources } from '../npcs/SpecialNpcResources.js'
 import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
+import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
 
 const OUTDOOR_SKY = 0x596777
 const INTERIOR_SKY = 0x17191b
@@ -255,6 +256,8 @@ export class ChurchDistrict {
       nhaChungTurn: new THREE.Vector3(51.5, 0, 5),
       lakeViewpoint: new THREE.Vector3(68, 0, -3),
     })
+    this.photoLandmarksByArea = this.#buildPhotoLandmarkRegistry()
+    this.photoViewDirection = new THREE.Vector3()
 
     const interiorPortals = this.interior.exits.map((exit) => ({
       ...exit,
@@ -526,6 +529,156 @@ export class ChurchDistrict {
     return this.crowd?.getActorByName(name) ?? this.hoanKiemCrowd?.getActorByName(name) ?? null
   }
 
+  getPhotoLandmarkCandidates() {
+    return this.photoLandmarksByArea[this.activeAreaName] ?? []
+  }
+
+  getPhotoSubjectCandidates() {
+    const subjects = []
+    const appendManager = (manager, prefix) => {
+      manager?.entries.forEach((entry, index) => {
+        const actor = entry.actor
+        if (
+          entry.area !== this.activeAreaName
+          || !actor?.active
+          || !actor.ready
+          || actor.disabled
+        ) return
+        subjects.push({
+          id: `${prefix}-${index + 1}`,
+          name: actor.dialogueName ?? actor.name,
+          kind: 'person',
+          role: entry.role,
+          presetId: actor.preset?.id ?? actor.profile?.id ?? null,
+          object: actor.group,
+        })
+      })
+    }
+
+    if (
+      this.mo?.ready
+      && !this.mo.disabled
+      && this.mo.areaName === this.activeAreaName
+    ) {
+      subjects.push({
+        id: 'mo',
+        name: 'Mơ',
+        kind: 'person',
+        role: 'mo',
+        presetId: 'mo',
+        object: this.mo.group,
+      })
+    }
+    appendManager(this.crowd?.manager, 'church-npc')
+    appendManager(this.hoanKiemCrowd?.manager, 'hoan-kiem-npc')
+
+    if (this.activeAreaName === 'outdoor') {
+      this.shops.shops.forEach((shop) => {
+        if (shop.seller?.active) {
+          subjects.push({
+            id: `shop-seller-${shop.id}`,
+            name: shop.seller.dialogueName ?? 'Người bán',
+            kind: 'person',
+            role: 'shopSeller',
+            presetId: shop.seller.preset?.id ?? null,
+            object: shop.seller.group,
+          })
+        }
+        shop.customerPool?.customers.forEach((customer, index) => {
+          if (!customer.active) return
+          subjects.push({
+            id: `shop-customer-${shop.id}-${index + 1}`,
+            name: customer.preset?.label ?? 'Khách của quán',
+            kind: 'person',
+            role: 'shopCustomer',
+            presetId: customer.preset?.id ?? null,
+            object: customer.group,
+          })
+        })
+      })
+    }
+    return subjects
+  }
+
+  getPhotoOccluderRoots(position = this.playerPosition) {
+    const area = this.areas[this.activeAreaName]
+    if (!area) return []
+    if (this.activeAreaName !== 'outdoor') return [area.group]
+
+    const activeDistricts = new Set(this.getActiveDistrictNames(position))
+    const roots = [this.shops.actorRoot]
+    if (activeDistricts.has('churchDistrict')) {
+      roots.push(this.church.group, this.props.group, ...this.streetBuildingGroups)
+    }
+    if (activeDistricts.has('oldQuarterConnector')) {
+      roots.push(this.oldQuarterConnector.group)
+    }
+    if (activeDistricts.has('hoanKiemDistrict')) {
+      roots.push(
+        this.hoanKiemDistrict.group,
+        this.hoanKiemPedestrianDistrict.group,
+        this.hoanKiemGroundExpansion.group,
+        this.hoanKiemUrbanEdgeDistrict.group,
+        this.hoanKiemPhotoCompositions.group,
+      )
+    }
+    if (activeDistricts.has('ngocSonBranch')) roots.push(this.ngocSonBranch.group)
+    return [...new Set(roots.filter(Boolean))]
+  }
+
+  getPhotoCompositionContext(camera) {
+    if (
+      this.activeAreaName !== 'outdoor'
+      || this.activeMapId !== MAP_REGISTRY.hoanKiem.id
+      || !camera?.isCamera
+    ) return null
+
+    camera.getWorldDirection(this.photoViewDirection)
+    const horizontalLength = Math.hypot(
+      this.photoViewDirection.x,
+      this.photoViewDirection.z,
+    ) || 1
+    const directionX = this.photoViewDirection.x / horizontalLength
+    const directionZ = this.photoViewDirection.z / horizontalLength
+    let best = null
+    let bestScore = Infinity
+    for (const viewpoint of HOAN_KIEM_PHOTO_VIEWPOINTS) {
+      const distance = Math.hypot(
+        camera.position.x - viewpoint.position[0],
+        camera.position.z - viewpoint.position[2],
+      )
+      const captureRadius = viewpoint.standingRadius + 3
+      if (distance > captureRadius) continue
+      const facingDot = directionX * viewpoint.facing[0] + directionZ * viewpoint.facing[1]
+      if (facingDot < 0.5) continue
+      const score = distance / captureRadius + (1 - facingDot)
+      if (score < bestScore) {
+        bestScore = score
+        best = viewpoint
+      }
+    }
+    if (!best) return null
+
+    const leadingLinePattern = /road|bridge|walk|rail|reflection|curb|deck/i
+    const layerCopy = Object.freeze({
+      foreground: Object.freeze([...best.layers.foreground]),
+      midground: Object.freeze([...best.layers.midground]),
+      background: Object.freeze([...best.layers.background]),
+    })
+    return Object.freeze({
+      viewpointId: best.id,
+      viewpointName: best.name,
+      landmarkId: best.landmarkId,
+      facingAlignment: Math.max(0, 1 - bestScore),
+      layers: layerCopy,
+      naturalFrame: best.layers.foreground.length >= 2,
+      leadingLines: [
+        ...best.layers.foreground,
+        ...best.layers.midground,
+      ].some((id) => leadingLinePattern.test(id)),
+    })
+  }
+
   transition(target) {
     const destination = resolveMapDestination(target)
     const areaName = destination.definition.areaName
@@ -571,6 +724,90 @@ export class ChurchDistrict {
     this.outdoorLighting = { group, ambient, hemisphere: sky, sun, rim }
     this.root.add(group)
     group.add(ambient, sky, sun, sun.target, rim, rim.target)
+  }
+
+  #buildPhotoLandmarkRegistry() {
+    const box = (min, max) => new THREE.Box3(
+      new THREE.Vector3(...min),
+      new THREE.Vector3(...max),
+    )
+    const staticCandidate = (id, name, kind, bounds, visibilityObject) => Object.freeze({
+      id,
+      name,
+      kind,
+      bounds,
+      visibilityObject,
+    })
+    const proceduralCandidates = (district) => Object.freeze(
+      district.mapData.landmarks.map((landmark) => {
+        const id = landmark.sourceId ?? landmark.id
+        return Object.freeze({
+          id,
+          name: landmark.name,
+          kind: landmark.kind,
+          object: district.landmarkBuilder.groupsBySourceId.get(id),
+          visibilityObject: district.group,
+        })
+      }),
+    )
+
+    return Object.freeze({
+      outdoor: Object.freeze([
+        Object.freeze({
+          id: 'nhaThoLon',
+          name: 'Nhà thờ Lớn Hà Nội',
+          kind: 'cathedral',
+          object: this.church.group,
+          visibilityObject: this.church.group,
+        }),
+        staticCandidate(
+          'hoGuom',
+          'Hồ Gươm',
+          'lake',
+          box([72, -0.2, -82], [151, 1.2, 82]),
+          this.hoanKiemDistrict.group,
+        ),
+        staticCandidate(
+          'thapRua',
+          'Tháp Rùa',
+          'tower',
+          box([98.4, 0, -4.5], [107.6, 9.5, 4.5]),
+          this.hoanKiemDistrict.group,
+        ),
+        staticCandidate(
+          'cauTheHuc',
+          'Cầu Thê Húc',
+          'redBridge',
+          box([117.1, 0, 33.5], [120.9, 1.7, 45.3]),
+          this.ngocSonBranch.group,
+        ),
+        staticCandidate(
+          'denNgocSon',
+          'Đền Ngọc Sơn',
+          'temple',
+          box([109.8, 0, 44], [128.2, 7.4, 59.2]),
+          this.ngocSonBranch.group,
+        ),
+        staticCandidate(
+          'phoCo',
+          'Phố Cổ',
+          'oldQuarter',
+          box([37, 0, 17], [70, 18, 44]),
+          this.oldQuarterConnector.group,
+        ),
+      ]),
+      baDinh: proceduralCandidates(this.baDinhDistrict),
+      longBien: proceduralCandidates(this.longBienDistrict),
+      interior: Object.freeze([
+        Object.freeze({
+          id: 'nhaThoLonInterior',
+          name: 'Nội thất Nhà thờ Lớn',
+          kind: 'churchInterior',
+          object: this.interior.group,
+          visibilityObject: this.interior.group,
+        }),
+      ]),
+    })
   }
 
   #buildGround(colliders) {

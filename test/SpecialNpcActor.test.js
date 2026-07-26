@@ -30,23 +30,22 @@ function meshNames(root, prefix) {
 }
 
 test('special NPC profiles remain immutable and basketball is exactly 1.5x canonical height', () => {
-  assert.deepEqual(SPECIAL_NPC_PROFILE_NAMES, ['gymmer', 'basketball', 'mo'])
+  assert.deepEqual(SPECIAL_NPC_PROFILE_NAMES, ['gymmer', 'basketball'])
   SPECIAL_NPC_PROFILE_NAMES.forEach((id) => {
     assert.equal(Object.isFrozen(getSpecialNpcProfile(id)), true)
   })
 
   const gymmer = getSpecialNpcProfile('gymmer')
   const basketball = getSpecialNpcProfile('basketball')
-  const mo = getSpecialNpcProfile('mo')
 
   assert.equal(basketball.height, SPECIAL_NPC_CANONICAL_HEIGHT * 1.5)
   assert.equal(basketball.height / SPECIAL_NPC_CANONICAL_HEIGHT, 1.5)
-  assert.ok(gymmer.bodyWidth > mo.bodyWidth)
-  assert.ok(gymmer.limbBulk > mo.limbBulk)
+  assert.ok(gymmer.bodyWidth > basketball.bodyWidth)
+  assert.ok(gymmer.limbBulk > basketball.limbBulk)
   assert.throws(() => getSpecialNpcProfile('missing'), RangeError)
 })
 
-test('all three special NPCs paste their supplied face texture onto one transparent plane', async () => {
+test('special procedural NPCs paste their supplied face texture onto one transparent plane', async () => {
   for (const profileId of SPECIAL_NPC_PROFILE_NAMES) {
     const texture = faceTexture()
     const requestedProfiles = []
@@ -103,7 +102,7 @@ test('missing or failed face textures keep the low-poly fallback face usable', a
   ]
 
   for (const entry of cases) {
-    const { actor, faceLoaded } = await createActor('mo', {
+    const { actor, faceLoaded } = await createActor('gymmer', {
       faceLoader: entry.faceLoader,
       dialogueLines: null,
     })
@@ -175,49 +174,6 @@ test('basketball restores the tall dark outfit, Elite backpack, ball and basketb
   assert.ok(actor.group.getObjectByName('Special.ShoeSole.R'))
   assert.ok(actor.group.getObjectByName('Special.ShoeCuff.L'))
   assert.ok(actor.group.getObjectByName('Special.ShoeCuff.R'))
-
-  actor.dispose()
-})
-
-test('Mơ restores the simple camisole, straps, shorts and long low-poly hair', async () => {
-  const { actor } = await createActor('mo', {
-    faceLoader: async () => faceTexture(),
-    dialogueLines: null,
-  })
-
-  assert.ok(actor.group.getObjectByName('Special.Outfit.Top'))
-  assert.ok(actor.group.getObjectByName('Special.Outfit.Strap.L'))
-  assert.ok(actor.group.getObjectByName('Special.Outfit.Strap.R'))
-  assert.deepEqual(meshNames(actor.group, 'Special.Outfit.Shorts.').sort(), [
-    'Special.Outfit.Shorts.L',
-    'Special.Outfit.Shorts.R',
-  ])
-  assert.ok(actor.group.getObjectByName('Special.HairLength.L'))
-  assert.ok(actor.group.getObjectByName('Special.HairLength.R'))
-  assert.equal(actor.hips.material, actor.materials.denim)
-  assert.equal(actor.getInteraction()?.target, actor)
-
-  actor.dispose()
-})
-
-test('setWalking animates Mơ and returns her limbs to the stored idle pose', async () => {
-  const { actor } = await createActor('mo')
-  const idleLeftLegX = actor.basePose.leftLeg.x
-  const idleRightLegX = actor.basePose.rightLeg.x
-
-  assert.equal(typeof actor.setWalking, 'function')
-  actor.elapsed = Math.PI / (2 * 6.4)
-  actor.setWalking(true)
-  actor.update(0.05)
-  assert.equal(actor.walking, true)
-  assert.ok(Math.abs(actor.leftLeg.rotation.x - idleLeftLegX) > 0.01)
-  assert.ok(Math.abs(actor.rightLeg.rotation.x - idleRightLegX) > 0.01)
-
-  actor.setWalking(false)
-  assert.equal(actor.walking, false)
-  for (let index = 0; index < 30; index += 1) actor.update(0.05)
-  assert.ok(Math.abs(actor.leftLeg.rotation.x - idleLeftLegX) < 0.001)
-  assert.ok(Math.abs(actor.rightLeg.rotation.x - idleRightLegX) < 0.001)
 
   actor.dispose()
 })

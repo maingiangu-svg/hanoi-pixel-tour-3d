@@ -36,22 +36,6 @@ export const SPECIAL_NPC_PROFILES = Object.freeze({
     focusRatio: 0.84,
     defaultOutfit: 'court',
   }),
-  mo: freezeProfile({
-    id: 'mo',
-    label: 'Mơ',
-    height: 1.7,
-    skinColor: 0xd79b76,
-    hairColor: 0x211b1a,
-    bodyWidth: 0.88,
-    limbBulk: 0.84,
-    faceWidth: 0.82,
-    faceHeight: 0.75,
-    faceCenterY: 1.37,
-    colliderRadius: 0.25,
-    colliderDepth: 0.2,
-    focusRatio: 0.83,
-    defaultOutfit: 'idle',
-  }),
 })
 
 export const SPECIAL_NPC_PROFILE_NAMES = Object.freeze(

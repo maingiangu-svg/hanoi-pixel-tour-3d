@@ -5,6 +5,13 @@ const DEFAULT_FOCAL_INDEX = 1
 const SENSOR_HEIGHT_MM = 24
 const FOV_DAMPING = 12
 
+function getKeyCode(event) {
+  if (event.code) return event.code
+  if (event.key === ' ') return 'Space'
+  if (event.key?.length === 1) return `Key${event.key.toUpperCase()}`
+  return event.key
+}
+
 export function focalLengthToVerticalFov(
   focalLength,
   sensorHeight = SENSOR_HEIGHT_MM,
@@ -25,6 +32,7 @@ export class PhotoMode {
     canOpen = () => true,
     isPointerLocked = () => true,
     onStateChange = () => {},
+    onPhotoCaptured = async () => {},
     eventTarget = window,
     wheelTarget = window,
   }) {
@@ -36,6 +44,7 @@ export class PhotoMode {
     this.canOpen = canOpen
     this.isPointerLocked = isPointerLocked
     this.onStateChange = onStateChange
+    this.onPhotoCaptured = onPhotoCaptured
     this.eventTarget = eventTarget
     this.wheelTarget = wheelTarget
     this.active = false
@@ -131,6 +140,7 @@ export class PhotoMode {
 
     try {
       const photo = await this.capture.capture({ focalLength: this.focalLength })
+      await this.onPhotoCaptured(photo)
       if (!this.disposed) {
         this.gameUi.flashPhoto()
         this.gameUi.showNotice(`Đã chụp ảnh · ${this.focalLength}mm`, 1500)
@@ -147,9 +157,10 @@ export class PhotoMode {
 
   handleKeyDown(event) {
     if (this.disposed || event.repeat) return
+    const code = getKeyCode(event)
 
     if (!this.active) {
-      if (event.code !== 'KeyC') return
+      if (code !== 'KeyC') return
       if (this.open()) {
         event.preventDefault?.()
         event.stopImmediatePropagation?.()
@@ -157,18 +168,18 @@ export class PhotoMode {
       return
     }
 
-    const handled = ['KeyC', 'Escape', 'Space', 'KeyQ', 'KeyE', 'KeyM'].includes(event.code)
+    const handled = ['KeyC', 'Escape', 'Space', 'KeyQ', 'KeyE', 'KeyM'].includes(code)
     if (!handled) return
     event.stopImmediatePropagation?.()
-    if (event.code !== 'Escape') event.preventDefault?.()
+    if (code !== 'Escape') event.preventDefault?.()
 
-    if (event.code === 'KeyC' || event.code === 'Escape') {
+    if (code === 'KeyC' || code === 'Escape') {
       this.close()
-    } else if (event.code === 'Space') {
+    } else if (code === 'Space') {
       void this.takePhoto().catch(() => {})
-    } else if (event.code === 'KeyQ') {
+    } else if (code === 'KeyQ') {
       this.stepZoom(-1)
-    } else if (event.code === 'KeyE') {
+    } else if (code === 'KeyE') {
       this.stepZoom(1)
     }
   }

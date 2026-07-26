@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { ActivityController } from './ActivityController.js'
+import { getSharedNpcResources } from './NpcResources.js'
 import {
   getSpecialNpcProfile,
   SPECIAL_NPC_CANONICAL_HEIGHT,
@@ -84,6 +86,8 @@ export class SpecialNpcActor {
     this.group.add(this.visual)
     this.bodyScale = this.profile.height / SPECIAL_NPC_CANONICAL_HEIGHT
     this.visual.scale.setScalar(this.bodyScale)
+    this.leftHandAnchor = null
+    this.rightHandAnchor = null
 
     this.contactShadow = createContactShadow()
     this.ownedGeometries.add(this.contactShadow.geometry)
@@ -101,6 +105,27 @@ export class SpecialNpcActor {
       leftLeg: this.leftLeg.rotation.clone(),
       rightLeg: this.rightLeg.rotation.clone(),
     }
+    this.activityController = new ActivityController({
+      actor: this,
+      rig: {
+        visual: this.visual,
+        head: this.headRig,
+        leftArm: this.leftArm,
+        rightArm: this.rightArm,
+        leftElbow: this.leftElbow,
+        rightElbow: this.rightElbow,
+        leftLeg: this.leftLeg,
+        rightLeg: this.rightLeg,
+        leftKnee: this.leftKnee,
+        rightKnee: this.rightKnee,
+      },
+      anchors: {
+        left: this.leftHandAnchor,
+        right: this.rightHandAnchor,
+      },
+      resources: getSharedNpcResources(),
+      bodyScale: this.bodyScale,
+    })
     this.headRoot = this.headRig
     this.faceDetails = this.fallbackFace
 
@@ -246,7 +271,6 @@ export class SpecialNpcActor {
 
     const isGymmer = this.profile.id === 'gymmer'
     const isBasketball = this.profile.id === 'basketball'
-    const isMo = this.profile.id === 'mo'
     const width = this.profile.bodyWidth
     const bulk = this.profile.limbBulk
 
@@ -258,7 +282,7 @@ export class SpecialNpcActor {
     this.hips = this.#mesh(
       'Special.Hips',
       'box',
-      isMo ? this.materials.denim : this.materials.black,
+      this.materials.black,
       this.body,
       {
         position: [0, 0.71, 0],
@@ -279,22 +303,8 @@ export class SpecialNpcActor {
     })
     this.#mesh('Special.HairBacking', 'sphere', this.materials.hair, this.headRig, {
       position: [0, 0.095, -0.06],
-      scale: [isMo ? 0.43 : 0.4, 0.24, 0.38],
+      scale: [0.4, 0.24, 0.38],
     })
-    if (isMo) {
-      for (const side of [-1, 1]) {
-        this.#mesh(
-          `Special.HairLength.${side < 0 ? 'L' : 'R'}`,
-          'sphere',
-          this.materials.hair,
-          this.body,
-          {
-            position: [side * 0.27, 1.25, -0.07],
-            scale: [0.22, 0.65, 0.2],
-          },
-        )
-      }
-    }
 
     this.faceCard = this.#mesh(
       'Special.FaceCard',
@@ -318,7 +328,6 @@ export class SpecialNpcActor {
 
     if (isGymmer) this.#buildGymmerDetails()
     if (isBasketball) this.#buildBasketballDetails()
-    if (isMo) this.#buildMoOutfit()
   }
 
   #buildFallbackFace() {
@@ -370,8 +379,17 @@ export class SpecialNpcActor {
       scale: [0.15 * bulk, 0.16 * bulk, 0.14 * bulk],
     })
 
-    if (side < 0) this.leftElbow = elbow
-    else this.rightElbow = elbow
+    const handAnchor = new THREE.Group()
+    handAnchor.name = `Special.HandAnchor.${label}`
+    handAnchor.position.set(0, -0.31, 0.02)
+    elbow.add(handAnchor)
+    if (side < 0) {
+      this.leftElbow = elbow
+      this.leftHandAnchor = handAnchor
+    } else {
+      this.rightElbow = elbow
+      this.rightHandAnchor = handAnchor
+    }
     return shoulder
   }
 
@@ -509,36 +527,6 @@ export class SpecialNpcActor {
     })
   }
 
-  #buildMoOutfit() {
-    this.#mesh('Special.Outfit.Top', 'tapered', this.materials.cream, this.body, {
-      position: [0, 1.055, 0.02],
-      scale: [0.43, 0.38, 0.29],
-    })
-    for (const side of [-1, 1]) {
-      this.#mesh(
-        `Special.Outfit.Strap.${side < 0 ? 'L' : 'R'}`,
-        'box',
-        this.materials.cream,
-        this.body,
-        {
-          position: [side * 0.16, 1.29, 0.155],
-          scale: [0.045, 0.27, 0.045],
-          rotation: [0, 0, side * -0.06],
-        },
-      )
-      this.#mesh(
-        `Special.Outfit.Shorts.${side < 0 ? 'L' : 'R'}`,
-        'box',
-        this.materials.denim,
-        this.body,
-        {
-          position: [side * 0.145, 0.62, 0],
-          scale: [0.27, 0.24, 0.29],
-        },
-      )
-    }
-  }
-
   #applyProfilePose() {
     this.leftArm.rotation.set(0, 0, -0.06)
     this.rightArm.rotation.set(0, 0, 0.06)
@@ -555,13 +543,6 @@ export class SpecialNpcActor {
       this.leftElbow.rotation.set(-0.18, 0, 0.08)
       this.rightArm.rotation.set(-0.62, 0, 0.16)
       this.rightElbow.rotation.set(-0.78, 0, -0.52)
-    } else if (this.profile.id === 'mo') {
-      this.leftArm.rotation.set(-0.18, 0, -0.06)
-      this.rightArm.rotation.set(-0.18, 0, 0.06)
-      this.leftElbow.rotation.set(-0.68, 0, 0.28)
-      this.rightElbow.rotation.set(-0.68, 0, -0.28)
-      this.leftLeg.rotation.z = 0.035
-      this.rightLeg.rotation.z = -0.035
     }
   }
 
@@ -570,10 +551,16 @@ export class SpecialNpcActor {
     const delta = Math.min(Math.max(deltaTime, 0), 0.05)
     this.elapsed += delta
     const playerPosition = context?.isVector3 ? context : context?.playerPosition
-    if (playerPosition && !this.debugLookFrozen) {
+    let playerDistanceSquared = Infinity
+    if (playerPosition) {
       const dx = playerPosition.x - this.position.x
       const dz = playerPosition.z - this.position.z
-      if (dx * dx + dz * dz < 16) {
+      playerDistanceSquared = dx * dx + dz * dz
+      if (
+        !this.activityController.isControllingPose
+        && !this.debugLookFrozen
+        && playerDistanceSquared < 16
+      ) {
         const targetYaw = Math.atan2(dx, dz)
         const yawDelta = Math.atan2(
           Math.sin(targetYaw - this.group.rotation.y),
@@ -583,18 +570,24 @@ export class SpecialNpcActor {
       }
     }
 
-    const breath = Math.sin(this.elapsed * 1.35) * 0.004
-    this.visual.scale.set(
-      this.bodyScale * (1 + breath * 0.35),
-      this.bodyScale * (1 + breath),
-      this.bodyScale * (1 + breath * 0.35),
+    this.activityController.update(
+      delta,
+      !playerPosition || playerDistanceSquared <= 144,
     )
-    this.#updateWalkingPose(delta)
+    if (!this.activityController.isControllingPose) {
+      const breath = Math.sin(this.elapsed * 1.35) * 0.004
+      this.visual.scale.set(
+        this.bodyScale * (1 + breath * 0.35),
+        this.bodyScale * (1 + breath),
+        this.bodyScale * (1 + breath * 0.35),
+      )
+      this.#updateWalkingPose(delta)
+    }
     this.#syncCollider()
   }
 
   #updateWalkingPose(delta) {
-    if (this.profile.id !== 'mo') return
+    if (!this.walking) return
     const blend = 1 - Math.exp(-10 * delta)
     const stride = this.walking ? Math.sin(this.elapsed * 6.4) * 0.34 : 0
     const armSwing = this.walking ? Math.sin(this.elapsed * 6.4) * 0.2 : 0
@@ -688,6 +681,68 @@ export class SpecialNpcActor {
     return this.dialogueLines
   }
 
+  playActivity(activity, options = {}) {
+    return this.activityController.playActivity(activity, options)
+  }
+
+  queueActivity(activity, options = {}) {
+    return this.activityController.queueActivity(activity, options)
+  }
+
+  stopActivity(options = {}) {
+    return this.activityController.stopActivity(options)
+  }
+
+  attachProp(type, options = {}) {
+    return this.activityController.attachProp(type, options)
+  }
+
+  detachProp(idOrType) {
+    return this.activityController.detachProp(idOrType)
+  }
+
+  transferProp(idOrType, recipient, options = {}) {
+    return this.activityController.transferProp(idOrType, recipient, options)
+  }
+
+  getActivityState() {
+    return this.activityController.getState()
+  }
+
+  resetMomentState() {
+    this.activityController.stopActivity({
+      clearQueue: true,
+      detachProps: true,
+      transitionDuration: 0,
+    })
+    this.walking = false
+    this.#applyProfilePose()
+    this.activityController.captureDefaultPose()
+    return true
+  }
+
+  releaseMomentLock() {
+    return this.resetMomentState()
+  }
+
+  faceToward(target, deltaTime, speed = 3.5) {
+    if (!target) return
+    const targetYaw = Math.atan2(
+      target.x - this.position.x,
+      target.z - this.position.z,
+    )
+    this.faceYaw(targetYaw, deltaTime, speed)
+  }
+
+  faceYaw(yaw, deltaTime, speed = 3.5) {
+    if (!Number.isFinite(yaw)) return
+    const yawDelta = Math.atan2(
+      Math.sin(yaw - this.group.rotation.y),
+      Math.cos(yaw - this.group.rotation.y),
+    )
+    this.group.rotation.y += yawDelta * (1 - Math.exp(-speed * deltaTime))
+  }
+
   #refreshState() {
     const usable = this.ready && this.active && !this.disabled
     this.group.visible = usable && !(this.dialogueActive && this.hideDuringDialogue)
@@ -715,6 +770,7 @@ export class SpecialNpcActor {
     this.disposed = true
     this.ready = false
     this.disabled = true
+    this.activityController.dispose()
     if (this.colliders) {
       const index = this.colliders.indexOf(this.collider)
       if (index >= 0) this.colliders.splice(index, 1)

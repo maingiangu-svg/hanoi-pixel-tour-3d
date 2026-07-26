@@ -359,6 +359,388 @@ kbd {
   visibility: hidden;
 }
 
+.photo-album[hidden] {
+  display: none;
+}
+
+.photo-album {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 3vw, 36px);
+  color: #f6f0df;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  pointer-events: auto;
+}
+
+.photo-album__backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(16, 20, 19, 0.88), rgba(25, 30, 29, 0.76)),
+    rgba(15, 18, 18, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.photo-album__panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1180px, 100%);
+  height: min(820px, 100%);
+  min-height: 360px;
+  padding: clamp(18px, 3vw, 34px);
+  overflow: hidden;
+  background: rgba(35, 41, 39, 0.97);
+  border: 1px solid rgba(246, 240, 223, 0.3);
+  box-shadow: 18px 18px 0 rgba(11, 14, 13, 0.28);
+}
+
+.photo-album__panel::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 78px;
+  height: 3px;
+  background: var(--accent);
+  content: '';
+}
+
+.photo-album__header,
+.photo-album__detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.photo-album__header {
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(246, 240, 223, 0.14);
+}
+
+.photo-album__eyebrow {
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.18em;
+}
+
+.photo-album__header h2 {
+  margin: 7px 0 2px;
+  font-size: clamp(1.65rem, 4vw, 2.8rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.photo-album__count {
+  margin: 8px 0 0;
+  color: rgba(246, 240, 223, 0.56);
+  font-size: 0.76rem;
+}
+
+.photo-album__close,
+.photo-album__back,
+.photo-album__delete {
+  min-height: 42px;
+  padding: 10px 14px;
+  color: #f6f0df;
+  background: rgba(246, 240, 223, 0.06);
+  border: 1px solid rgba(246, 240, 223, 0.24);
+  cursor: pointer;
+}
+
+.photo-album__close {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.photo-album__close kbd {
+  min-width: auto;
+  color: var(--accent);
+}
+
+.photo-album__close:hover,
+.photo-album__back:hover,
+.photo-album__close:focus-visible,
+.photo-album__back:focus-visible {
+  border-color: var(--accent);
+}
+
+.photo-album__delete {
+  color: #ffd6cb;
+  border-color: rgba(216, 111, 84, 0.48);
+}
+
+.photo-album__delete:hover,
+.photo-album__delete:focus-visible {
+  background: rgba(160, 67, 46, 0.24);
+  border-color: #dc8068;
+}
+
+.photo-album__close:focus-visible,
+.photo-album__back:focus-visible,
+.photo-album__delete:focus-visible,
+.photo-album-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.photo-album__list-view,
+.photo-album__detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+.photo-album__list-view {
+  padding-top: 24px;
+}
+
+.photo-album__empty {
+  display: grid;
+  min-height: 230px;
+  place-content: center;
+  gap: 10px;
+  color: rgba(246, 240, 223, 0.56);
+  text-align: center;
+}
+
+.photo-album__empty[hidden] {
+  display: none;
+}
+
+.photo-album__empty strong {
+  color: #f6f0df;
+  font-size: 1.1rem;
+}
+
+.photo-album__empty kbd {
+  min-width: auto;
+  color: var(--accent);
+}
+
+.photo-album__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: clamp(12px, 1.8vw, 22px);
+  padding: 2px;
+}
+
+.photo-album-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding: 0;
+  overflow: hidden;
+  color: #f6f0df;
+  text-align: left;
+  background: #272e2c;
+  border: 1px solid rgba(246, 240, 223, 0.16);
+  cursor: pointer;
+}
+
+.photo-album-card:hover {
+  border-color: rgba(211, 173, 99, 0.78);
+  transform: translateY(-2px);
+}
+
+.photo-album-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  background: #1c2220;
+}
+
+.photo-album-card__summary {
+  display: grid;
+  gap: 6px;
+  padding: 13px 14px 14px;
+}
+
+.photo-album-card__summary strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-album-card__summary small {
+  color: rgba(246, 240, 223, 0.56);
+  font-size: 0.68rem;
+}
+
+.photo-album-card__score {
+  color: #e8bd64;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+}
+
+.photo-album__detail {
+  padding-top: 20px;
+}
+
+.photo-album__detail-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 2px 16px;
+  background: linear-gradient(#232927 76%, transparent);
+}
+
+.photo-album__figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: clamp(18px, 3vw, 36px);
+  align-items: start;
+  margin: 0;
+}
+
+.photo-album__full-image {
+  display: block;
+  width: 100%;
+  max-height: calc(100dvh - 250px);
+  object-fit: contain;
+  background: #171c1b;
+  border: 1px solid rgba(246, 240, 223, 0.16);
+}
+
+.photo-album__figure figcaption {
+  display: grid;
+  gap: 20px;
+}
+
+.photo-album-score {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(211, 173, 99, 0.08);
+  border: 1px solid rgba(211, 173, 99, 0.24);
+}
+
+.photo-album-score__heading {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.photo-album-score__heading strong {
+  color: #f6f0df;
+  font-size: 1.35rem;
+}
+
+.photo-album-score__stars {
+  color: #e8bd64;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.photo-album-score > p,
+.photo-album-score__notes p {
+  margin: 0;
+  color: rgba(246, 240, 223, 0.7);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.photo-album-score__breakdown {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.photo-album-score__breakdown > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.photo-album-score__breakdown dt {
+  color: rgba(246, 240, 223, 0.62);
+  font-size: 0.7rem;
+}
+
+.photo-album-score__breakdown dd {
+  margin: 0;
+  color: #e8bd64;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-album-score__breakdown small {
+  grid-column: 1 / -1;
+  margin-top: -7px;
+  color: rgba(246, 240, 223, 0.48);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.photo-album-score__analysis-title {
+  color: rgba(246, 240, 223, 0.82);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.photo-album-score__breakdown--analysis {
+  padding-top: 2px;
+}
+
+.photo-album-score__notes {
+  display: grid;
+  gap: 6px;
+}
+
+.photo-album-score__notes strong {
+  color: rgba(246, 240, 223, 0.9);
+}
+
+.photo-album__metadata {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid rgba(246, 240, 223, 0.18);
+}
+
+.photo-album__metadata > div {
+  display: grid;
+  gap: 5px;
+  padding: 13px 0;
+  border-bottom: 1px solid rgba(246, 240, 223, 0.12);
+}
+
+.photo-album__metadata dt {
+  color: rgba(246, 240, 223, 0.46);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.photo-album__metadata dd {
+  margin: 0;
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.game-shell.is-photo-album-active .start-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-shell.is-photo-album-active .crosshair,
+.game-shell.is-photo-album-active .interaction-prompt,
+.game-shell.is-photo-album-active .game-clock,
+.game-shell.is-photo-album-active .debug-panel,
+.game-shell.is-photo-album-active .world-notice {
+  opacity: 0 !important;
+  visibility: hidden;
+}
+
 .world-notice {
   position: absolute;
   left: 50%;
@@ -1132,6 +1514,42 @@ kbd {
     flex-wrap: wrap;
     gap: 6px 16px;
   }
+
+  .photo-album {
+    padding: 0;
+  }
+
+  .photo-album__panel {
+    width: 100%;
+    height: 100%;
+    padding: 18px 14px;
+    border: 0;
+  }
+
+  .photo-album__close span {
+    display: none;
+  }
+
+  .photo-album__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .photo-album-card__summary {
+    padding: 10px;
+  }
+
+  .photo-album-card__summary strong {
+    font-size: 0.72rem;
+  }
+
+  .photo-album__figure {
+    grid-template-columns: 1fr;
+  }
+
+  .photo-album__full-image {
+    max-height: 54dvh;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1140,6 +1558,10 @@ kbd {
   .interaction-prompt,
   .scene-fade,
   .dialogue-layer {
+    transition: none;
+  }
+
+  .photo-album-card {
     transition: none;
   }
 
