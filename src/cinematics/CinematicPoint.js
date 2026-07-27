@@ -1,4 +1,8 @@
 import * as THREE from 'three'
+import {
+  CINEMATIC_TRIGGER_TYPES,
+  CinematicDefinition,
+} from './CinematicDefinition.js'
 
 function toVector3(value, label) {
   if (value?.isVector3) return value.clone()
@@ -11,36 +15,44 @@ function toVector3(value, label) {
   return new THREE.Vector3(value.x, value.y ?? 0, value.z)
 }
 
-export class CinematicPoint {
+export class CinematicPoint extends CinematicDefinition {
   constructor({
     id,
     region,
     area = 'outdoor',
     position,
     radius = 3,
-    promptText = 'Xem đoạn giới thiệu',
+    promptText = 'Xem giới thiệu',
     title = '',
     subtitle = '',
+    audioCue = null,
+    ambientLevel = 0.34,
+    conditions = () => true,
+    marker = {},
     timeline,
     replayable = true,
   }) {
-    if (!id) throw new TypeError('Cinematic point requires an id')
     if (!region) throw new TypeError(`Cinematic point "${id}" requires a region`)
-    if (typeof timeline !== 'function') {
-      throw new TypeError(`Cinematic point "${id}" requires a timeline factory`)
-    }
+    super({
+      id,
+      triggerType: CINEMATIC_TRIGGER_TYPES.INTERACTION,
+      title,
+      subtitle,
+      audioCue,
+      ambientLevel,
+      conditions,
+      timeline,
+    })
 
-    this.id = id
     this.region = region
     this.area = area
     this.position = toVector3(position, `Cinematic point "${id}"`)
     this.radius = Math.max(0.5, Number(radius) || 3)
     this.promptText = promptText
-    this.title = title
-    this.subtitle = subtitle
-    this.timelineFactory = timeline
+    this.marker = Object.freeze({
+      visibleDistance: Math.max(6, Number(marker.visibleDistance) || 28),
+    })
     this.replayable = Boolean(replayable)
-    this.playCount = 0
   }
 
   isNear(position) {
@@ -53,10 +65,10 @@ export class CinematicPoint {
   isAvailable({ areaName, regionIds = [] } = {}) {
     if (areaName !== this.area) return false
     if (!this.replayable && this.playCount > 0) return false
-    return regionIds.includes(this.region)
-  }
-
-  createTimeline(context) {
-    return this.timelineFactory(context)
+    return regionIds.includes(this.region) && this.canPlay({
+      areaName,
+      regionIds,
+      point: this,
+    })
   }
 }

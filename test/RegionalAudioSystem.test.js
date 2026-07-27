@@ -148,6 +148,31 @@ test('regional audio crossfades one persistent soundscape per visited region', a
   assert.equal(system.getState().volume, 0.25)
   assert.equal(system.getState().muted, false)
 
+  assert.equal(system.beginCinematic({
+    cue: 'church-reveal',
+    ambientLevel: 0.3,
+  }), true)
+  assert.equal(system.beginCinematic({
+    cue: 'church-reveal',
+    ambientLevel: 0.3,
+  }), false)
+  assert.equal(system.setCinematicCue('church-reveal'), false)
+  assert.equal(system.setCinematicCue('church-climax'), true)
+  assert.deepEqual(system.getCinematicState(), {
+    active: true,
+    ambientLevel: 0.3,
+    cueId: 'church-climax',
+    cueStarts: 2,
+  })
+  assert.equal(system.endCinematic(), true)
+  assert.deepEqual(system.getCinematicState(), {
+    active: false,
+    ambientLevel: 1,
+    cueId: null,
+    cueStarts: 2,
+  })
+  assert.equal(system.endCinematic(), false)
+
   system.dispose()
   assert.equal(context.closeCalls, 1)
   assert.equal(system.getState().soundscapeCount, 0)

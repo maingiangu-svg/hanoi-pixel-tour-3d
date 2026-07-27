@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
+import { CinematicDefinition } from '../src/cinematics/CinematicDefinition.js'
 import { CinematicManager } from '../src/cinematics/CinematicManager.js'
 import { CinematicPoint } from '../src/cinematics/CinematicPoint.js'
 import { CinematicTimeline } from '../src/cinematics/CinematicTimeline.js'
@@ -34,8 +35,9 @@ function createHarness() {
     open: [],
     fades: [],
     title: [],
-    paused: [],
-    resumed: [],
+    audioBegin: [],
+    audioCues: [],
+    audioEnds: 0,
     locks: 0,
   }
   const player = {
@@ -50,6 +52,7 @@ function createHarness() {
   }
   const manager = new CinematicManager({
     renderer: {
+      scene: new THREE.Scene(),
       setActiveCamera: (camera) => calls.activeCameras.push(camera),
     },
     player,
@@ -73,9 +76,10 @@ function createHarness() {
       activeAreaName: 'outdoor',
       getActiveDistrictNames: () => ['churchDistrict'],
     },
-    clock: {
-      pause: (reason) => calls.paused.push(reason),
-      resume: (reason) => calls.resumed.push(reason),
+    audio: {
+      beginCinematic: (options) => calls.audioBegin.push(options),
+      setCinematicCue: (cue) => calls.audioCues.push(cue),
+      endCinematic: () => { calls.audioEnds += 1 },
     },
     eventTarget,
   })
@@ -113,13 +117,30 @@ test('cinematic point only exposes its E interaction near the matching region', 
     harness.playerCamera.position,
   )
   assert.equal(interactions.length, 1)
-  assert.equal(interactions[0].label, 'Xem đoạn giới thiệu')
+  assert.equal(interactions[0].label, 'Xem giới thiệu')
 
   harness.playerCamera.position.x = 10
   assert.deepEqual(
     harness.manager.getNearbyInteractions(harness.playerCamera.position),
     [],
   )
+  harness.manager.dispose()
+})
+
+test('world marker is visible nearby and hides while its cinematic is playing', () => {
+  const harness = createHarness()
+  const marker = harness.manager.markerLayer.entries.get('test-church').marker
+  harness.manager.update(0.016)
+  assert.equal(marker.visible, true)
+
+  harness.manager.startPoint('test-church')
+  harness.manager.update(0.016)
+  assert.equal(marker.visible, false)
+  harness.manager.skipCinematic()
+
+  harness.playerCamera.position.x = 40
+  harness.manager.update(0.016)
+  assert.equal(marker.visible, false)
   harness.manager.dispose()
 })
 
@@ -134,7 +155,7 @@ test('starting a cinematic swaps camera, locks gameplay and exits pointer lock',
   assert.equal(harness.calls.activeCameras.at(-1), harness.manager.camera)
   assert.equal(harness.calls.input.at(-1), false)
   assert.equal(harness.calls.cinematic.at(-1), true)
-  assert.deepEqual(harness.calls.paused, ['cinematic'])
+  assert.equal(harness.calls.audioBegin.length, 1)
   assert.ok(harness.playerCamera.position.equals(originalPosition))
   assert.ok(harness.playerCamera.quaternion.equals(originalQuaternion))
   harness.manager.dispose()
@@ -156,8 +177,84 @@ test('Space skips without jumping and restores the exact player camera and FOV',
   assert.equal(harness.playerCamera.fov, savedFov)
   assert.equal(harness.calls.activeCameras.at(-1), harness.playerCamera)
   assert.equal(harness.calls.cinematic.at(-1), false)
-  assert.deepEqual(harness.calls.resumed, ['cinematic'])
+  assert.equal(harness.calls.audioEnds, 1)
   assert.equal(harness.calls.locks, 1)
+  harness.manager.dispose()
+})
+
+test('story cinematics use explicit APIs and quest-style conditions', () => {
+  const harness = createHarness()
+  harness.manager.registerCinematic(new CinematicDefinition({
+    id: 'story-test',
+    title: 'Story test',
+    conditions: ({ storyContext }) => storyContext?.unlocked === true,
+    timeline: ({ playerPose }) => new CinematicTimeline({
+      shots: [{
+        position: playerPose.position,
+        target: { x: 0, y: 1.68, z: 0 },
+        duration: 0.05,
+        holdTime: 0,
+        fov: playerPose.fov,
+      }],
+    }),
+  }))
+
+  assert.equal(harness.manager.playStoryCinematic('story-test', { unlocked: false }), false)
+  assert.equal(harness.manager.playStoryCinematic('story-test', { unlocked: true }), true)
+  assert.equal(harness.manager.isCinematicPlaying(), true)
+  assert.equal(harness.manager.skipCinematic(), true)
+  assert.equal(harness.manager.isCinematicPlaying(), false)
+  harness.manager.dispose()
+})
+
+test('queued cinematics de-duplicate ids and start when the manager becomes idle', () => {
+  const harness = createHarness()
+  harness.manager.registerCinematic(new CinematicDefinition({
+    id: 'queued-story',
+    timeline: ({ playerPose }) => new CinematicTimeline({
+      shots: [{
+        position: playerPose.position,
+        target: { x: 0, y: 1.68, z: 0 },
+        duration: 0.05,
+        holdTime: 0,
+        fov: playerPose.fov,
+      }],
+    }),
+  }))
+
+  assert.equal(harness.manager.queueCinematic('queued-story'), true)
+  assert.equal(harness.manager.queueCinematic('queued-story'), false)
+  harness.manager.update(0.016)
+  assert.equal(harness.manager.isCinematicPlaying(), true)
+  harness.manager.skipCinematic()
+  harness.manager.dispose()
+})
+
+test('skipping during slow motion always restores simulation time scale and audio', () => {
+  const harness = createHarness()
+  harness.manager.registerCinematic(new CinematicDefinition({
+    id: 'slow-story',
+    audioCue: 'church-reveal',
+    timeline: ({ playerPose }) => new CinematicTimeline({
+      shots: [{
+        position: playerPose.position,
+        target: { x: 0, y: 1.68, z: 0 },
+        duration: 1,
+        holdTime: 0.5,
+        fov: playerPose.fov,
+        timeScale: 0.45,
+        slowMotionStart: 0,
+        slowMotionDuration: 1.2,
+      }],
+    }),
+  }))
+  harness.manager.playStoryCinematic('slow-story')
+  for (let index = 0; index < 8; index += 1) harness.manager.update(0.05)
+  assert.ok(harness.manager.getSimulationTimeScale() < 1)
+
+  harness.manager.skipCinematic()
+  assert.equal(harness.manager.getSimulationTimeScale(), 1)
+  assert.equal(harness.calls.audioEnds, 1)
   harness.manager.dispose()
 })
 

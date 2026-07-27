@@ -51,3 +51,47 @@ test('timeline rejects an empty shot list', () => {
     /at least one shot/,
   )
 })
+
+test('orbit, crane and dolly paths remain smooth and expose bounded slow motion', () => {
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.05, 150)
+  const timeline = new CinematicTimeline({
+    shots: [
+      {
+        position: { x: -5, y: 3, z: 5 },
+        target: { x: 0, y: 2, z: 0 },
+        duration: 0.1,
+        holdTime: 0,
+        fov: 55,
+        cameraPath: { type: 'crane' },
+      },
+      {
+        position: { x: 5, y: 4, z: 5 },
+        target: { x: 0, y: 2, z: 0 },
+        duration: 1,
+        holdTime: 0.2,
+        fov: 50,
+        cameraPath: {
+          type: 'orbit',
+          center: { x: 0, y: 0, z: 0 },
+          radius: Math.sqrt(50),
+          startAngle: -45,
+          endAngle: 45,
+          startHeight: 3,
+          endHeight: 4,
+        },
+        timeScale: 0.45,
+        slowMotionStart: 0.2,
+        slowMotionDuration: 0.7,
+      },
+    ],
+  })
+  timeline.start(camera)
+  timeline.update(0.1, camera)
+  for (let index = 0; index < 8; index += 1) timeline.update(0.05, camera)
+
+  assert.equal(timeline.currentShot.cameraPath.type, 'orbit')
+  assert.ok(timeline.simulationTimeScale >= 0.45)
+  assert.ok(timeline.simulationTimeScale < 1)
+  assert.ok(Number.isFinite(camera.position.x))
+  assert.ok(Number.isFinite(camera.quaternion.w))
+})

@@ -15,7 +15,7 @@ export class CinematicOverlay {
           <p></p>
         </header>
         <div class="cinematic-overlay__skip">
-          <kbd>Esc</kbd> hoặc <kbd>Space</kbd> để bỏ qua
+          <kbd>Esc</kbd> để bỏ qua
         </div>
         <div class="cinematic-overlay__fade" aria-hidden="true"></div>
       </section>

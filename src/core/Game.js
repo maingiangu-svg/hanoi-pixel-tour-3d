@@ -196,7 +196,7 @@ export class Game {
       gameUi: this.ui,
       overlay: this.cinematicUi,
       world: this.world,
-      clock: this.clock,
+      audio: this.audio,
       allowUnlockedPreview: ENABLE_CINEMATIC_PREVIEW,
       canStart: () => (
         (this.player.controls.isLocked || ENABLE_CINEMATIC_PREVIEW)
@@ -421,12 +421,13 @@ export class Game {
     this.timer.update()
     const deltaTime = this.timer.getDelta()
     this.profiler?.beginFrame()
-    this.clock.update(deltaTime)
+    this.clock.update(this.cinematics.isActive() ? 0 : deltaTime)
     const dayNightStartedAt = this.profiler?.begin() ?? 0
     this.dayNight.update(this.world.activeAreaName)
     this.profiler?.end('dayNight', dayNightStartedAt)
     this.photoMode.update(deltaTime)
     this.cinematics.update(deltaTime)
+    const simulationDelta = deltaTime * this.cinematics.getSimulationTimeScale()
     const updatesSpatialSystems = this.momentSystem.size > 0
       || this.sceneMomentSystem.size > 0
       || this.audio.started
@@ -438,7 +439,7 @@ export class Game {
       this.momentContext.areaId = this.world.activeAreaName
       this.momentContext.gameMinutes = this.clock.minutes
       this.momentContext.paused = this.clock.paused
-      this.momentSystem.update(deltaTime, this.momentContext)
+      this.momentSystem.update(simulationDelta, this.momentContext)
     }
     if (this.sceneMomentSystem.size > 0) {
       this.sceneMomentContext.regionIds = regionIds
@@ -446,7 +447,7 @@ export class Game {
       this.sceneMomentContext.gameMinutes = this.clock.minutes
       this.sceneMomentContext.lightingPhase = this.dayNight.getLightingPhase()
       this.sceneMomentContext.paused = this.clock.paused
-      this.sceneMomentSystem.update(deltaTime, this.sceneMomentContext)
+      this.sceneMomentSystem.update(simulationDelta, this.sceneMomentContext)
     }
     this.audio.update(deltaTime, {
       areaName: this.world.activeAreaName,
@@ -469,7 +470,7 @@ export class Game {
         }
         this.dialogue.update(deltaTime)
       }
-      this.world.update(deltaTime, this.clock)
+      this.world.update(simulationDelta, this.clock)
       this.interactions.update()
     }
     this.clockUi.update(this.clock)

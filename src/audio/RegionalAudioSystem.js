@@ -1,5 +1,17 @@
 const CROSSFADE_SECONDS = 1.8
 const MAX_ONE_SHOTS = 2
+const CINEMATIC_AUDIO_CUES = Object.freeze({
+  'church-reveal': Object.freeze({
+    frequencies: Object.freeze([146.83, 220]),
+    volume: 0.035,
+    wave: 'sine',
+  }),
+  'church-climax': Object.freeze({
+    frequencies: Object.freeze([196, 293.66]),
+    volume: 0.043,
+    wave: 'triangle',
+  }),
+})
 
 const profile = (id, label, center, radius, {
   noise = 0.02,
@@ -127,6 +139,8 @@ export class RegionalAudioSystem {
     this.contextFactory = contextFactory
     this.context = null
     this.masterGain = null
+    this.ambientGain = null
+    this.cinematicGain = null
     this.volume = Math.max(0, Math.min(1, initialVolume))
     this.muted = false
     this.started = false
@@ -136,6 +150,11 @@ export class RegionalAudioSystem {
     this.accentElapsed = new Map()
     this.activeOneShots = 0
     this.noiseBuffer = null
+    this.cinematicActive = false
+    this.cinematicAmbientLevel = 1
+    this.cinematicCueId = null
+    this.cinematicCueEntry = null
+    this.cinematicCueStarts = 0
   }
 
   async start() {
@@ -190,6 +209,70 @@ export class RegionalAudioSystem {
     return this.setMuted(!this.muted)
   }
 
+  beginCinematic({
+    cue = null,
+    ambientLevel = 0.34,
+    fadeIn = 0.65,
+  } = {}) {
+    const wasActive = this.cinematicActive
+    this.cinematicActive = true
+    this.cinematicAmbientLevel = Math.max(0, Math.min(1, ambientLevel))
+    this.#setAmbientLevel(this.cinematicAmbientLevel, fadeIn)
+    if (cue) this.setCinematicCue(cue, { fadeIn })
+    return !wasActive
+  }
+
+  setCinematicCue(cue, {
+    fadeIn = 0.45,
+    fadeOut = 0.35,
+  } = {}) {
+    if (!cue || cue === this.cinematicCueId) return false
+    this.#stopCinematicCue(fadeOut)
+    this.cinematicCueId = cue
+    this.cinematicCueStarts += 1
+    if (!this.context || !this.cinematicGain) return true
+
+    const cueProfile = CINEMATIC_AUDIO_CUES[cue] ?? CINEMATIC_AUDIO_CUES['church-reveal']
+    const gain = this.context.createGain()
+    const now = this.context.currentTime
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.setTargetAtTime(
+      cueProfile.volume,
+      now,
+      Math.max(0.02, fadeIn / 3),
+    )
+    gain.connect(this.cinematicGain)
+
+    const sources = cueProfile.frequencies.map((frequency, index) => {
+      const oscillator = this.context.createOscillator()
+      oscillator.type = cueProfile.wave
+      oscillator.frequency.value = frequency * (index === 0 ? 1 : 1.002)
+      oscillator.connect(gain)
+      oscillator.start()
+      return oscillator
+    })
+    this.cinematicCueEntry = { id: cue, gain, sources }
+    return true
+  }
+
+  endCinematic({ fadeOut = 0.65 } = {}) {
+    if (!this.cinematicActive && !this.cinematicCueId) return false
+    this.cinematicActive = false
+    this.cinematicAmbientLevel = 1
+    this.#setAmbientLevel(1, fadeOut)
+    this.#stopCinematicCue(fadeOut)
+    return true
+  }
+
+  getCinematicState() {
+    return Object.freeze({
+      active: this.cinematicActive,
+      ambientLevel: this.cinematicAmbientLevel,
+      cueId: this.cinematicCueId,
+      cueStarts: this.cinematicCueStarts,
+    })
+  }
+
   getState() {
     return Object.freeze({
       volume: this.volume,
@@ -223,9 +306,14 @@ export class RegionalAudioSystem {
     this.soundscapes.clear()
     this.accentElapsed.clear()
     this.masterGain?.disconnect?.()
+    this.ambientGain?.disconnect?.()
+    this.cinematicGain?.disconnect?.()
+    this.#stopCinematicCue(0)
     void this.context?.close?.()
     this.context = null
     this.masterGain = null
+    this.ambientGain = null
+    this.cinematicGain = null
     this.noiseBuffer = null
   }
 
@@ -234,6 +322,12 @@ export class RegionalAudioSystem {
     if (!this.context) return
     this.masterGain = this.context.createGain()
     this.masterGain.connect(this.context.destination)
+    this.ambientGain = this.context.createGain()
+    this.ambientGain.gain.value = 1
+    this.ambientGain.connect(this.masterGain)
+    this.cinematicGain = this.context.createGain()
+    this.cinematicGain.gain.value = 1
+    this.cinematicGain.connect(this.masterGain)
     this.#syncMasterVolume()
   }
 
@@ -252,7 +346,7 @@ export class RegionalAudioSystem {
 
     const gain = this.context.createGain()
     gain.gain.value = 0
-    gain.connect(this.masterGain)
+    gain.connect(this.ambientGain)
     const sources = []
 
     if (profileData.noise > 0) {
@@ -297,6 +391,43 @@ export class RegionalAudioSystem {
     }
     this.noiseBuffer = buffer
     return buffer
+  }
+
+  #setAmbientLevel(level, duration) {
+    if (!this.ambientGain || !this.context) return
+    const now = this.context.currentTime
+    this.ambientGain.gain.cancelScheduledValues(now)
+    this.ambientGain.gain.setTargetAtTime(
+      level,
+      now,
+      Math.max(0.02, Number(duration) / 3 || 0.02),
+    )
+  }
+
+  #stopCinematicCue(fadeOut = 0.35) {
+    const entry = this.cinematicCueEntry
+    this.cinematicCueEntry = null
+    this.cinematicCueId = null
+    if (!entry || !this.context) return
+    const now = this.context.currentTime
+    entry.gain.gain.cancelScheduledValues(now)
+    entry.gain.gain.setTargetAtTime(0.0001, now, Math.max(0.02, fadeOut / 3))
+    let remainingSources = entry.sources.length
+    const releaseSource = (source) => {
+      source.disconnect?.()
+      remainingSources -= 1
+      if (remainingSources <= 0) entry.gain.disconnect?.()
+    }
+    for (const source of entry.sources) {
+      source.onended = () => releaseSource(source)
+      try {
+        source.stop(now + Math.max(0.03, fadeOut))
+      } catch {
+        // A cue may already have completed during cinematic cleanup.
+        releaseSource(source)
+      }
+    }
+    if (entry.sources.length === 0) entry.gain.disconnect?.()
   }
 
   #updateAccents(profileData, deltaTime) {
