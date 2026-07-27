@@ -50,6 +50,7 @@ export class StartOverlay {
     this.locked = false
     this.dialogueActive = false
     this.mapActive = false
+    this.cinematicActive = false
     this.resumeMode = false
     this.noticeTimer = null
     this.flashTimer = null
@@ -74,6 +75,13 @@ export class StartOverlay {
   setMapActive(active) {
     this.mapActive = active
     this.shell.classList.toggle('is-map-active', active)
+    if (active) this.setInteraction(null)
+    this.#renderState()
+  }
+
+  setCinematicActive(active) {
+    this.cinematicActive = active
+    this.shell.classList.toggle('is-cinematic-active', active)
     if (active) this.setInteraction(null)
     this.#renderState()
   }
@@ -117,8 +125,18 @@ export class StartOverlay {
   }
 
   #renderState() {
-    const overlayHidden = this.locked || this.dialogueActive || this.mapActive
-    const crosshairVisible = this.locked && !this.dialogueActive && !this.mapActive
+    const overlayHidden = (
+      this.locked
+      || this.dialogueActive
+      || this.mapActive
+      || this.cinematicActive
+    )
+    const crosshairVisible = (
+      this.locked
+      && !this.dialogueActive
+      && !this.mapActive
+      && !this.cinematicActive
+    )
     this.overlay.classList.toggle('is-hidden', overlayHidden)
     this.crosshair.classList.toggle('is-visible', crosshairVisible)
     this.overlay.setAttribute('aria-hidden', String(overlayHidden))

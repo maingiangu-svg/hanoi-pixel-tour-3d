@@ -27,6 +27,9 @@ import { PhotoQuestJournal } from '../quests/PhotoQuestJournal.js'
 import { PhotoQuestJournalUI } from '../ui/PhotoQuestJournalUI.js'
 import { RegionalAudioSystem } from '../audio/RegionalAudioSystem.js'
 import { AudioSettingsUI } from '../ui/AudioSettingsUI.js'
+import { CinematicOverlay } from '../ui/CinematicOverlay.js'
+import { CinematicManager } from '../cinematics/CinematicManager.js'
+import { createChurchCinematicPoint } from '../cinematics/churchCinematic.js'
 import { IndexedDbSaveStorage } from '../save/IndexedDbSaveStorage.js'
 import { GameSaveSystem } from '../save/GameSaveSystem.js'
 import {
@@ -50,6 +53,8 @@ import { registerDevelopmentTestMoments } from '../moments/developmentMomentFixt
 
 const ENABLE_DEBUG_MOMENT_FIXTURES = import.meta.env.DEV
   && new URLSearchParams(window.location.search).has('debug-moments')
+const ENABLE_CINEMATIC_PREVIEW = import.meta.env.DEV
+  && new URLSearchParams(window.location.search).has('cinematic-preview')
 
 export class Game {
   constructor(container, uiRoot) {
@@ -183,6 +188,29 @@ export class Game {
       gameUi: this.ui,
       dialogueUi: this.dialogueUi,
     })
+    this.cinematicUi = new CinematicOverlay(this.ui.shell)
+    this.cinematics = new CinematicManager({
+      renderer: this.renderer,
+      player: this.player,
+      input: this.input,
+      gameUi: this.ui,
+      overlay: this.cinematicUi,
+      world: this.world,
+      clock: this.clock,
+      allowUnlockedPreview: ENABLE_CINEMATIC_PREVIEW,
+      canStart: () => (
+        (this.player.controls.isLocked || ENABLE_CINEMATIC_PREVIEW)
+        && !this.player.isMotorbikeMounted
+        && this.world.activeAreaName === 'outdoor'
+        && !this.mapUi.isOpen
+        && !this.dialogue.isActive()
+        && !this.interactions?.transitioning
+        && !this.photoMode?.isActive()
+        && !this.photoAlbum?.isOpen
+        && !this.photoQuestJournal?.isOpen
+      ),
+    })
+    this.cinematics.registerPoint(createChurchCinematicPoint())
     this.interactions = new InteractionSystem({
       player: this.player,
       input: this.input,
@@ -190,6 +218,12 @@ export class Game {
       world: this.world,
       ui: this.ui,
       dialogue: this.dialogue,
+      getExternalInteractions: (position) => (
+        this.cinematics.getNearbyInteractions(position)
+      ),
+      canScanInteractions: () => (
+        this.player.controls.isLocked || ENABLE_CINEMATIC_PREVIEW
+      ),
     })
     this.motorcycleMode = new MotorcycleMode({
       player: this.player,
@@ -201,6 +235,7 @@ export class Game {
         && !this.photoMode?.isActive()
         && !this.photoAlbum?.isOpen
         && !this.photoQuestJournal?.isOpen
+        && !this.cinematics.isActive()
         && (
           this.player.isMotorbikeMounted
           || this.world.activeAreaName !== 'interior'
@@ -246,6 +281,7 @@ export class Game {
         && !this.photoQuestJournal?.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
+        && !this.cinematics.isActive()
       ),
       onPhotoCaptured: async (photo) => {
         const stored = await this.photoStore.add(photo)
@@ -287,6 +323,7 @@ export class Game {
         && !this.mapUi.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
+        && !this.cinematics.isActive()
       ),
     })
     this.photoQuestJournalUi = new PhotoQuestJournalUI(this.ui.shell)
@@ -306,6 +343,7 @@ export class Game {
         && !this.mapUi.isOpen
         && !this.dialogue.isActive()
         && !this.interactions.transitioning
+        && !this.cinematics.isActive()
       ),
     })
     const isDevelopmentInspection = import.meta.env.DEV
@@ -352,6 +390,7 @@ export class Game {
         this.dialogue.isActive()
         || this.photoAlbum.isOpen
         || this.photoQuestJournal.isOpen
+        || this.cinematics.isActive()
       ) {
         this.player.controls.unlock()
         return
@@ -387,6 +426,7 @@ export class Game {
     this.dayNight.update(this.world.activeAreaName)
     this.profiler?.end('dayNight', dayNightStartedAt)
     this.photoMode.update(deltaTime)
+    this.cinematics.update(deltaTime)
     const updatesSpatialSystems = this.momentSystem.size > 0
       || this.sceneMomentSystem.size > 0
       || this.audio.started
@@ -421,11 +461,14 @@ export class Game {
         this.mapDirection,
       )
     } else {
-      this.player.update(deltaTime)
-      if (this.profileCollisionProbe && !this.player.controls.isLocked) {
-        this.collision.move(this.player.camera.position, { x: 0, z: 0 })
+      const cinematicActive = this.cinematics.isActive()
+      if (!cinematicActive) {
+        this.player.update(deltaTime)
+        if (this.profileCollisionProbe && !this.player.controls.isLocked) {
+          this.collision.move(this.player.camera.position, { x: 0, z: 0 })
+        }
+        this.dialogue.update(deltaTime)
       }
-      this.dialogue.update(deltaTime)
       this.world.update(deltaTime, this.clock)
       this.interactions.update()
     }
@@ -442,6 +485,7 @@ export class Game {
       this.photoMode.isActive()
       || this.photoAlbum.isOpen
       || this.photoQuestJournal.isOpen
+      || this.cinematics.isActive()
     ) return
     const action = getMapHotkeyAction(event, this.mapUi.isOpen)
     if (!action) return
@@ -457,6 +501,7 @@ export class Game {
   }
 
   handleDebugKeyDown(event) {
+    if (this.cinematics.isActive()) return
     if (!isDebugChurchTeleportHotkey(event, {
       choosingDialogueAnswer: this.dialogue.isChoosingAnswer(),
     })) return
@@ -695,6 +740,7 @@ export class Game {
     }
     this.dialogue.dispose()
     this.interactions.dispose()
+    this.cinematics.dispose()
     this.motorcycleMode.dispose()
     this.photoQuestJournal.dispose()
     this.photoAlbum.dispose()

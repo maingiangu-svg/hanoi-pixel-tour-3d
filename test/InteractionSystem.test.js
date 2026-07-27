@@ -214,3 +214,38 @@ test('action interactions execute once without starting a portal transition', ()
   assert.equal(calls.fades, 0)
   system.dispose()
 })
+
+test('external cinematic actions share the nearest-interaction selection path', () => {
+  const target = new EventTarget()
+  let played = 0
+  const system = new InteractionSystem({
+    player: {
+      controls: { isLocked: true },
+      camera: { position: { x: 0, z: 0 } },
+    },
+    input: { setEnabled: () => {} },
+    collision: { setWorld: () => {} },
+    world: { getActiveInteractions: () => [] },
+    ui: {
+      setInteraction: () => {},
+      setFading: () => {},
+    },
+    dialogue: { isActive: () => false },
+    getExternalInteractions: () => [{
+      type: 'action',
+      position: { x: 0, z: 0 },
+      radius: 3,
+      label: 'Xem đoạn giới thiệu',
+      activate: () => { played += 1 },
+    }],
+    eventTarget: target,
+    setTimer: () => 1,
+    clearTimer: () => {},
+  })
+
+  system.update()
+  dispatchInteraction(target)
+  assert.equal(played, 1)
+  assert.equal(system.transitioning, false)
+  system.dispose()
+})

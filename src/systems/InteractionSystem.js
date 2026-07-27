@@ -9,6 +9,8 @@ export class InteractionSystem {
     eventTarget = window,
     setTimer = window.setTimeout.bind(window),
     clearTimer = window.clearTimeout.bind(window),
+    getExternalInteractions = () => [],
+    canScanInteractions = () => player.controls.isLocked,
   }) {
     this.player = player
     this.input = input
@@ -19,6 +21,8 @@ export class InteractionSystem {
     this.eventTarget = eventTarget
     this.setTimer = setTimer
     this.clearTimer = clearTimer
+    this.getExternalInteractions = getExternalInteractions
+    this.canScanInteractions = canScanInteractions
     this.profiler = null
     this.availablePortal = null
     this.availableInteraction = null
@@ -34,7 +38,11 @@ export class InteractionSystem {
 
   update() {
     const startedAt = this.profiler?.begin() ?? 0
-    if (this.transitioning || this.dialogue?.isActive() || !this.player.controls.isLocked) {
+    if (
+      this.transitioning
+      || this.dialogue?.isActive()
+      || !this.canScanInteractions()
+    ) {
       this.availablePortal = null
       this.availableInteraction = null
       this.ui.setInteraction(null)
@@ -43,8 +51,11 @@ export class InteractionSystem {
     }
 
     const position = this.player.camera.position
-    const interactions = this.world.getActiveInteractions?.(position, 5)
-      ?? [this.world.getActivePortal()]
+    const interactions = [
+      ...(this.world.getActiveInteractions?.(position, 5)
+        ?? [this.world.getActivePortal()]),
+      ...(this.getExternalInteractions(position, 5) ?? []),
+    ]
     let nearest = null
     let nearestDistanceSquared = Infinity
 
@@ -73,7 +84,7 @@ export class InteractionSystem {
       event.repeat ||
       this.transitioning ||
       (!this.availableInteraction && !this.availablePortal) ||
-      !this.player.controls.isLocked
+      !this.canScanInteractions()
     ) return
 
     event.preventDefault()
