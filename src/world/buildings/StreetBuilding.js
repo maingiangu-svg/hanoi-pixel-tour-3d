@@ -16,6 +16,7 @@ export class StreetBuilding {
     this.#buildFrontage()
     this.#buildUpperFloors()
     this.#buildRoofline()
+    this.#addVietnameseDetails()
 
     this.shop = config.sign
       ? shopManager?.addShop({
@@ -309,6 +310,82 @@ export class StreetBuilding {
           material: this.config.material,
         })
       }
+    }
+  }
+
+  /**
+   * Add Vietnamese street-life details:
+   * - Tangled electrical wires (dây điện chằng chịt)
+   * - Potted plants on balconies
+   * - House number plates
+   * - Water tanks on rooftops
+   */
+  #addVietnameseDetails() {
+    const { x, z, width, depth, height, detailSeed } = this.config
+    const frontZ = z - depth / 2 - 0.15
+    const seed = detailSeed ?? 0
+
+    // ── Tangled wires on facade ──
+    // Only add to some buildings (deterministic by seed)
+    if (seed % 3 !== 0) {
+      const wireCount = 2 + (seed % 3)
+      const wireMat = new THREE.LineBasicMaterial({
+        color: 0x1a1a1a,
+        linewidth: 1,
+      })
+      for (let i = 0; i < wireCount; i++) {
+        const startY = 3.5 + i * 1.2
+        const endY = startY + 0.5 + (seed % 2) * 0.3
+        const sag = 0.3 + (i % 2) * 0.2
+        const points = [
+          new THREE.Vector3(x - width / 2 - 0.3, startY, frontZ - 0.5),
+          new THREE.Vector3(x - width * 0.15, startY - sag, frontZ - 0.8),
+          new THREE.Vector3(x + width * 0.2, startY - sag * 0.8, frontZ - 0.6),
+          new THREE.Vector3(x + width / 2 + 0.3, endY, frontZ - 0.5),
+        ]
+        const curve = new THREE.CatmullRomCurve3(points)
+        const wireGeo = new THREE.TubeGeometry(curve, 12, 0.012, 4, false)
+        const wire = new THREE.Mesh(wireGeo, new THREE.MeshStandardMaterial({
+          color: 0x1a1a1a,
+          roughness: 0.8,
+        }))
+        wire.name = 'Dây điện mặt tiền'
+        this.group.add(wire)
+      }
+    }
+
+    // ── Potted plants on balconies ──
+    if (this.facadeKit.balcony !== 'none' && seed % 2 === 0) {
+      const balconyY = height * 0.45
+      const potGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.18, 6)
+      const potMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.85 })
+      const plantGeo = new THREE.SphereGeometry(0.2, 6, 6)
+      const plantMat = new THREE.MeshStandardMaterial({ color: 0x3D6B3A, roughness: 0.9 })
+
+      for (const side of [-1, 1]) {
+        if ((seed + side) % 4 === 0) continue
+        const potX = x + side * (width * 0.3)
+        const pot = new THREE.Mesh(potGeo, potMat)
+        pot.position.set(potX, balconyY, frontZ - 0.6)
+        this.group.add(pot)
+        const plant = new THREE.Mesh(plantGeo, plantMat)
+        plant.position.set(potX, balconyY + 0.2, frontZ - 0.6)
+        plant.scale.setScalar(0.8 + (seed % 3) * 0.15)
+        this.group.add(plant)
+      }
+    }
+
+    // ── Water tank on rooftop ──
+    if (height > 8 && seed % 2 === 0) {
+      const tankGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.7, 8)
+      const tankMat = new THREE.MeshStandardMaterial({
+        color: 0x444444,
+        roughness: 0.6,
+        metalness: 0.3,
+      })
+      const tank = new THREE.Mesh(tankGeo, tankMat)
+      tank.position.set(x + width * 0.25, height + 0.55, z)
+      this.group.add(tank)
     }
   }
 }

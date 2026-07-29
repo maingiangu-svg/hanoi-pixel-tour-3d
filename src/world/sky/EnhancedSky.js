@@ -1,9 +1,15 @@
 import * as THREE from 'three'
 
 /**
- * EnhancedSky — gradient sky dome with animated sun disc, moon, stars,
- * and procedural clouds.  Replaces GradientSky while keeping the same
- * DayNightCycle integration via setTransition().
+ * EnhancedSky — Stylized Realistic sky for Hanoi.
+ *
+ * Features:
+ * - Warm gradient sky with Vietnamese atmosphere
+ * - Animated sun disc with golden hour glow
+ * - Moon and stars for night scenes
+ * - Procedural cumulus clouds with wind animation
+ * - Atmospheric haze layer near horizon
+ * - Monsoon-style cloud density variation
  */
 
 const VERTEX_SHADER = /* glsl */`
@@ -30,12 +36,14 @@ const FRAGMENT_SHADER = /* glsl */`
   uniform float starVisibility;
   uniform float cloudDensity;
   uniform float cloudSpeed;
+  uniform float hazeIntensity;
+  uniform vec3 hazeColor;
   uniform float time;
 
   varying vec3 vWorldPosition;
   varying float vSkyHeight;
 
-  // Simple hash for procedural effects
+  // ── Noise functions ──
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
   }
@@ -54,94 +62,126 @@ const FRAGMENT_SHADER = /* glsl */`
   float fbm(vec2 p) {
     float v = 0.0;
     float a = 0.5;
-    for (int i = 0; i < 4; i++) {
+    vec2 shift = vec2(100.0);
+    for (int i = 0; i < 5; i++) {
       v += a * noise(p);
-      p *= 2.1;
+      p = p * 2.1 + shift;
       a *= 0.5;
     }
     return v;
   }
 
-  // Stars
+  // ── Stars ──
   float stars(vec3 dir) {
-    vec3 p = dir * 300.0;
+    vec3 p = dir * 350.0;
     vec2 uv = floor(vec2(atan(p.x, p.z) * 3.0, asin(dir.y) * 6.0));
     float h = hash(uv);
     float star = step(0.997, h);
-    float twinkle = sin(time * 2.0 + h * 100.0) * 0.5 + 0.5;
-    return star * twinkle * smoothstep(0.0, 0.3, dir.y);
+    float twinkle = sin(time * 1.8 + h * 80.0) * 0.5 + 0.5;
+    return star * twinkle * smoothstep(0.0, 0.35, dir.y);
   }
 
-  // Clouds
+  // ── Cloud layers ──
   float cloudLayer(vec2 uv, float speed, float scale) {
-    uv += vec2(speed * time, speed * 0.5 * time);
+    uv += vec2(speed * time, speed * 0.3 * time);
     return fbm(uv * scale);
+  }
+
+  // High-altitude cirrus
+  float cirrus(vec2 uv) {
+    uv += vec2(time * 0.015, time * 0.005);
+    float c = fbm(uv * 3.0);
+    return smoothstep(0.45, 0.7, c) * 0.3;
   }
 
   void main() {
     vec3 dir = normalize(vWorldPosition - cameraPosition);
 
-    // Base gradient
-    float gradient = smoothstep(-0.18, 0.72, vSkyHeight);
-    float horizonHaze = 1.0 - smoothstep(-0.08, 0.2, abs(vSkyHeight));
+    // ── Base gradient ──
+    float gradient = smoothstep(-0.18, 0.75, vSkyHeight);
+    float horizonHaze = 1.0 - smoothstep(-0.05, 0.25, abs(vSkyHeight));
     vec3 color = mix(horizonColor, topColor, gradient);
-    color = mix(color, horizonColor * 1.04, horizonHaze * 0.24);
 
-    // Sun disc + glow
+    // Horizon glow — warm at golden hour, cool at blue hour
+    color = mix(color, horizonColor * 1.08, horizonHaze * 0.3);
+
+    // ── Sun disc + atmospheric glow ──
     float sunDot = dot(dir, sunDirection);
-    float sunDisc = smoothstep(0.9985, 0.9995, sunDot);
-    float sunGlow = pow(max(0.0, sunDot), 32.0) * 0.6;
-    float sunHalo = pow(max(0.0, sunDot), 8.0) * 0.2;
-    color += sunColor * (sunDisc * sunIntensity * 3.0 + sunGlow * sunIntensity + sunHalo * sunIntensity * 0.5);
+    float sunDisc = smoothstep(0.9988, 0.9996, sunDot);
+    float sunGlow = pow(max(0.0, sunDot), 24.0) * 0.7;
+    float sunHalo = pow(max(0.0, sunDot), 6.0) * 0.25;
+    float sunBleed = pow(max(0.0, sunDot), 2.0) * 0.08; // Wide atmospheric scatter
+    color += sunColor * (
+      sunDisc * sunIntensity * 3.5 +
+      sunGlow * sunIntensity +
+      sunHalo * sunIntensity * 0.5 +
+      sunBleed * sunIntensity
+    );
 
-    // Moon
+    // ── Moon ──
     float moonDot = dot(dir, moonDirection);
-    float moonDisc = smoothstep(0.9990, 0.9997, moonDot);
-    float moonGlow = pow(max(0.0, moonDot), 64.0) * 0.15;
-    color += moonColor * (moonDisc * moonIntensity * 2.0 + moonGlow * moonIntensity);
+    float moonDisc = smoothstep(0.9992, 0.9998, moonDot);
+    float moonGlow = pow(max(0.0, moonDot), 80.0) * 0.18;
+    color += moonColor * (moonDisc * moonIntensity * 2.5 + moonGlow * moonIntensity);
 
-    // Stars
+    // ── Stars ──
     float s = stars(dir);
-    color += vec3(0.9, 0.92, 1.0) * s * starVisibility;
+    color += vec3(0.92, 0.94, 1.0) * s * starVisibility;
 
-    // Clouds
+    // ── Clouds ──
     if (dir.y > 0.0) {
-      vec2 cloudUV = dir.xz / (dir.y + 0.1);
-      float cloud1 = cloudLayer(cloudUV, 0.008, 1.8);
-      float cloud2 = cloudLayer(cloudUV + 5.0, 0.012, 3.2);
-      float clouds = smoothstep(0.45 - cloudDensity * 0.2, 0.65 - cloudDensity * 0.15, cloud1);
-      clouds += smoothstep(0.5 - cloudDensity * 0.15, 0.7 - cloudDensity * 0.1, cloud2) * 0.5;
+      vec2 cloudUV = dir.xz / (dir.y + 0.08);
+
+      // Low cumulus — thicker, more defined
+      float cloud1 = cloudLayer(cloudUV, 0.01, 1.6);
+      float cloud2 = cloudLayer(cloudUV + 4.0, 0.015, 2.8);
+
+      // High cirrus — thin wisps
+      float cirrusLayer = cirrus(cloudUV * 0.5);
+
+      float clouds = smoothstep(0.42 - cloudDensity * 0.22, 0.62 - cloudDensity * 0.15, cloud1);
+      clouds += smoothstep(0.48 - cloudDensity * 0.18, 0.68 - cloudDensity * 0.12, cloud2) * 0.5;
       clouds = clamp(clouds, 0.0, 1.0);
+      clouds = max(clouds, cirrusLayer * cloudDensity);
 
-      // Cloud color based on sun position
+      // Cloud coloring — varies with sun position
       float sunHeight = sunDirection.y;
-      vec3 cloudColor = mix(
-        vec3(0.85, 0.6, 0.4),   // sunset clouds
-        vec3(1.0, 1.0, 1.0),     // day clouds
-        smoothstep(-0.1, 0.3, sunHeight)
-      );
-      cloudColor = mix(
-        vec3(0.2, 0.25, 0.35),   // night clouds
-        cloudColor,
-        smoothstep(-0.15, 0.1, sunHeight)
-      );
+      vec3 cloudBright = vec3(1.0, 0.98, 0.95);    // Daytime white
+      vec3 cloudSunset = vec3(0.95, 0.6, 0.35);     // Sunset orange
+      vec3 cloudNight = vec3(0.15, 0.18, 0.25);     // Night dark blue
 
-      float cloudFade = smoothstep(0.0, 0.15, dir.y);
-      color = mix(color, cloudColor, clouds * cloudFade * 0.65);
+      vec3 cloudColor = mix(cloudNight, cloudBright, smoothstep(-0.15, 0.2, sunHeight));
+      cloudColor = mix(cloudColor, cloudSunset, smoothstep(0.0, -0.15, sunHeight) * 0.6);
+
+      // Lit undersides during golden hour
+      float goldenLit = smoothstep(0.0, -0.2, sunHeight) * smoothstep(-0.35, -0.15, sunHeight);
+      cloudColor = mix(cloudColor, vec3(1.0, 0.7, 0.4), goldenLit * 0.3);
+
+      float cloudFade = smoothstep(0.0, 0.12, dir.y);
+      color = mix(color, cloudColor, clouds * cloudFade * 0.7);
     }
+
+    // ── Atmospheric haze ──
+    float hazeFactor = smoothstep(0.4, -0.1, vSkyHeight) * hazeIntensity;
+    color = mix(color, hazeColor, hazeFactor);
 
     gl_FragColor = vec4(color, 1.0);
   }
 `
 
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
 export class EnhancedSky {
-  constructor({ parent, radius = 142 }) {
+  constructor({ parent, radius = 148 }) {
     this.geometry = new THREE.SphereGeometry(radius, 32, 16)
     this.material = new THREE.ShaderMaterial({
       name: 'EnhancedSky',
       uniforms: {
-        topColor: { value: new THREE.Color(0x40516b) },
-        horizonColor: { value: new THREE.Color(0x718295) },
+        topColor: { value: new THREE.Color(0x4A6580) },
+        horizonColor: { value: new THREE.Color(0x8A9BB0) },
         sunDirection: { value: new THREE.Vector3(0, 0.5, 1).normalize() },
         sunColor: { value: new THREE.Color(0xffeedd) },
         sunIntensity: { value: 1.0 },
@@ -151,6 +191,8 @@ export class EnhancedSky {
         starVisibility: { value: 0.0 },
         cloudDensity: { value: 0.5 },
         cloudSpeed: { value: 1.0 },
+        hazeIntensity: { value: 0.25 },
+        hazeColor: { value: new THREE.Color(0xC8B89A) }, // Warm Hanoi haze
         time: { value: 0 },
       },
       vertexShader: VERTEX_SHADER,
@@ -172,7 +214,6 @@ export class EnhancedSky {
 
   /**
    * Called by DayNightCycle to blend sky colors per phase.
-   * We also drive sun/moon/stars/clouds from the phase info.
    */
   setTransition(fromTop, toTop, fromHorizon, toHorizon, amount) {
     const u = this.material.uniforms
@@ -181,7 +222,7 @@ export class EnhancedSky {
   }
 
   /**
-   * Update sun/moon/stars based on game hour (0-24).
+   * Update sun/moon/stars/clouds based on game hour (0-24).
    */
   updateCelestials(gameHour, delta) {
     this._elapsed += delta
@@ -193,28 +234,48 @@ export class EnhancedSky {
     const sunZ = Math.cos(sunAngle)
     u.sunDirection.value.set(0.2, Math.max(-0.1, sunY), sunZ).normalize()
 
-    // Sun intensity: bright during day, dim at dawn/dusk, off at night
+    // Sun intensity and color — warm golden in Hanoi
     const sunHeight = sunY
     u.sunIntensity.value = smoothstep(-0.1, 0.2, sunHeight)
     u.sunColor.value.setHSL(
-      0.08 + (1 - sunHeight) * 0.05,  // hue shifts red at sunset
-      0.6 + (1 - sunHeight) * 0.3,     // more saturated at sunset
-      0.85 - (1 - sunHeight) * 0.25,   // dimmer at sunset
+      0.07 + (1 - sunHeight) * 0.06,  // Hue: golden → orange at sunset
+      0.65 + (1 - sunHeight) * 0.25,   // More saturated at sunset
+      0.88 - (1 - sunHeight) * 0.3,    // Dimmer at sunset
     )
 
-    // Moon: opposite of sun
+    // Moon
     const moonAngle = ((gameHour - 18) / 12) * Math.PI
     const moonY = Math.sin(moonAngle)
     const moonZ = Math.cos(moonAngle)
     u.moonDirection.value.set(-0.15, Math.max(-0.1, moonY), -moonZ).normalize()
-    u.moonIntensity.value = smoothstep(-0.05, 0.15, moonY) * (gameHour > 18 || gameHour < 6 ? 1 : 0)
+    u.moonIntensity.value = smoothstep(-0.05, 0.15, moonY) *
+      (gameHour > 18 || gameHour < 6 ? 1 : 0)
 
-    // Stars: visible at night, fade at dawn/dusk
-    u.starVisibility.value = smoothstep(0.1, -0.15, sunHeight) * smoothstep(20, 19, gameHour) +
+    // Stars
+    u.starVisibility.value =
+      smoothstep(0.1, -0.15, sunHeight) * smoothstep(20, 19, gameHour) +
       smoothstep(0.1, -0.15, sunHeight) * smoothstep(5, 6, gameHour)
 
-    // Cloud density varies by time
-    u.cloudDensity.value = 0.45 + Math.sin(gameHour * 0.5) * 0.15
+    // Cloud density — Hanoi can be quite cloudy
+    u.cloudDensity.value = 0.48 + Math.sin(gameHour * 0.4) * 0.18
+
+    // Haze — thicker during day (humidity), thinner at night
+    const dayFactor = smoothstep(6, 10, gameHour) * (1 - smoothstep(16, 19, gameHour))
+    u.hazeIntensity.value = 0.15 + dayFactor * 0.2
+
+    // Haze color — warm during day, cool at night
+    const isNight = gameHour > 19 || gameHour < 5.5
+    if (isNight) {
+      u.hazeColor.value.set(0.12, 0.14, 0.2)
+    } else {
+      const golden = smoothstep(16, 17, gameHour) * (1 - smoothstep(17.5, 18.5, gameHour))
+      u.hazeColor.value.set(
+        0.78 + golden * 0.2,
+        0.72 + golden * 0.1,
+        0.58 - golden * 0.1,
+      )
+    }
+
     u.time.value = this._elapsed
   }
 
@@ -232,9 +293,4 @@ export class EnhancedSky {
     this.geometry.dispose()
     this.material.dispose()
   }
-}
-
-function smoothstep(edge0, edge1, x) {
-  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
-  return t * t * (3 - 2 * t)
 }

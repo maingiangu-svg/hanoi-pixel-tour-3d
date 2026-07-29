@@ -6,8 +6,8 @@ const OUTDOOR_VIEW_DISTANCE = 150
 export class Renderer {
   constructor(container) {
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x53647b)
-    this.scene.fog = new THREE.Fog(0x53647b, 70, 145)
+    this.scene.background = new THREE.Color(0x7A9AB8)  // Warmer Hanoi sky
+    this.scene.fog = new THREE.Fog(0x98ABB8, 68, 140)  // Warm haze
 
     this.camera = new THREE.PerspectiveCamera(
       68,
@@ -22,7 +22,7 @@ export class Renderer {
     this.instance.setSize(window.innerWidth, window.innerHeight)
     this.instance.outputColorSpace = THREE.SRGBColorSpace
     this.instance.toneMapping = THREE.ACESFilmicToneMapping
-    this.instance.toneMappingExposure = 0.94
+    this.instance.toneMappingExposure = 1.02  // Slightly brighter for Vietnamese warmth
     this.instance.shadowMap.enabled = true
     this.instance.shadowMap.type = THREE.PCFShadowMap
     this.instance.domElement.className = 'game-canvas'
