@@ -68,7 +68,6 @@ export class ChurchDistrict {
     this.root.add(this.outdoor)
     scene.add(this.root)
     this.gradientSky = new GradientSky({ parent: this.root })
-    this.dayNightRef = null
 
     const outdoorColliders = []
     this.shops = new ShopManager({
@@ -436,7 +435,6 @@ export class ChurchDistrict {
     )
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
-    if (clock) this.hoanKiemDistrict?.update(deltaTime, clock, this.dayNightRef)
     if (clock) this.ambientLife?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
     const moStartedAt = this.profiler?.begin() ?? 0
@@ -501,10 +499,6 @@ export class ChurchDistrict {
         interior: countMeshes(this.interior.group),
       },
     }
-  }
-
-  setDayNightRef(dayNight) {
-    this.dayNightRef = dayNight
   }
 
   getLightingContext() {

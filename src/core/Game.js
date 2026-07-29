@@ -51,12 +51,6 @@ import { registerPedestrianMoments } from '../moments/PedestrianMoments.js'
 import { registerLakeBridgeTempleMoments } from '../moments/LakeBridgeTempleMoments.js'
 import { registerDevelopmentTestMoments } from '../moments/developmentMomentFixtures.js'
 import { StoryManager } from '../story/StoryManager.js'
-import { CollectibleManager } from '../collectibles/CollectibleManager.js'
-import { WeatherSystem } from '../weather/WeatherSystem.js'
-import { MinimapUI } from '../ui/MinimapUI.js'
-import { NightMarketLanterns } from '../world/effects/NightMarketLanterns.js'
-import { TrafficSystem } from '../world/effects/TrafficSystem.js'
-import { FireworksSystem } from '../world/effects/FireworksSystem.js'
 
 const ENABLE_DEBUG_MOMENT_FIXTURES = import.meta.env.DEV
   && new URLSearchParams(window.location.search).has('debug-moments')
@@ -256,7 +250,6 @@ export class Game {
       lighting: this.world.getLightingContext(),
       area: this.world.activeAreaName,
     })
-    this.world.setDayNightRef(this.dayNight)
     this.photoUi = new PhotoModeUI(this.ui.shell)
     this.photoStore = new PhotoStore()
     this.photoQuestSystem = new PhotoQuestSystem()
@@ -377,8 +370,6 @@ export class Game {
       this.ui.showNotice('Save cũ không thể đọc; game dùng trạng thái an toàn.', 2400)
       return false
     })
-
-    // ─── New Systems ───────────────────────────────
     this.storyManager = new StoryManager({
       questSystem: this.photoQuestSystem,
       dialogueSystem: this.dialogue,
@@ -386,31 +377,6 @@ export class Game {
       clock: this.clock,
       onChapterComplete: () => this.saveSystem?.saveSoon(),
     })
-    this.collectibles = new CollectibleManager({
-      scene: this.renderer.scene,
-      playerPosition: this.player.camera.position,
-      ui: this.ui,
-      onCollect: () => this.saveSystem?.saveSoon(),
-    })
-    this.weather = new WeatherSystem({
-      scene: this.renderer.scene,
-      playerPosition: this.player.camera.position,
-      clock: this.clock,
-    })
-    this.minimap = new MinimapUI(this.ui.shell)
-    this.nightMarket = new NightMarketLanterns({
-      parent: this.renderer.scene,
-      playerPosition: this.player.camera.position,
-    })
-    this.traffic = new TrafficSystem({
-      parent: this.renderer.scene,
-      playerPosition: this.player.camera.position,
-    })
-    this.fireworks = new FireworksSystem({
-      scene: this.renderer.scene,
-      playerPosition: this.player.camera.position,
-    })
-
     this.debug = import.meta.env.DEV
       ? new DebugPanel(
           this.ui.debugPanel,
@@ -516,33 +482,6 @@ export class Game {
       this.interactions.update()
     }
     this.clockUi.update(this.clock)
-
-    // Update new systems
-    const gameHour = this.clock.minutes / 60
-    const phase = this.dayNight.getLightingPhase()
-    this.weather?.update(deltaTime, phase)
-    this.collectibles?.update(deltaTime)
-    this.nightMarket?.update(deltaTime, gameHour)
-    this.traffic?.update(deltaTime, this.world.activeAreaName)
-    this.fireworks?.update(deltaTime)
-    this.storyManager?.update()
-    if (this.minimap?.visible) {
-      const pos = this.player.camera.position
-      const dir = new THREE.Vector3()
-      this.player.camera.getWorldDirection(dir)
-      const angle = Math.atan2(dir.x, dir.z)
-      const landmarks = [
-        { x: 103, z: 0, label: 'Tháp Rùa', color: '#ffd700' },
-        { x: 0, z: -47, label: 'Nhà thờ', color: '#e74c3c' },
-        { x: 119, z: 39, label: 'Cầu Thê Húc', color: '#ff4444' },
-        { x: 119, z: 53, label: 'Đền Ngọc Sơn', color: '#ff8800' },
-      ]
-      const collectibleItems = this.collectibles?.items
-        ?.filter((c) => !this.collectibles.collected.has(c.id))
-        ?.map((c) => ({ x: c.position[0], z: c.position[2], color: '#ffd700' })) ?? []
-      this.minimap.update(pos.x, pos.z, angle, landmarks, collectibleItems)
-    }
-
     const renderStartedAt = this.profiler?.begin() ?? 0
     this.renderer.render()
     this.profiler?.end('render', renderStartedAt)
@@ -812,12 +751,6 @@ export class Game {
     this.interactions.dispose()
     this.cinematics.dispose()
     this.motorcycleMode.dispose()
-    this.collectibles?.dispose()
-    this.weather?.dispose()
-    this.minimap?.dispose()
-    this.nightMarket?.dispose()
-    this.traffic?.dispose()
-    this.fireworks?.dispose()
     this.photoQuestJournal.dispose()
     this.photoAlbum.dispose()
     this.photoMode.dispose()
