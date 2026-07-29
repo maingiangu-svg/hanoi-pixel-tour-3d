@@ -643,9 +643,6 @@ export class DayNightCycle {
       to.fog,
       amount,
     )
-    if (context.skyGradient?.updateCelestials) {
-      context.skyGradient.updateCelestials(this.clock.minutes / 60, 0)
-    }
 
     if (this.scene.fog.isFog) {
       this.scene.fog.near = lerp(from.fogNear, to.fogNear, amount)

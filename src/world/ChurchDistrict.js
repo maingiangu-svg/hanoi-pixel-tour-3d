@@ -27,7 +27,7 @@ import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
 import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
-import { EnhancedSky } from './sky/EnhancedSky.js'
+import { GradientSky } from './sky/GradientSky.js'
 
 const OUTDOOR_SKY = 0x53647b
 const INTERIOR_SKY = 0x17191b
@@ -67,7 +67,7 @@ export class ChurchDistrict {
     this.outdoor.name = 'Khu Nhà thờ Lớn'
     this.root.add(this.outdoor)
     scene.add(this.root)
-    this.gradientSky = new EnhancedSky({ parent: this.root })
+    this.gradientSky = new GradientSky({ parent: this.root })
 
     const outdoorColliders = []
     this.shops = new ShopManager({
@@ -429,7 +429,7 @@ export class ChurchDistrict {
 
   update(deltaTime, clock = null) {
     this.gradientSky.updatePosition(this.playerPosition)
-    if (clock) this.gradientSky.updateCelestials(clock.minutes / 60, deltaTime)
+
     this.#updateDistrictVisibility()
     this.sceneMomentEffects.update(
       deltaTime,
