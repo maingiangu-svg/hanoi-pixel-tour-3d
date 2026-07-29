@@ -101,7 +101,6 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
     })
-    this.dayNightRef = null
     this.shops.addShop({
       id: 'cafe-bo-ho',
       parent: this.hoanKiemDistrict.group,
@@ -429,7 +428,6 @@ export class ChurchDistrict {
 
   update(deltaTime, clock = null) {
     this.gradientSky.updatePosition(this.playerPosition)
-
     this.#updateDistrictVisibility()
     this.sceneMomentEffects.update(
       deltaTime,
@@ -437,7 +435,6 @@ export class ChurchDistrict {
     )
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
-    if (clock) this.hoanKiemDistrict?.update(deltaTime, clock, this.dayNightRef)
     if (clock) this.ambientLife?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
     const moStartedAt = this.profiler?.begin() ?? 0
@@ -502,10 +499,6 @@ export class ChurchDistrict {
         interior: countMeshes(this.interior.group),
       },
     }
-  }
-
-  setDayNightRef(dayNight) {
-    this.dayNightRef = dayNight
   }
 
   getLightingContext() {

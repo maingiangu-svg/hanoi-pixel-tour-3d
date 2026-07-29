@@ -166,56 +166,17 @@ export class HoanKiemCrowd {
     }
 
     const walkingRoutes = [
-      // Main lake loop - clockwise
       { name: 'Người đi bộ ven hồ 1', preset: 'student', offset: 0, points: [[68.8, 0, -29], [68.8, 0, 28]] },
       { name: 'Người đi bộ ven hồ 2', preset: 'elderly', offset: 2.4, points: [[67.2, 0, 25], [67.2, 0, -26]] },
-      // Joggers
       { name: 'Người chạy bộ ven hồ 1', preset: 'student', offset: 1.1, speed: 1.18, points: [[70.1, 0, -28], [70.1, 0, 27]] },
       { name: 'Người chạy bộ ven hồ 2', preset: 'tourist', offset: 3.2, speed: 1.08, points: [[66.7, 0, 24], [66.7, 0, -23]] },
-      // North side walkers
-      { name: 'Người đi bộ bờ bắc 1', preset: 'middleAged', offset: 0.8, points: [[90, 0, 33.5], [130, 0, 33.5]] },
-      { name: 'Người đi bộ bờ bắc 2', preset: 'tourist', offset: 3.5, points: [[128, 0, 34], [88, 0, 34]] },
-      // South side walkers
-      { name: 'Người đi bộ bờ nam 1', preset: 'student', offset: 1.5, points: [[90, 0, -33.5], [130, 0, -33.5]] },
-      { name: 'Người đi bộ bờ nam 2', preset: 'elderly', offset: 4.1, points: [[128, 0, -34], [88, 0, -34]] },
-      // East side (near Turtle Tower)
-      { name: 'Người đi bộ bờ đông 1', preset: 'tourist', offset: 2.2, speed: 0.9, points: [[134, 0, -25], [134, 0, 25]] },
-      { name: 'Người đi bộ bờ đông 2', preset: 'churchVisitor', offset: 5.0, speed: 0.85, points: [[135, 0, 22], [135, 0, -22]] },
-      // Extra joggers
-      { name: 'Người chạy bộ ven hồ 3', preset: 'officeWorker', offset: 0.5, speed: 1.22, points: [[69.5, 0, -27], [69.5, 0, 26]] },
-      // Diagonal paths
-      { name: 'Người đi dạo chéo 1', preset: 'student', offset: 1.8, speed: 0.75, points: [[72, 0, -30], [130, 0, 30]] },
     ]
     walkingRoutes.forEach((route, index) => {
-      const role = index < 2 ? 'lakeDay' : index < 4 ? 'jogger' : index < 10 ? 'lakeBusy' : 'lakeDay'
       this.#actor({
         preset: route.preset, name: route.name, behavior: 'walker',
         position: route.points[0], waypoints: route.points,
         speed: route.speed, colliderRadius: 0.18, animationOffset: route.offset,
-      }, role)
-    })
-
-    // Extra standing NPCs around the lake
-    const lakeStanders = [
-      { name: 'Người ngắm hồ 1', preset: 'elderly', pos: [71.5, 0, -15], rot: Math.PI / 2 },
-      { name: 'Người ngắm hồ 2', preset: 'tourist', pos: [71.5, 0, 10], rot: Math.PI / 2 },
-      { name: 'Người ngắm hồ 3', preset: 'student', pos: [95, 0, 33.5], rot: Math.PI },
-      { name: 'Người ngắm hồ 4', preset: 'middleAged', pos: [120, 0, -33], rot: 0 },
-      { name: 'Cặp đôi bên hồ', preset: 'student', pos: [70, 0, -5], rot: Math.PI / 2 },
-      { name: 'Người chụp ảnh 1', preset: 'tourist', pos: [71, 0, 20], rot: Math.PI / 2 },
-      { name: 'Người chụp ảnh 2', preset: 'tourist', pos: [130, 0, 15], rot: -Math.PI / 2 },
-      { name: 'Người ngồi nghỉ 1', preset: 'elderly', pos: [68, 0, -20], rot: Math.PI / 4 },
-      { name: 'Người ngồi nghỉ 2', preset: 'middleAged', pos: [68, 0, 8], rot: -Math.PI / 4 },
-      { name: 'Nhóm bạn trẻ 1', preset: 'student', pos: [95, 0, -33], rot: Math.PI / 3 },
-      { name: 'Nhóm bạn trẻ 2', preset: 'student', pos: [96, 0, -33], rot: -Math.PI / 3 },
-      { name: 'Người đi dạo một mình', preset: 'officeWorker', pos: [110, 0, 34], rot: Math.PI },
-    ]
-    lakeStanders.forEach((npc, index) => {
-      this.#actor({
-        preset: npc.preset, name: npc.name, behavior: 'standing',
-        position: npc.pos, rotationY: npc.rot,
-        colliderRadius: 0.17, animationOffset: index * 1.3,
-      }, index < 4 ? 'lakeDay' : 'lakeBusy')
+      }, index < 2 ? 'lakeDay' : 'jogger')
     })
 
     this.#actor({

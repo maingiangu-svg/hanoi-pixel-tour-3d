@@ -117,9 +117,12 @@ export class WeatherSystem {
 
   /**
    * Sync with DayNightCycle scene fog.
+   * Only modifies fog when weather is NOT clear.
+   * When clear, lets DayNightCycle control fog entirely.
    */
   applyToScene(scene) {
     if (!scene.fog) return
+    if (this.currentWeather === WEATHER_TYPES.CLEAR) return
     scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, this.targetFogNear, 0.02)
     scene.fog.far = THREE.MathUtils.lerp(scene.fog.far, this.targetFogFar, 0.02)
   }
