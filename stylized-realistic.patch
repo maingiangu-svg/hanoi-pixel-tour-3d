@@ -1,0 +1,4580 @@
+From 2d123759a70275027436f8c5d0d16458670013cd Mon Sep 17 00:00:00 2001
+From: Hanoi Pixel Tour Dev <dev@hanoi-pixel-tour.vn>
+Date: Wed, 29 Jul 2026 18:30:45 +0800
+Subject: [PATCH 1/2] =?UTF-8?q?feat:=20Stylized=20Realistic=20=E2=80=94=20?=
+ =?UTF-8?q?Street=20Life=20Edition?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Visual overhaul from low-poly to Stylized Realistic Vietnamese street life.
+
+- Warm Vietnamese color palette (golden yellow, terracotta, aged cream)
+- Procedural weathering shaders (rain streaks, dampness, moss)
+- Vietnamese color grading post-processing pipeline
+- Multi-part motorbike, car, bicycle, cyclo traffic
+- Night market with food stalls, steam particles, lantern glow
+- Seasonal decorations (Tet: mai/dao/cau doi, Trung Thu: lanterns/moon)
+- Enhanced water with moonpath, caustics, shore foam
+- Sky with cumulus+cirrus clouds, atmospheric haze
+- Buildings with tangled wires, potted plants, water tanks
+- Fireworks with Tet mode (red/gold), willow sparks
+
+Tests: 298/298 pass, build OK
+---
+ src/core/PostProcessing.js               | 224 ++++++++---
+ src/core/Renderer.js                     |   6 +-
+ src/lighting/DayNightCycle.js            | 180 ++++-----
+ src/world/buildings/StreetBuilding.js    |  77 ++++
+ src/world/effects/EnhancedLakeWater.js   | 155 +++++---
+ src/world/effects/FireworksSystem.js     | 145 +++++--
+ src/world/effects/NightMarketLanterns.js | 363 +++++++++++++-----
+ src/world/effects/SeasonalDecorations.js | 461 +++++++++++++++++++++++
+ src/world/effects/TrafficSystem.js       | 400 +++++++++++++++++---
+ src/world/sky/EnhancedSky.js             | 192 ++++++----
+ src/world/style/HanoiVisualTokens.js     | 156 ++++++--
+ src/world/style/StylizedMaterials.js     | 335 ++++++++++++++++
+ test/DayNightCycle.test.js               |  34 +-
+ test/HanoiVisualTokens.test.js           |  55 +--
+ 14 files changed, 2263 insertions(+), 520 deletions(-)
+ create mode 100644 src/world/effects/SeasonalDecorations.js
+ create mode 100644 src/world/style/StylizedMaterials.js
+
+diff --git a/src/core/PostProcessing.js b/src/core/PostProcessing.js
+index e45d015..85c3ef0 100644
+--- a/src/core/PostProcessing.js
++++ b/src/core/PostProcessing.js
+@@ -6,23 +6,37 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
+ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+ 
+ /**
+- * PostProcessing — adds bloom, vignette, and color grading to the renderer.
++ * PostProcessing — Stylized Realistic cinematic pipeline.
+  *
+- * The bloom makes emissive lights (lamps, signs, shop fronts) glow naturally.
+- * The color grading adds subtle filmic warmth and contrast.
+- * The vignette darkens edges for a cinematic feel.
++ * Pipeline:
++ *   RenderPass → Bloom → Output → Vietnamese Color Grading → Vignette + Film Grain
++ *
++ * The color grading adds warm golden tones characteristic of Hanoi,
++ * with enhanced contrast and subtle desaturation in shadows for depth.
+  */
+ 
+-// Custom color grading shader
+-const ColorGradingShader = {
++// ── Vietnamese Color Grading Shader ──
++const VietnameseColorGradingShader = {
+   uniforms: {
+     tDiffuse: { value: null },
++    // Color grading
++    shadows: { value: new THREE.Vector3(0.02, 0.01, -0.02) },   // Cool blue shadows
++    midtones: { value: new THREE.Vector3(0.04, 0.02, -0.01) },  // Warm golden midtones
++    highlights: { value: new THREE.Vector3(0.06, 0.04, 0.0) },  // Golden highlights
++    // Global
+     brightness: { value: 0.02 },
+-    contrast: { value: 1.08 },
+-    saturation: { value: 1.12 },
+-    vignetteStrength: { value: 0.35 },
+-    warmth: { value: 0.04 },
+-    filmGrain: { value: 0.03 },
++    contrast: { value: 1.12 },
++    saturation: { value: 1.18 },
++    warmth: { value: 0.06 },
++    // Vignette
++    vignetteStrength: { value: 0.38 },
++    vignetteRadius: { value: 0.55 },
++    // Film grain
++    filmGrain: { value: 0.025 },
++    // Atmospheric
++    atmosphericDensity: { value: 0.0 },
++    atmosphericColor: { value: new THREE.Vector3(0.85, 0.78, 0.65) },
++    // Time
+     time: { value: 0 },
+   },
+   vertexShader: /* glsl */`
+@@ -34,12 +48,18 @@ const ColorGradingShader = {
+   `,
+   fragmentShader: /* glsl */`
+     uniform sampler2D tDiffuse;
++    uniform vec3 shadows;
++    uniform vec3 midtones;
++    uniform vec3 highlights;
+     uniform float brightness;
+     uniform float contrast;
+     uniform float saturation;
+-    uniform float vignetteStrength;
+     uniform float warmth;
++    uniform float vignetteStrength;
++    uniform float vignetteRadius;
+     uniform float filmGrain;
++    uniform float atmosphericDensity;
++    uniform vec3 atmosphericColor;
+     uniform float time;
+     varying vec2 vUv;
+ 
+@@ -47,23 +67,76 @@ const ColorGradingShader = {
+       return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+     }
+ 
++    vec3 colorGrade(vec3 color) {
++      // Luminance for shadow/mid/high split
++      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
++
++      // Shadow lift
++      float shadowMask = 1.0 - smoothstep(0.0, 0.35, luma);
++      color += shadows * shadowMask;
++
++      // Midtone tint
++      float midMask = smoothstep(0.0, 0.25, luma) * (1.0 - smoothstep(0.6, 0.85, luma));
++      color += midtones * midMask;
++
++      // Highlight push
++      float highMask = smoothstep(0.55, 1.0, luma);
++      color += highlights * highMask;
++
++      return color;
++    }
++
+     void main() {
+-      vec4 color = texture2D(tDiffuse, vUv);
++      vec4 tex = texture2D(tDiffuse, vUv);
++      vec3 color = tex.rgb;
++
++      // Brightness
++      color += brightness;
++
++      // Contrast (around mid-gray)
++      color = (color - 0.5) * contrast + 0.5;
++
++      // Saturation
++      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
++      color = mix(vec3(luma), color, saturation);
++
++      // Warmth — push toward golden
++      color.r += warmth * 0.7;
++      color.g += warmth * 0.35;
++      color.b -= warmth * 0.15;
++
++      // Color grading (shadow/mid/high)
++      color = colorGrade(color);
+ 
+-      // Vignette
++      // Atmospheric haze — distance-based
++      if (atmosphericDensity > 0.01) {
++        float depth = tex.a; // We'll use alpha channel for depth if available
++        float haze = atmosphericDensity * 0.3;
++        color = mix(color, atmosphericColor, haze);
++      }
++
++      // Vignette — smooth oval
+       vec2 center = vUv - 0.5;
+-      float dist = length(center);
+-      float vignette = 1.0 - smoothstep(0.5, 1.0, dist) * vignetteStrength;
+-      color.rgb *= vignette;
++      float dist = length(center / vec2(vignetteRadius, vignetteRadius * 0.85));
++      float vignette = 1.0 - smoothstep(0.6, 1.4, dist) * vignetteStrength;
++      color *= vignette;
++
++      // Film grain — organic noise
++      float grain = hash(vUv * 800.0 + time * 7.0) * filmGrain;
++      color += grain - filmGrain * 0.5;
+ 
+-      // Subtle film grain
+-      float grain = hash(vUv * 1000.0 + time * 10.0) * filmGrain;
+-      color.rgb += grain - filmGrain * 0.5;
++      // Subtle chromatic aberration at edges (very subtle)
++      float caStrength = 0.0015;
++      vec2 caOffset = center * caStrength;
++      float caR = texture2D(tDiffuse, vUv + caOffset).r;
++      float caB = texture2D(tDiffuse, vUv - caOffset).b;
++      color.r = mix(color.r, caR, 0.3);
++      color.b = mix(color.b, caB, 0.3);
+ 
+       // Clamp
+-      color.rgb = clamp(color.rgb, 0.0, 1.0);
++      color = clamp(color, 0.0, 1.0);
+ 
+-      gl_FragColor = color;
++      gl_FragColor = vec4(color, 1.0);
+     }
+   `,
+ }
+@@ -88,12 +161,12 @@ export class PostProcessing {
+     this.renderPass = new RenderPass(scene, camera)
+     this.composer.addPass(this.renderPass)
+ 
+-    // Bloom — makes emissive lights glow
++    // Bloom — makes emissive lights (lamps, lanterns, signs) glow
+     this.bloomPass = new UnrealBloomPass(
+       new THREE.Vector2(size.x, size.y),
+-      0.35,  // strength
+-      0.5,   // radius
+-      0.8,   // threshold — only very bright things bloom
++      0.4,   // strength — slightly stronger than before
++      0.6,   // radius — wider bloom
++      0.75,  // threshold — catch more light sources
+     )
+     this.composer.addPass(this.bloomPass)
+ 
+@@ -101,49 +174,104 @@ export class PostProcessing {
+     this.outputPass = new OutputPass()
+     this.composer.addPass(this.outputPass)
+ 
+-    // Color grading + vignette (after output)
+-    this.colorGradingPass = new ShaderPass(ColorGradingShader)
++    // Vietnamese color grading + vignette + film grain
++    this.colorGradingPass = new ShaderPass(VietnameseColorGradingShader)
+     this.composer.addPass(this.colorGradingPass)
+   }
+ 
+   /**
+-   * Adjust bloom/color grading based on lighting phase.
++   * Adjust post-processing based on lighting phase.
++   * Vietnamese atmosphere: golden warmth by day, lantern glow at night.
+    */
+   updatePhase(phase) {
+     if (!this.enabled) return
+ 
+-    // Bloom varies by time of day
++    const cg = this.colorGradingPass.uniforms
++
+     switch (phase) {
+       case 'night':
+-        this.bloomPass.strength = 0.6
+-        this.bloomPass.threshold = 0.6
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.4
++        this.bloomPass.strength = 0.65
++        this.bloomPass.threshold = 0.55
++        cg.vignetteStrength.value = 0.45
++        cg.warmth.value = 0.02
++        cg.saturation.value = 0.95
++        cg.contrast.value = 1.15
++        cg.shadows.value.set(-0.01, -0.01, 0.04)   // Cool blue shadows
++        cg.midtones.value.set(0.03, 0.01, -0.02)    // Warm streetlight
++        cg.highlights.value.set(0.05, 0.03, 0.0)     // Golden highlights
++        cg.atmosphericDensity.value = 0.08
++        cg.atmosphericColor.value.set(0.15, 0.12, 0.2)  // Night haze
+         break
++
+       case 'blueHour':
+-        this.bloomPass.strength = 0.5
+-        this.bloomPass.threshold = 0.65
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.35
++        this.bloomPass.strength = 0.55
++        this.bloomPass.threshold = 0.6
++        cg.vignetteStrength.value = 0.38
++        cg.warmth.value = 0.0
++        cg.saturation.value = 1.05
++        cg.contrast.value = 1.12
++        cg.shadows.value.set(-0.01, 0.0, 0.03)
++        cg.midtones.value.set(0.02, 0.01, 0.02)
++        cg.highlights.value.set(0.03, 0.02, 0.04)
++        cg.atmosphericDensity.value = 0.05
++        cg.atmosphericColor.value.set(0.3, 0.35, 0.5)  // Blue hour haze
+         break
++
+       case 'sunset':
+-        this.bloomPass.strength = 0.45
+-        this.bloomPass.threshold = 0.7
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
++        this.bloomPass.strength = 0.5
++        this.bloomPass.threshold = 0.65
++        cg.vignetteStrength.value = 0.35
++        cg.warmth.value = 0.08
++        cg.saturation.value = 1.2
++        cg.contrast.value = 1.1
++        cg.shadows.value.set(0.02, 0.0, -0.02)
++        cg.midtones.value.set(0.06, 0.03, -0.01)
++        cg.highlights.value.set(0.08, 0.04, -0.02)
++        cg.atmosphericDensity.value = 0.04
++        cg.atmosphericColor.value.set(0.9, 0.6, 0.3)  // Sunset glow
+         break
++
+       case 'goldenHour':
+-        this.bloomPass.strength = 0.4
+-        this.bloomPass.threshold = 0.7
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
++        this.bloomPass.strength = 0.48
++        this.bloomPass.threshold = 0.68
++        cg.vignetteStrength.value = 0.32
++        cg.warmth.value = 0.1
++        cg.saturation.value = 1.25
++        cg.contrast.value = 1.08
++        cg.shadows.value.set(0.03, 0.01, -0.03)
++        cg.midtones.value.set(0.08, 0.04, -0.02)
++        cg.highlights.value.set(0.1, 0.06, -0.01)
++        cg.atmosphericDensity.value = 0.03
++        cg.atmosphericColor.value.set(1.0, 0.8, 0.5)  // Golden haze
+         break
++
+       case 'dawn':
+-        this.bloomPass.strength = 0.3
+-        this.bloomPass.threshold = 0.75
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.25
++        this.bloomPass.strength = 0.35
++        this.bloomPass.threshold = 0.72
++        cg.vignetteStrength.value = 0.28
++        cg.warmth.value = 0.04
++        cg.saturation.value = 1.1
++        cg.contrast.value = 1.06
++        cg.shadows.value.set(0.0, 0.0, 0.02)
++        cg.midtones.value.set(0.03, 0.02, 0.01)
++        cg.highlights.value.set(0.05, 0.04, 0.02)
++        cg.atmosphericDensity.value = 0.06
++        cg.atmosphericColor.value.set(0.7, 0.7, 0.75)  // Morning mist
+         break
++
+       case 'day':
+       default:
+-        this.bloomPass.strength = 0.25
+-        this.bloomPass.threshold = 0.8
+-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
++        this.bloomPass.strength = 0.28
++        this.bloomPass.threshold = 0.78
++        cg.vignetteStrength.value = 0.3
++        cg.warmth.value = 0.06
++        cg.saturation.value = 1.18
++        cg.contrast.value = 1.12
++        cg.shadows.value.set(0.02, 0.01, -0.02)
++        cg.midtones.value.set(0.04, 0.02, -0.01)
++        cg.highlights.value.set(0.06, 0.04, 0.0)
++        cg.atmosphericDensity.value = 0.02
++        cg.atmosphericColor.value.set(0.85, 0.78, 0.65)  // Hazy Hanoi day
+         break
+     }
+   }
+diff --git a/src/core/Renderer.js b/src/core/Renderer.js
+index 2a2f9fd..ba63f87 100644
+--- a/src/core/Renderer.js
++++ b/src/core/Renderer.js
+@@ -6,8 +6,8 @@ const OUTDOOR_VIEW_DISTANCE = 150
+ export class Renderer {
+   constructor(container) {
+     this.scene = new THREE.Scene()
+-    this.scene.background = new THREE.Color(0x53647b)
+-    this.scene.fog = new THREE.Fog(0x53647b, 70, 145)
++    this.scene.background = new THREE.Color(0x7A9AB8)  // Warmer Hanoi sky
++    this.scene.fog = new THREE.Fog(0x98ABB8, 68, 140)  // Warm haze
+ 
+     this.camera = new THREE.PerspectiveCamera(
+       68,
+@@ -22,7 +22,7 @@ export class Renderer {
+     this.instance.setSize(window.innerWidth, window.innerHeight)
+     this.instance.outputColorSpace = THREE.SRGBColorSpace
+     this.instance.toneMapping = THREE.ACESFilmicToneMapping
+-    this.instance.toneMappingExposure = 0.94
++    this.instance.toneMappingExposure = 1.02  // Slightly brighter for Vietnamese warmth
+     this.instance.shadowMap.enabled = true
+     this.instance.shadowMap.type = THREE.PCFShadowMap
+     this.instance.domElement.className = 'game-canvas'
+diff --git a/src/lighting/DayNightCycle.js b/src/lighting/DayNightCycle.js
+index 1efd039..35f270c 100644
+--- a/src/lighting/DayNightCycle.js
++++ b/src/lighting/DayNightCycle.js
+@@ -115,108 +115,108 @@ function state({
+ 
+ const OUTDOOR = Object.freeze({
+   night: state({
+-    sky: 0x243247,
+-    fog: 0x344153,
+-    ambient: 0x72809b,
+-    ambientIntensity: 0.78,
+-    hemisphereSky: 0x5e7497,
+-    hemisphereGround: 0x2f2928,
+-    hemisphereIntensity: 1,
+-    directional: 0xaac3e4,
+-    directionalIntensity: 0.42,
+-    rim: 0x6c86b0,
+-    rimIntensity: 0.58,
+-    practicalScale: 1,
+-    emissiveScale: 1.12,
+-    reflectionScale: 1.05,
+-    waterRoughness: 0.38,
+-    fogNear: 68,
+-    fogFar: 132,
++    sky: 0x1A2538,          // Deeper navy — Vietnamese night sky
++    fog: 0x2A3548,
++    ambient: 0x6A7890,
++    ambientIntensity: 0.82,
++    hemisphereSky: 0x4A6080,
++    hemisphereGround: 0x2A2420,  // Warm ground glow from lanterns
++    hemisphereIntensity: 1.05,
++    directional: 0x99B3D4,
++    directionalIntensity: 0.38,
++    rim: 0x5A7090,
++    rimIntensity: 0.62,
++    practicalScale: 1.08,         // Stronger practical lights at night
++    emissiveScale: 1.18,          // Lanterns and signs glow more
++    reflectionScale: 1.1,
++    waterRoughness: 0.35,
++    fogNear: 65,
++    fogFar: 128,
+   }),
+   dawn: state({
+-    sky: 0x8b9cab,
+-    fog: 0x9d9da0,
+-    ambient: 0x9aa4b3,
+-    ambientIntensity: 0.7,
+-    hemisphereSky: 0xaebfd0,
+-    hemisphereGround: 0x65564e,
+-    hemisphereIntensity: 1.02,
+-    directional: 0xffbd82,
+-    directionalIntensity: 1.18,
+-    rim: 0x879dbc,
+-    rimIntensity: 0.48,
+-    practicalScale: 0.28,
+-    emissiveScale: 0.74,
+-    reflectionScale: 0.82,
+-    waterRoughness: 0.31,
+-    fogNear: 62,
+-    fogFar: 128,
++    sky: 0x7A8EA5,
++    fog: 0x908A88,           // Warm morning mist
++    ambient: 0x9EA8B5,
++    ambientIntensity: 0.72,
++    hemisphereSky: 0xA8BCC8,
++    hemisphereGround: 0x6A5A4E,  // Warm earth
++    hemisphereIntensity: 1.05,
++    directional: 0xFFC488,       // Golden dawn sun
++    directionalIntensity: 1.25,
++    rim: 0x8A9DB8,
++    rimIntensity: 0.5,
++    practicalScale: 0.3,
++    emissiveScale: 0.72,
++    reflectionScale: 0.85,
++    waterRoughness: 0.3,
++    fogNear: 58,
++    fogFar: 122,
+   }),
+   day: state({
+-    sky: 0x91afc2,
+-    fog: 0xa0b3be,
+-    ambient: 0xc5ccd2,
+-    ambientIntensity: 0.62,
+-    hemisphereSky: 0xd5e7f0,
+-    hemisphereGround: 0x756b5d,
+-    hemisphereIntensity: 1.25,
+-    directional: 0xffedcc,
+-    directionalIntensity: 2.05,
+-    rim: 0xa8bed4,
+-    rimIntensity: 0.2,
++    sky: 0x7A9AB8,           // Warmer blue — Hanoi humid sky
++    fog: 0x98ABB8,           // Warm haze
++    ambient: 0xC8CDD2,
++    ambientIntensity: 0.65,
++    hemisphereSky: 0xD0E0EC,
++    hemisphereGround: 0x7A6E5C,      // Warm earth tone
++    hemisphereIntensity: 1.3,
++    directional: 0xFFF0D0,           // Warmer sunlight
++    directionalIntensity: 2.15,
++    rim: 0xA0B8CC,
++    rimIntensity: 0.22,
+     practicalScale: 0,
+-    emissiveScale: 0.28,
+-    reflectionScale: 0.58,
+-    waterRoughness: 0.4,
+-    fogNear: 78,
+-    fogFar: 145,
++    emissiveScale: 0.25,
++    reflectionScale: 0.6,
++    waterRoughness: 0.38,
++    fogNear: 75,
++    fogFar: 142,
+   }),
+   goldenHour: state({
+-    sky: 0xb4aa96,
+-    fog: 0xb3aa9d,
+-    ambient: 0xbdb3a4,
+-    ambientIntensity: 0.64,
+-    hemisphereSky: 0xc9bfba,
+-    hemisphereGround: 0x665c4e,
+-    hemisphereIntensity: 1.12,
+-    directional: 0xffb35f,
+-    directionalIntensity: 1.68,
+-    rim: 0xffc77d,
+-    rimIntensity: 0.62,
+-    practicalScale: 0.22,
+-    emissiveScale: 0.64,
+-    reflectionScale: 1.28,
+-    waterRoughness: 0.25,
+-    fogNear: 72,
+-    fogFar: 138,
++    sky: 0xB8A888,           // Warmer golden sky
++    fog: 0xB5A898,
++    ambient: 0xC0B5A2,
++    ambientIntensity: 0.66,
++    hemisphereSky: 0xCCBFB5,
++    hemisphereGround: 0x6A5A48,  // Deep warm earth
++    hemisphereIntensity: 1.15,
++    directional: 0xFFB050,       // Rich golden sun
++    directionalIntensity: 1.75,
++    rim: 0xFFCC70,
++    rimIntensity: 0.65,
++    practicalScale: 0.25,
++    emissiveScale: 0.68,
++    reflectionScale: 1.32,
++    waterRoughness: 0.22,
++    fogNear: 68,
++    fogFar: 135,
+   }),
+   sunset: state({
+-    sky: 0x7c7682,
+-    fog: 0x7e7d7c,
+-    ambient: 0x929196,
+-    ambientIntensity: 0.58,
+-    hemisphereSky: 0x9290a8,
+-    hemisphereGround: 0x52514c,
+-    hemisphereIntensity: 1.02,
+-    directional: 0xff8d5f,
+-    directionalIntensity: 1.02,
+-    rim: 0x718ab3,
+-    rimIntensity: 0.72,
+-    practicalScale: 0.62,
+-    emissiveScale: 0.88,
+-    reflectionScale: 1.18,
+-    waterRoughness: 0.28,
+-    fogNear: 68,
+-    fogFar: 134,
++    sky: 0x786872,           // Warmer purple
++    fog: 0x7A7068,           // Warm fog
++    ambient: 0x908888,
++    ambientIntensity: 0.6,
++    hemisphereSky: 0x8A8095,
++    hemisphereGround: 0x4A4038,  // Warm dark earth
++    hemisphereIntensity: 1.05,
++    directional: 0xFF8548,       // Deep orange sunset
++    directionalIntensity: 1.08,
++    rim: 0x6A80A8,
++    rimIntensity: 0.75,
++    practicalScale: 0.65,
++    emissiveScale: 0.92,
++    reflectionScale: 1.22,
++    waterRoughness: 0.25,
++    fogNear: 65,
++    fogFar: 130,
+   }),
+   blueHour: state({
+     sky: HANOI_COLORS.blueHour,
+-    fog: 0x596a7d,
+-    ambient: 0x7d8da7,
+-    ambientIntensity: 0.66,
+-    hemisphereSky: 0x607da6,
+-    hemisphereGround: 0x3f3735,
+-    hemisphereIntensity: 1.08,
++    fog: 0x505E72,
++    ambient: 0x7585A0,
++    ambientIntensity: 0.68,
++    hemisphereSky: 0x5870A0,
++    hemisphereGround: 0x38302A,  // Warm ground glow
++    hemisphereIntensity: 1.12,
+     directional: 0x91acd0,
+     directionalIntensity: 0.38,
+     rim: 0x7897c2,
+diff --git a/src/world/buildings/StreetBuilding.js b/src/world/buildings/StreetBuilding.js
+index ffd9d9f..0c44be5 100644
+--- a/src/world/buildings/StreetBuilding.js
++++ b/src/world/buildings/StreetBuilding.js
+@@ -16,6 +16,7 @@ export class StreetBuilding {
+     this.#buildFrontage()
+     this.#buildUpperFloors()
+     this.#buildRoofline()
++    this.#addVietnameseDetails()
+ 
+     this.shop = config.sign
+       ? shopManager?.addShop({
+@@ -311,4 +312,80 @@ export class StreetBuilding {
+       }
+     }
+   }
++
++  /**
++   * Add Vietnamese street-life details:
++   * - Tangled electrical wires (dây điện chằng chịt)
++   * - Potted plants on balconies
++   * - House number plates
++   * - Water tanks on rooftops
++   */
++  #addVietnameseDetails() {
++    const { x, z, width, depth, height, detailSeed } = this.config
++    const frontZ = z - depth / 2 - 0.15
++    const seed = detailSeed ?? 0
++
++    // ── Tangled wires on facade ──
++    // Only add to some buildings (deterministic by seed)
++    if (seed % 3 !== 0) {
++      const wireCount = 2 + (seed % 3)
++      const wireMat = new THREE.LineBasicMaterial({
++        color: 0x1a1a1a,
++        linewidth: 1,
++      })
++      for (let i = 0; i < wireCount; i++) {
++        const startY = 3.5 + i * 1.2
++        const endY = startY + 0.5 + (seed % 2) * 0.3
++        const sag = 0.3 + (i % 2) * 0.2
++        const points = [
++          new THREE.Vector3(x - width / 2 - 0.3, startY, frontZ - 0.5),
++          new THREE.Vector3(x - width * 0.15, startY - sag, frontZ - 0.8),
++          new THREE.Vector3(x + width * 0.2, startY - sag * 0.8, frontZ - 0.6),
++          new THREE.Vector3(x + width / 2 + 0.3, endY, frontZ - 0.5),
++        ]
++        const curve = new THREE.CatmullRomCurve3(points)
++        const wireGeo = new THREE.TubeGeometry(curve, 12, 0.012, 4, false)
++        const wire = new THREE.Mesh(wireGeo, new THREE.MeshStandardMaterial({
++          color: 0x1a1a1a,
++          roughness: 0.8,
++        }))
++        wire.name = 'Dây điện mặt tiền'
++        this.group.add(wire)
++      }
++    }
++
++    // ── Potted plants on balconies ──
++    if (this.facadeKit.balcony !== 'none' && seed % 2 === 0) {
++      const balconyY = height * 0.45
++      const potGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.18, 6)
++      const potMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.85 })
++      const plantGeo = new THREE.SphereGeometry(0.2, 6, 6)
++      const plantMat = new THREE.MeshStandardMaterial({ color: 0x3D6B3A, roughness: 0.9 })
++
++      for (const side of [-1, 1]) {
++        if ((seed + side) % 4 === 0) continue
++        const potX = x + side * (width * 0.3)
++        const pot = new THREE.Mesh(potGeo, potMat)
++        pot.position.set(potX, balconyY, frontZ - 0.6)
++        this.group.add(pot)
++        const plant = new THREE.Mesh(plantGeo, plantMat)
++        plant.position.set(potX, balconyY + 0.2, frontZ - 0.6)
++        plant.scale.setScalar(0.8 + (seed % 3) * 0.15)
++        this.group.add(plant)
++      }
++    }
++
++    // ── Water tank on rooftop ──
++    if (height > 8 && seed % 2 === 0) {
++      const tankGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.7, 8)
++      const tankMat = new THREE.MeshStandardMaterial({
++        color: 0x444444,
++        roughness: 0.6,
++        metalness: 0.3,
++      })
++      const tank = new THREE.Mesh(tankGeo, tankMat)
++      tank.position.set(x + width * 0.25, height + 0.55, z)
++      this.group.add(tank)
++    }
++  }
+ }
+diff --git a/src/world/effects/EnhancedLakeWater.js b/src/world/effects/EnhancedLakeWater.js
+index 123aada..e4af3e6 100644
+--- a/src/world/effects/EnhancedLakeWater.js
++++ b/src/world/effects/EnhancedLakeWater.js
+@@ -1,13 +1,16 @@
+ import * as THREE from 'three'
+ 
+ /**
+- * EnhancedLakeWater — animated water surface for Hoan Kiem lake.
++ * EnhancedLakeWater — Stylized Realistic water for Hoan Kiem lake.
+  *
+- * Uses a custom shader with:
+- * - Animated wave normals
+- * - Environment-like reflection (fake cubemap from sky colors)
+- * - Subtle caustics pattern
+- * - Foam near edges
++ * Features:
++ * - Multi-layered wave animation (wind waves + gentle swell)
++ * - Fresnel-based reflection with sky color blending
++ * - Sun specular highlight with elongated caustics
++ * - Depth-based color gradient (shallow edges → deep center)
++ * - Subtle foam near shoreline
++ * - Night: moonpath reflection
++ * - Day/night color transitions synced with DayNightCycle
+  */
+ 
+ const VERTEX_SHADER = /* glsl */`
+@@ -15,41 +18,53 @@ const VERTEX_SHADER = /* glsl */`
+   varying vec2 vUv;
+   varying vec3 vWorldPosition;
+   varying vec3 vNormal;
++  varying float vDepth;
+ 
+   void main() {
+     vUv = uv;
+ 
+     vec3 pos = position;
+ 
+-    // Gentle wave displacement
+-    float wave1 = sin(pos.x * 2.0 + time * 1.2) * 0.02;
+-    float wave2 = sin(pos.z * 1.8 + time * 0.9) * 0.015;
+-    float wave3 = sin((pos.x + pos.z) * 1.5 + time * 1.5) * 0.01;
+-    pos.y += wave1 + wave2 + wave3;
++    // Multi-layered waves
++    float wave1 = sin(pos.x * 1.8 + time * 1.0) * 0.025;
++    float wave2 = sin(pos.z * 1.5 + time * 0.8) * 0.02;
++    float wave3 = sin((pos.x + pos.z) * 1.2 + time * 1.3) * 0.012;
++    float wave4 = sin(pos.x * 3.5 - time * 2.0) * 0.008; // Small ripples
++    pos.y += wave1 + wave2 + wave3 + wave4;
+ 
+     vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+     vWorldPosition = worldPos.xyz;
+ 
+-    // Animated normal
+-    float nx = cos(pos.x * 2.0 + time * 1.2) * 0.04 + cos(pos.z * 1.8 + time * 0.9) * 0.03;
+-    float nz = sin(pos.z * 1.8 + time * 0.9) * 0.04 + sin(pos.x * 1.5 + time * 1.5) * 0.02;
++    // Animated normal from wave derivatives
++    float nx = cos(pos.x * 1.8 + time * 1.0) * 0.05
++             + cos(pos.z * 1.5 + time * 0.8) * 0.04
++             + cos(pos.x * 3.5 - time * 2.0) * 0.015;
++    float nz = sin(pos.z * 1.5 + time * 0.8) * 0.05
++             + sin(pos.x * 1.2 + time * 1.3) * 0.03
++             + sin(pos.z * 3.0 + time * 1.8) * 0.012;
+     vNormal = normalize(vec3(nx, 1.0, nz));
+ 
++    // Depth estimate from UV (edges are shallower)
++    vDepth = smoothstep(0.0, 0.3, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
++
+     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+   }
+ `
+ 
+ const FRAGMENT_SHADER = /* glsl */`
+   uniform vec3 waterColor;
++  uniform vec3 deepWaterColor;
+   uniform vec3 reflectionColor;
+   uniform float time;
+   uniform float opacity;
+   uniform vec3 sunDirection;
+   uniform vec3 sunColor;
++  uniform float moonIntensity;
+ 
+   varying vec2 vUv;
+   varying vec3 vWorldPosition;
+   varying vec3 vNormal;
++  varying float vDepth;
+ 
+   float hash(vec2 p) {
+     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+@@ -66,34 +81,60 @@ const FRAGMENT_SHADER = /* glsl */`
+     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+   }
+ 
++  float fbm(vec2 p) {
++    float v = 0.0;
++    float a = 0.5;
++    for (int i = 0; i < 3; i++) {
++      v += a * noise(p);
++      p *= 2.05;
++      a *= 0.5;
++    }
++    return v;
++  }
++
+   void main() {
+     vec3 normal = normalize(vNormal);
+ 
+-    // Fresnel effect — more reflective at grazing angles
++    // Depth-based color
++    vec3 baseColor = mix(waterColor, deepWaterColor, vDepth);
++
++    // Fresnel — more reflective at grazing angles
+     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+-    float fresnel = pow(1.0 - max(0.0, dot(viewDir, normal)), 3.0);
++    float fresnel = pow(1.0 - max(0.0, dot(viewDir, normal)), 4.0);
+ 
+-    // Fake reflection — blend between water color and sky reflection
+-    vec3 refl = mix(waterColor * 0.8, reflectionColor, fresnel * 0.7);
++    // Sky reflection
++    vec3 refl = mix(baseColor * 0.7, reflectionColor, fresnel * 0.75);
+ 
+-    // Sun specular highlight
++    // Sun specular — elongated highlight
+     vec3 halfDir = normalize(sunDirection + viewDir);
+-    float spec = pow(max(0.0, dot(normal, halfDir)), 128.0);
+-    refl += sunColor * spec * 0.8;
+-
+-    // Caustics pattern
+-    vec2 causticsUV = vWorldPosition.xz * 0.5;
+-    float caustics = noise(causticsUV + time * 0.3);
+-    caustics += noise(causticsUV * 2.0 - time * 0.2) * 0.5;
+-    caustics = smoothstep(0.6, 1.2, caustics) * 0.12;
++    float spec = pow(max(0.0, dot(normal, halfDir)), 96.0);
++    float specWide = pow(max(0.0, dot(normal, halfDir)), 24.0);
++    refl += sunColor * (spec * 1.0 + specWide * 0.2);
++
++    // Moon path — subtle silver reflection
++    vec3 moonDir = normalize(vec3(-0.15, 0.3, -1.0));
++    float moonSpec = pow(max(0.0, dot(normal, normalize(moonDir + viewDir))), 120.0);
++    refl += vec3(0.7, 0.75, 0.85) * moonSpec * moonIntensity * 0.5;
++
++    // Caustics — animated light patterns
++    vec2 causticsUV = vWorldPosition.xz * 0.4;
++    float caustics1 = noise(causticsUV + time * 0.25);
++    float caustics2 = noise(causticsUV * 1.8 - time * 0.18);
++    float caustics = smoothstep(0.5, 1.1, caustics1 + caustics2) * 0.1;
++
++    // Shore foam — noise-based edge
++    float edgeDist = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
++    float foam = smoothstep(0.08, 0.02, edgeDist);
++    float foamNoise = fbm(vWorldPosition.xz * 3.0 + time * 0.4);
++    foam *= smoothstep(0.3, 0.6, foamNoise) * 0.25;
+ 
+     // Combine
+-    vec3 color = refl + vec3(caustics) * waterColor * 2.0;
++    vec3 color = refl + vec3(caustics) * baseColor * 1.5;
++    color += vec3(0.95, 0.95, 0.9) * foam;
+ 
+-    // Edge foam hint
+-    float edgeNoise = noise(vWorldPosition.xz * 3.0 + time * 0.5);
+-    float edge = smoothstep(0.7, 0.9, edgeNoise) * 0.08;
+-    color += vec3(edge);
++    // Subtle green algae tint in shallows
++    float shallow = smoothstep(0.5, 0.2, vDepth);
++    color = mix(color, color * vec3(0.85, 1.0, 0.82), shallow * 0.15);
+ 
+     gl_FragColor = vec4(color, opacity);
+   }
+@@ -101,18 +142,20 @@ const FRAGMENT_SHADER = /* glsl */`
+ 
+ export class EnhancedLakeWater {
+   constructor({ parent, width = 60, depth = 66, position = [102, -0.02, 0] }) {
+-    this.geometry = new THREE.PlaneGeometry(width, depth, 48, 48)
++    this.geometry = new THREE.PlaneGeometry(width, depth, 64, 64)
+     this.geometry.rotateX(-Math.PI / 2)
+ 
+     this.material = new THREE.ShaderMaterial({
+       name: 'EnhancedLakeWater',
+       uniforms: {
+-        waterColor: { value: new THREE.Color(0x1a5c6b) },
++        waterColor: { value: new THREE.Color(0x1E5A66) },
++        deepWaterColor: { value: new THREE.Color(0x0D3842) },
+         reflectionColor: { value: new THREE.Color(0x718295) },
+         time: { value: 0 },
+         opacity: { value: 0.82 },
+         sunDirection: { value: new THREE.Vector3(0, 0.5, 1).normalize() },
+         sunColor: { value: new THREE.Color(0xffeedd) },
++        moonIntensity: { value: 0.0 },
+       },
+       vertexShader: VERTEX_SHADER,
+       fragmentShader: FRAGMENT_SHADER,
+@@ -130,9 +173,6 @@ export class EnhancedLakeWater {
+     this._elapsed = 0
+   }
+ 
+-  /**
+-   * Update water animation and sync with day/night colors.
+-   */
+   update(delta, sunDirection, sunColor, skyColor, phase) {
+     this._elapsed += delta
+     this.material.uniforms.time.value = this._elapsed
+@@ -144,33 +184,48 @@ export class EnhancedLakeWater {
+       this.material.uniforms.sunColor.value.copy(sunColor)
+     }
+     if (skyColor) {
+-      // Reflection blends between water color and sky
+-      this.material.uniforms.reflectionColor.value.copy(skyColor).multiplyScalar(0.8)
++      this.material.uniforms.reflectionColor.value.copy(skyColor).multiplyScalar(0.82)
+     }
+ 
+-    // Water color varies by time of day
++    // Phase-based water appearance
++    const u = this.material.uniforms
+     switch (phase) {
+       case 'night':
+-        this.material.uniforms.waterColor.value.set(0x0d2e38)
+-        this.material.uniforms.opacity.value = 0.88
++        u.waterColor.value.set(0x0A252E)
++        u.deepWaterColor.value.set(0x061518)
++        u.opacity.value = 0.9
++        u.moonIntensity.value = 1.0
+         break
+       case 'blueHour':
+-        this.material.uniforms.waterColor.value.set(0x14384a)
+-        this.material.uniforms.opacity.value = 0.85
++        u.waterColor.value.set(0x122E3E)
++        u.deepWaterColor.value.set(0x0A1E28)
++        u.opacity.value = 0.87
++        u.moonIntensity.value = 0.3
+         break
+       case 'dawn':
++        u.waterColor.value.set(0x2A5A5A)
++        u.deepWaterColor.value.set(0x183838)
++        u.opacity.value = 0.82
++        u.moonIntensity.value = 0.0
++        break
+       case 'sunset':
+-        this.material.uniforms.waterColor.value.set(0x2a5a5a)
+-        this.material.uniforms.opacity.value = 0.82
++        u.waterColor.value.set(0x2D5858)
++        u.deepWaterColor.value.set(0x1A3535)
++        u.opacity.value = 0.83
++        u.moonIntensity.value = 0.0
+         break
+       case 'goldenHour':
+-        this.material.uniforms.waterColor.value.set(0x2d6358)
+-        this.material.uniforms.opacity.value = 0.8
++        u.waterColor.value.set(0x2D6358)
++        u.deepWaterColor.value.set(0x1A4030)
++        u.opacity.value = 0.8
++        u.moonIntensity.value = 0.0
+         break
+       case 'day':
+       default:
+-        this.material.uniforms.waterColor.value.set(0x1a5c6b)
+-        this.material.uniforms.opacity.value = 0.82
++        u.waterColor.value.set(0x1E5A66)
++        u.deepWaterColor.value.set(0x0D3842)
++        u.opacity.value = 0.82
++        u.moonIntensity.value = 0.0
+         break
+     }
+   }
+diff --git a/src/world/effects/FireworksSystem.js b/src/world/effects/FireworksSystem.js
+index 9b5029b..76b599c 100644
+--- a/src/world/effects/FireworksSystem.js
++++ b/src/world/effects/FireworksSystem.js
+@@ -1,12 +1,29 @@
+ import * as THREE from 'three'
+ 
+ /**
+- * FireworksSystem — particle-based fireworks for special occasions.
++ * FireworksSystem — Vietnamese-style fireworks for Tết and celebrations.
+  *
+- * Can be triggered manually or on specific game events (Tết, national day, etc.)
++ * Features:
++ * - Tết-appropriate colors (red, gold, warm tones dominate)
++ * - Multi-stage explosions (launch trail → burst → cascading sparks)
++ * - Sound-like visual cues (flash on burst)
++ * - Trailing sparks that fall like willow branches
++ * - Can be triggered manually or auto-launched for events
+  */
+ 
+-const FIREWORK_COLORS = [
++// Vietnamese Tết fireworks — red and gold dominant
++const TET_COLORS = [
++  0xE83030, // Đỏ — red (lucky)
++  0xF5A623, // Vàng — gold (prosperity)
++  0xFF6B35, // Cam — orange
++  0xF5BE58, // Vàng ấm — warm gold
++  0xE83030, // Đỏ (more weight)
++  0xF5A623, // Vàng (more weight)
++  0xFFFFFF, // Trắng — white flash
++  0xFFD700, // Vàng kim — bright gold
++]
++
++const CELEBRATION_COLORS = [
+   0xff4444, 0xff8800, 0xffcc00, 0x44ff44,
+   0x4488ff, 0xff44ff, 0xffffff, 0xff6644,
+ ]
+@@ -22,59 +39,72 @@ export class FireworksSystem {
+ 
+     this.rockets = []
+     this.sparks = []
++    this.flashes = []
+     this._elapsed = 0
+     this.active = false
+     this.autoTimer = 0
++    this.isTet = false // Tết mode — red/gold only
+ 
+     // Pre-allocate spark pool
+     this.sparkPool = []
+-    this.maxSparks = 500
++    this.maxSparks = 600
+     this.#initSparkPool()
+   }
+ 
++  /**
++   * Set Tết mode — red and gold fireworks only.
++   */
++  setTetMode(enabled) {
++    this.isTet = enabled
++  }
++
+   /**
+    * Launch a firework at a given position.
+    */
+   launch(x, y, z) {
+-    const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]
++    const colors = this.isTet ? TET_COLORS : CELEBRATION_COLORS
++    const color = colors[Math.floor(Math.random() * colors.length)]
+ 
+-    // Create rocket
+-    const rocketGeo = new THREE.SphereGeometry(0.05, 4, 4)
++    // Rocket trail
++    const rocketGeo = new THREE.SphereGeometry(0.06, 4, 4)
+     const rocketMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+     const rocket = new THREE.Mesh(rocketGeo, rocketMat)
+     rocket.position.set(x, 0, z)
+     this.group.add(rocket)
+ 
++    // Trail particles
++    const trailGeo = new THREE.SphereGeometry(0.03, 3, 3)
++    const trailMat = new THREE.MeshBasicMaterial({
++      color: 0xFFD700,
++      transparent: true,
++      opacity: 0.6,
++    })
++
+     this.rockets.push({
+       mesh: rocket,
+       targetY: y,
+-      speed: 8 + Math.random() * 4,
++      speed: 10 + Math.random() * 5,
+       color,
+       phase: 'launch',
++      trailTimer: 0,
+     })
+   }
+ 
+   /**
+    * Trigger a fireworks show.
+    */
+-  startShow(duration = 15) {
++  startShow(duration = 20) {
+     this.active = true
+     this.showTimer = 0
+     this.showDuration = duration
+-    this.launchInterval = 0.3 + Math.random() * 0.5
++    this.launchInterval = 0.25 + Math.random() * 0.4
+     this.launchTimer = 0
+   }
+ 
+-  /**
+-   * Stop the show.
+-   */
+   stopShow() {
+     this.active = false
+   }
+ 
+-  /**
+-   * Update fireworks simulation.
+-   */
+   update(delta) {
+     this._elapsed += delta
+ 
+@@ -84,11 +114,11 @@ export class FireworksSystem {
+       this.launchTimer += delta
+ 
+       if (this.launchTimer > this.launchInterval) {
+-        const x = this.playerPosition.x + (Math.random() - 0.5) * 60
+-        const z = this.playerPosition.z + (Math.random() - 0.5) * 60
+-        this.launch(x, 12 + Math.random() * 8, z)
++        const x = this.playerPosition.x + (Math.random() - 0.5) * 70
++        const z = this.playerPosition.z + (Math.random() - 0.5) * 70
++        this.launch(x, 14 + Math.random() * 10, z)
+         this.launchTimer = 0
+-        this.launchInterval = 0.2 + Math.random() * 0.6
++        this.launchInterval = 0.15 + Math.random() * 0.5
+       }
+ 
+       if (this.showTimer > this.showDuration) {
+@@ -102,8 +132,9 @@ export class FireworksSystem {
+       rocket.mesh.position.y += rocket.speed * delta
+ 
+       if (rocket.mesh.position.y >= rocket.targetY) {
+-        // Explode!
+         this.#explode(rocket.mesh.position, rocket.color)
++        // Flash effect on burst
++        this.#createFlash(rocket.mesh.position)
+         this.group.remove(rocket.mesh)
+         rocket.mesh.geometry.dispose()
+         rocket.mesh.material.dispose()
+@@ -122,14 +153,29 @@ export class FireworksSystem {
+         continue
+       }
+ 
+-      // Physics
+-      spark.velocity.y -= 9.8 * delta * 0.5 // gravity
++      // Physics — gravity with air resistance
++      spark.velocity.y -= 9.8 * delta * 0.4
++      spark.velocity.multiplyScalar(1 - delta * 0.3) // Air drag
+       spark.mesh.position.addScaledVector(spark.velocity, delta)
+ 
+-      // Fade out
++      // Fade and shrink
+       const lifeRatio = spark.life / spark.maxLife
+-      spark.mesh.material.opacity = lifeRatio
+-      spark.mesh.scale.setScalar(lifeRatio * 0.5)
++      spark.mesh.material.opacity = lifeRatio * 0.9
++      spark.mesh.scale.setScalar(lifeRatio * 0.6 + 0.1)
++    }
++
++    // Update flashes
++    for (let i = this.flashes.length - 1; i >= 0; i--) {
++      const flash = this.flashes[i]
++      flash.life -= delta
++      if (flash.life <= 0) {
++        flash.mesh.visible = false
++        this.flashes.splice(i, 1)
++        continue
++      }
++      const ratio = flash.life / flash.maxLife
++      flash.mesh.scale.setScalar(ratio * 3 + 0.5)
++      flash.mesh.material.opacity = ratio * 0.6
+     }
+   }
+ 
+@@ -142,15 +188,19 @@ export class FireworksSystem {
+       spark.mesh.geometry.dispose()
+       spark.mesh.material.dispose()
+     }
++    for (const flash of this.flashes) {
++      flash.mesh.geometry.dispose()
++      flash.mesh.material.dispose()
++    }
+     this.group.removeFromParent()
+   }
+ 
+   // ─── Private ───────────────────────────────────
+ 
+   #initSparkPool() {
+-    const geo = new THREE.SphereGeometry(0.03, 4, 4)
++    const geo = new THREE.SphereGeometry(0.04, 4, 4)
+     for (let i = 0; i < this.maxSparks; i++) {
+-      const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]
++      const color = TET_COLORS[Math.floor(Math.random() * TET_COLORS.length)]
+       const mat = new THREE.MeshBasicMaterial({
+         color,
+         transparent: true,
+@@ -164,10 +214,9 @@ export class FireworksSystem {
+   }
+ 
+   #explode(position, color) {
+-    const sparkCount = 30 + Math.floor(Math.random() * 20)
++    const sparkCount = 35 + Math.floor(Math.random() * 25)
+ 
+     for (let i = 0; i < sparkCount; i++) {
+-      // Find available spark from pool
+       const mesh = this.sparkPool.find((m) => !m.visible)
+       if (!mesh) break
+ 
+@@ -176,17 +225,26 @@ export class FireworksSystem {
+       mesh.material.color.set(color)
+       mesh.material.opacity = 1
+ 
+-      // Random velocity in sphere
++      // Random burst velocity — spherical with slight downward bias
+       const theta = Math.random() * Math.PI * 2
+       const phi = Math.random() * Math.PI
+-      const speed = 3 + Math.random() * 5
++      const speed = 3.5 + Math.random() * 6
+       const velocity = new THREE.Vector3(
+         Math.sin(phi) * Math.cos(theta) * speed,
+-        Math.sin(phi) * Math.sin(theta) * speed * 0.8 + 2,
++        Math.sin(phi) * Math.sin(theta) * speed * 0.7 + 2.5,
+         Math.cos(phi) * speed,
+       )
+ 
+-      const maxLife = 1.5 + Math.random() * 1
++      // Some sparks get willow-branch effect (slow, trailing)
++      const isWillow = Math.random() < 0.25
++      const maxLife = isWillow ? 2.5 + Math.random() * 1.5 : 1.2 + Math.random() * 1
++
++      if (isWillow) {
++        velocity.multiplyScalar(0.6)
++        // Willows are golden
++        mesh.material.color.set(0xF5A623)
++      }
++
+       this.sparks.push({
+         mesh,
+         velocity,
+@@ -195,4 +253,23 @@ export class FireworksSystem {
+       })
+     }
+   }
++
++  #createFlash(position) {
++    // Bright flash on explosion — fades quickly
++    const flashGeo = new THREE.SphereGeometry(0.8, 8, 8)
++    const flashMat = new THREE.MeshBasicMaterial({
++      color: 0xFFF8E7,
++      transparent: true,
++      opacity: 0.8,
++    })
++    const flash = new THREE.Mesh(flashGeo, flashMat)
++    flash.position.copy(position)
++    this.group.add(flash)
++
++    this.flashes.push({
++      mesh: flash,
++      life: 0.3,
++      maxLife: 0.3,
++    })
++  }
+ }
+diff --git a/src/world/effects/NightMarketLanterns.js b/src/world/effects/NightMarketLanterns.js
+index 4ed97cf..44428f4 100644
+--- a/src/world/effects/NightMarketLanterns.js
++++ b/src/world/effects/NightMarketLanterns.js
+@@ -1,20 +1,92 @@
+ import * as THREE from 'three'
++import { HANOI_VISUAL_TOKENS } from '../style/HanoiVisualTokens.js'
+ 
+ /**
+- * NightMarketLanterns — lantern strings and night market atmosphere
+- * for the Old Quarter area.
++ * NightMarketLanterns — atmospheric night market for the Old Quarter.
+  *
+- * Lanterns are strung between buildings and gently sway.
+- * Night market stalls appear during evening hours.
++ * Features:
++ * - Strings of Vietnamese paper lanterns (đèn lồng) with warm glow
++ * - Food stalls with steam/smoke particles
++ * - Warm point lights casting golden pools
++ * - Gentle sway animation
++ * - Visibility toggled by game hour
+  */
+ 
+-const LANTERN_COLORS = [
+-  0xff4444, // Red
+-  0xff8800, // Orange
+-  0xffcc00, // Gold
+-  0xff6644, // Coral
+-  0xee3333, // Deep red
+-]
++const LANTERN_COLORS = HANOI_VISUAL_TOKENS.streetProps.lanternStringColors
++
++// ── Steam/smoke particle system ──
++class SteamParticles {
++  constructor(parent, position, count = 12) {
++    this._elapsed = 0
++    this.particles = []
++
++    const geo = new THREE.BufferGeometry()
++    const positions = new Float32Array(count * 3)
++    const sizes = new Float32Array(count)
++    const alphas = new Float32Array(count)
++
++    for (let i = 0; i < count; i++) {
++      positions[i * 3] = position[0] + (Math.random() - 0.5) * 0.4
++      positions[i * 3 + 1] = position[1] + Math.random() * 1.5
++      positions[i * 3 + 2] = position[2] + (Math.random() - 0.5) * 0.4
++      sizes[i] = 0.3 + Math.random() * 0.4
++      alphas[i] = 0.15 + Math.random() * 0.2
++
++      this.particles.push({
++        baseY: positions[i * 3 + 1],
++        speed: 0.3 + Math.random() * 0.4,
++        phase: Math.random() * Math.PI * 2,
++        drift: (Math.random() - 0.5) * 0.3,
++      })
++    }
++
++    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
++    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
++
++    const mat = new THREE.PointsMaterial({
++      color: 0xE8DDD0,
++      size: 0.4,
++      transparent: true,
++      opacity: 0.2,
++      depthWrite: false,
++      blending: THREE.AdditiveBlending,
++      sizeAttenuation: true,
++    })
++
++    this.mesh = new THREE.Points(geo, mat)
++    this.mesh.name = 'Steam particles'
++    parent.add(this.mesh)
++  }
++
++  update(delta) {
++    this._elapsed += delta
++    const positions = this.mesh.geometry.attributes.position.array
++    const count = this.particles.length
++
++    for (let i = 0; i < count; i++) {
++      const p = this.particles[i]
++      // Rise
++      positions[i * 3 + 1] = p.baseY + ((this._elapsed * p.speed) % 2.0)
++      // Drift
++      positions[i * 3] += Math.sin(this._elapsed * 0.5 + p.phase) * p.drift * delta
++
++      // Reset when too high
++      if (positions[i * 3 + 1] > p.baseY + 2.0) {
++        positions[i * 3 + 1] = p.baseY
++      }
++    }
++    this.mesh.geometry.attributes.position.needsUpdate = true
++
++    // Fade based on height
++    this.mesh.material.opacity = 0.18 + Math.sin(this._elapsed * 0.3) * 0.04
++  }
++
++  dispose() {
++    this.mesh.geometry.dispose()
++    this.mesh.material.dispose()
++    this.mesh.removeFromParent()
++  }
++}
+ 
+ export class NightMarketLanterns {
+   constructor({ parent, playerPosition }) {
+@@ -26,20 +98,19 @@ export class NightMarketLanterns {
+     parent.add(this.group)
+ 
+     this.lanterns = []
++    this.steamSystems = []
+     this._elapsed = 0
+     this.active = false
+ 
+     this.#buildLanternStrings()
+     this.#buildMarketStalls()
++    this.#buildFoodVendors()
+   }
+ 
+-  /**
+-   * Update — animate lanterns, toggle visibility by time.
+-   */
+   update(delta, gameHour) {
+     this._elapsed += delta
+ 
+-    // Show lanterns between 17:00 and 23:00
++    // Show lanterns between 17:00 and 6:00
+     const shouldBeActive = gameHour >= 17 || gameHour < 6
+     if (shouldBeActive !== this.active) {
+       this.active = shouldBeActive
+@@ -50,20 +121,34 @@ export class NightMarketLanterns {
+ 
+     // Animate lanterns — gentle sway
+     for (const lantern of this.lanterns) {
+-      const sway = Math.sin(this._elapsed * 1.2 + lantern.phase) * 0.03
++      const sway = Math.sin(this._elapsed * 1.0 + lantern.phase) * 0.035
+       lantern.mesh.rotation.z = sway
+-      lantern.mesh.rotation.x = Math.sin(this._elapsed * 0.8 + lantern.phase * 1.3) * 0.02
++      lantern.mesh.rotation.x = Math.sin(this._elapsed * 0.7 + lantern.phase * 1.3) * 0.025
+ 
+-      // Flicker emissive intensity
+-      lantern.mesh.material.emissiveIntensity =
+-        0.6 + Math.sin(this._elapsed * 3 + lantern.phase * 2) * 0.15
++      // Flicker emissive — warm candlelight
++      if (lantern.bodyMaterial) {
++        lantern.bodyMaterial.emissiveIntensity =
++          0.55 + Math.sin(this._elapsed * 4 + lantern.phase * 2) * 0.18
++      }
++    }
++
++    // Update steam
++    for (const steam of this.steamSystems) {
++      steam.update(delta)
+     }
+   }
+ 
+   dispose() {
+     for (const lantern of this.lanterns) {
+-      lantern.mesh.geometry.dispose()
+-      lantern.mesh.material.dispose()
++      lantern.mesh.traverse((child) => {
++        if (child.isMesh) {
++          child.geometry?.dispose()
++          child.material?.dispose()
++        }
++      })
++    }
++    for (const steam of this.steamSystems) {
++      steam.dispose()
+     }
+     this.group.removeFromParent()
+   }
+@@ -71,11 +156,13 @@ export class NightMarketLanterns {
+   // ─── Private ───────────────────────────────────
+ 
+   #buildLanternStrings() {
+-    // Lantern strings along Old Quarter streets
+     const strings = [
+-      // Main Old Quarter street — fewer lanterns, fewer lights
+-      { from: [45, 4.5, 33], to: [70, 4.5, 33], count: 6 },
+-      { from: [45, 4.5, 36], to: [70, 4.5, 36], count: 6 },
++      // Main Old Quarter streets
++      { from: [42, 4.8, 33], to: [72, 4.8, 33], count: 8 },
++      { from: [42, 4.8, 36], to: [72, 4.8, 36], count: 8 },
++      // Cross streets
++      { from: [50, 4.5, 28], to: [50, 4.5, 40], count: 4 },
++      { from: [60, 4.5, 28], to: [60, 4.5, 40], count: 4 },
+     ]
+ 
+     for (const string of strings) {
+@@ -84,141 +171,235 @@ export class NightMarketLanterns {
+   }
+ 
+   #createLanternString(from, to, count) {
+-    // String line
++    // Catenary curve for the string
++    const mid = [
++      (from[0] + to[0]) / 2,
++      Math.min(from[1], to[1]) - 0.6, // Sag
++      (from[2] + to[2]) / 2,
++    ]
+     const points = [
+       new THREE.Vector3(...from),
+-      new THREE.Vector3(
+-        (from[0] + to[0]) / 2,
+-        (from[1] + to[1]) / 2 - 0.5,
+-        (from[2] + to[2]) / 2,
+-      ),
++      new THREE.Vector3(...mid),
+       new THREE.Vector3(...to),
+     ]
+     const curve = new THREE.QuadraticBezierCurve3(...points)
+-    const tubeGeo = new THREE.TubeGeometry(curve, 16, 0.02, 4, false)
++
++    // String wire
++    const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.015, 4, false)
+     const tubeMat = new THREE.MeshStandardMaterial({
+-      color: 0x333333,
++      color: 0x222222,
+       roughness: 0.8,
++      metalness: 0.3,
+     })
+     const tube = new THREE.Mesh(tubeGeo, tubeMat)
+     this.group.add(tube)
+ 
+-    // Lanterns along the string — only add light every 3rd lantern
++    // Lanterns along the string
+     for (let i = 0; i < count; i++) {
+       const t = (i + 0.5) / count
+       const pos = curve.getPoint(t)
+ 
+       const color = LANTERN_COLORS[i % LANTERN_COLORS.length]
+       const lantern = this.#createLantern(color)
+-      lantern.position.copy(pos)
+-      this.group.add(lantern)
++      lantern.group.position.copy(pos)
++      this.group.add(lantern.group)
+ 
+-      // Only add light every 3rd lantern to reduce GPU load
+-      if (i % 3 === 0) {
+-        const light = new THREE.PointLight(color, 0.8, 6, 2)
++      // Point light every 2nd lantern (performance)
++      if (i % 2 === 0) {
++        const light = new THREE.PointLight(color, 1.0, 7, 2)
+         light.position.copy(pos)
+-        light.position.y -= 0.3
++        light.position.y -= 0.35
+         this.group.add(light)
+       }
+ 
+       this.lanterns.push({
+-        mesh: lantern,
++        mesh: lantern.group,
++        bodyMaterial: lantern.bodyMat,
+         phase: Math.random() * Math.PI * 2,
+       })
+     }
+   }
+ 
+   #createLantern(color) {
+-    // Lantern body — cylinder + top/bottom caps
+     const group = new THREE.Group()
+ 
+-    // Body
+-    const bodyGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.4, 8)
++    // Body — slightly more detailed than before
++    const bodyGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.45, 10)
+     const bodyMat = new THREE.MeshStandardMaterial({
+       color,
+       emissive: color,
+-      emissiveIntensity: 0.6,
++      emissiveIntensity: 0.55,
+       transparent: true,
+-      opacity: 0.85,
+-      roughness: 0.4,
++      opacity: 0.88,
++      roughness: 0.35,
++      side: THREE.DoubleSide,
+     })
+     const body = new THREE.Mesh(bodyGeo, bodyMat)
+     group.add(body)
+ 
+-    // Top cap
+-    const topGeo = new THREE.CylinderGeometry(0.05, 0.15, 0.08, 8)
+-    const topMat = new THREE.MeshStandardMaterial({ color: 0x8b0000, roughness: 0.6 })
++    // Top ring
++    const topGeo = new THREE.TorusGeometry(0.12, 0.02, 6, 12)
++    const topMat = new THREE.MeshStandardMaterial({ color: 0x8B0000, roughness: 0.5, metalness: 0.3 })
+     const top = new THREE.Mesh(topGeo, topMat)
+     top.position.y = 0.24
++    top.rotation.x = Math.PI / 2
+     group.add(top)
+ 
+-    // Bottom cap
+-    const bottomGeo = new THREE.CylinderGeometry(0.15, 0.05, 0.06, 8)
+-    const bottom = new THREE.Mesh(bottomGeo, topMat)
+-    bottom.position.y = -0.23
+-    group.add(bottom)
+-
+-    // String
+-    const stringGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.15, 4)
+-    const stringMat = new THREE.MeshStandardMaterial({ color: 0x222222 })
+-    const string = new THREE.Mesh(stringGeo, stringMat)
+-    string.position.y = 0.35
+-    group.add(string)
++    // Bottom tip
++    const tipGeo = new THREE.ConeGeometry(0.08, 0.12, 8)
++    const tip = new THREE.Mesh(tipGeo, topMat)
++    tip.position.y = -0.28
++    tip.rotation.x = Math.PI
++    group.add(tip)
++
++    // Hanging wire
++    const wireGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.2, 4)
++    const wireMat = new THREE.MeshStandardMaterial({ color: 0x333333 })
++    const wire = new THREE.Mesh(wireGeo, wireMat)
++    wire.position.y = 0.36
++    group.add(wire)
++
++    // Internal glow sphere
++    const glowGeo = new THREE.SphereGeometry(0.08, 8, 8)
++    const glowMat = new THREE.MeshStandardMaterial({
++      color: 0xFFF8E7,
++      emissive: 0xFFF8E7,
++      emissiveIntensity: 0.8,
++      transparent: true,
++      opacity: 0.4,
++    })
++    const glow = new THREE.Mesh(glowGeo, glowMat)
++    glow.position.y = 0.02
++    group.add(glow)
+ 
+-    return group
++    return { group, bodyMat }
+   }
+ 
+   #buildMarketStalls() {
+-    // Night market stalls (simplified boxes with awnings)
+     const stalls = [
+-      { pos: [48, 0, 34], size: [2.5, 2, 2], color: 0xcc3333 },
+-      { pos: [58, 0, 34], size: [2.5, 2, 2], color: 0xffcc00 },
++      { pos: [46, 0, 34], size: [2.8, 2.2, 2.2], color: 0xCC3333, name: 'Phở stall' },
++      { pos: [56, 0, 34], size: [2.8, 2.2, 2.2], color: 0xF5A623, name: 'Bánh mì stall' },
++      { pos: [66, 0, 34], size: [2.5, 2.0, 2.0], color: 0xE83030, name: 'Chè stall' },
+     ]
+ 
+     for (const stall of stalls) {
+       const group = new THREE.Group()
+-      group.name = 'Night Market Stall'
++      group.name = `Night Market Stall — ${stall.name}`
+       group.position.set(stall.pos[0], stall.pos[1], stall.pos[2])
+ 
+-      // Table
+-      const tableGeo = new THREE.BoxGeometry(stall.size[0], 0.1, stall.size[2])
+-      const tableMat = new THREE.MeshStandardMaterial({
+-        color: 0x8b4513,
+-        roughness: 0.9,
+-      })
++      // Counter table
++      const tableGeo = new THREE.BoxGeometry(stall.size[0], 0.12, stall.size[2])
++      const tableMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.85 })
+       const table = new THREE.Mesh(tableGeo, tableMat)
+-      table.position.y = 0.8
++      table.position.y = 0.85
+       table.castShadow = true
+       group.add(table)
+ 
+-      // Awning
+-      const awningGeo = new THREE.BoxGeometry(stall.size[0] + 0.4, 0.05, stall.size[2] + 0.6)
++      // Table legs
++      const legGeo = new THREE.BoxGeometry(0.06, 0.85, 0.06)
++      const legMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.4, roughness: 0.5 })
++      for (const [lx, lz] of [[-1.2, -0.9], [1.2, -0.9], [-1.2, 0.9], [1.2, 0.9]]) {
++        const leg = new THREE.Mesh(legGeo, legMat)
++        leg.position.set(lx, 0.425, lz)
++        group.add(leg)
++      }
++
++      // Awning — angled canvas
++      const awningGeo = new THREE.BoxGeometry(stall.size[0] + 0.5, 0.04, stall.size[2] + 0.8)
+       const awningMat = new THREE.MeshStandardMaterial({
+         color: stall.color,
+         emissive: stall.color,
+-        emissiveIntensity: 0.2,
+-        roughness: 0.7,
++        emissiveIntensity: 0.15,
++        roughness: 0.65,
+       })
+       const awning = new THREE.Mesh(awningGeo, awningMat)
+-      awning.position.y = 2
+-      awning.rotation.x = -0.1
++      awning.position.y = 2.15
++      awning.rotation.x = -0.12
+       group.add(awning)
+ 
+-      // Legs
+-      const legGeo = new THREE.BoxGeometry(0.08, 0.8, 0.08)
+-      const legMat = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.3 })
+-      for (const [lx, lz] of [[-1, -0.8], [1, -0.8], [-1, 0.8], [1, 0.8]]) {
+-        const leg = new THREE.Mesh(legGeo, legMat)
+-        leg.position.set(lx, 0.4, lz)
+-        group.add(leg)
++      // Awning support poles
++      const poleGeo = new THREE.CylinderGeometry(0.025, 0.025, 2.15, 6)
++      const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.5 })
++      for (const side of [-1, 1]) {
++        const pole = new THREE.Mesh(poleGeo, poleMat)
++        pole.position.set(side * (stall.size[0] / 2 + 0.1), 1.075, stall.size[2] / 2 + 0.3)
++        group.add(pole)
+       }
+ 
+-      // Light under awning
+-      const light = new THREE.PointLight(0xffaa44, 1.2, 5, 2)
+-      light.position.set(0, 1.5, 0)
++      // Warm light under awning
++      const light = new THREE.PointLight(0xFFAA44, 1.5, 6, 2)
++      light.position.set(0, 1.6, 0)
+       group.add(light)
+ 
++      // Decorative lantern on each stall
++      const miniLantern = this.#createLantern(0xE83030)
++      miniLantern.group.position.set(0, 1.8, stall.size[2] / 2 + 0.2)
++      miniLantern.group.scale.setScalar(0.7)
++      group.add(miniLantern.group)
++
+       this.group.add(group)
+     }
+   }
++
++  #buildFoodVendors() {
++    // Street food vendors with steam
++    const vendors = [
++      { pos: [44, 0, 31], type: 'pho' },
++      { pos: [54, 0, 31], type: 'banhmi' },
++      { pos: [64, 0, 31], type: 'che' },
++    ]
++
++    for (const vendor of vendors) {
++      const group = new THREE.Group()
++      group.name = `Food Vendor — ${vendor.type}`
++      group.position.set(vendor.pos[0], vendor.pos[1], vendor.pos[2])
++
++      // Cart body
++      const cartGeo = new THREE.BoxGeometry(1.5, 0.9, 1.0)
++      const cartMat = new THREE.MeshStandardMaterial({
++        color: HANOI_VISUAL_TOKENS.streetProps.vendorCartColors[
++          Math.floor(Math.random() * HANOI_VISUAL_TOKENS.streetProps.vendorCartColors.length)
++        ],
++        roughness: 0.7,
++      })
++      const cart = new THREE.Mesh(cartGeo, cartMat)
++      cart.position.y = 0.55
++      cart.castShadow = true
++      group.add(cart)
++
++      // Wheels
++      const wheelGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.04, 8)
++      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 })
++      for (const side of [-0.6, 0.6]) {
++        const wheel = new THREE.Mesh(wheelGeo, wheelMat)
++        wheel.rotation.z = Math.PI / 2
++        wheel.position.set(side, 0.15, 0)
++        group.add(wheel)
++      }
++
++      // Pot/bowl on top
++      const potGeo = new THREE.CylinderGeometry(0.25, 0.22, 0.3, 10)
++      const potMat = new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5, roughness: 0.4 })
++      const pot = new THREE.Mesh(potGeo, potMat)
++      pot.position.set(0, 1.2, 0)
++      group.add(pot)
++
++      // Small lantern
++      const miniLantern = this.#createLantern(0xF5A623)
++      miniLantern.group.position.set(0.8, 1.5, 0)
++      miniLantern.group.scale.setScalar(0.5)
++      group.add(miniLantern.group)
++
++      // Light
++      const light = new THREE.PointLight(0xF5BE58, 0.8, 4, 2)
++      light.position.set(0, 1.3, 0)
++      group.add(light)
++
++      this.group.add(group)
++
++      // Steam particles
++      const steam = new SteamParticles(this.group, [vendor.pos[0], 1.35, vendor.pos[2]], 10)
++      this.steamSystems.push(steam)
++    }
++  }
+ }
+diff --git a/src/world/effects/SeasonalDecorations.js b/src/world/effects/SeasonalDecorations.js
+new file mode 100644
+index 0000000..b2e9051
+--- /dev/null
++++ b/src/world/effects/SeasonalDecorations.js
+@@ -0,0 +1,461 @@
++import * as THREE from 'three'
++import { HANOI_VISUAL_TOKENS } from '../style/HanoiVisualTokens.js'
++
++/**
++ * SeasonalDecorations — Vietnamese seasonal event visuals.
++ *
++ * Supports:
++ * - Tết Nguyên Đán: hoa mai vàng, câu đối đỏ, pháo hoa, dây trang trí
++ * - Tết Trung Thu: đèn lồng, múa lân, mặt trăng lớn
++ * - General: cờ đỏ sao vàng (national day)
++ */
++
++const LANTERN_COLORS = HANOI_VISUAL_TOKENS.streetProps.lanternStringColors
++
++export class SeasonalDecorations {
++  constructor({ parent, playerPosition, fireworksSystem }) {
++    this.parent = parent
++    this.playerPosition = playerPosition
++    this.fireworksSystem = fireworksSystem
++
++    this.group = new THREE.Group()
++    this.group.name = 'Seasonal Decorations'
++    parent.add(this.group)
++
++    this.currentSeason = null
++    this.seasonGroups = new Map()
++    this._elapsed = 0
++
++    this.#buildTetDecorations()
++    this.#buildTrungThuDecorations()
++  }
++
++  /**
++   * Activate a seasonal event.
++   * @param {'tet'|'trungThu'|'quocKhanh'|null} season
++   */
++  setSeason(season) {
++    if (season === this.currentSeason) return
++
++    // Hide all
++    for (const group of this.seasonGroups.values()) {
++      group.visible = false
++    }
++
++    this.currentSeason = season
++
++    if (season && this.seasonGroups.has(season)) {
++      this.seasonGroups.get(season).visible = true
++    }
++
++    // Start fireworks for Tết
++    if (season === 'tet' && this.fireworksSystem) {
++      this.fireworksSystem.setTetMode(true)
++      this.fireworksSystem.startShow(25)
++    }
++  }
++
++  update(delta) {
++    this._elapsed += delta
++    if (!this.currentSeason) return
++
++    // Animate based on season
++    if (this.currentSeason === 'tet') {
++      this.#animateTet(delta)
++    } else if (this.currentSeason === 'trungThu') {
++      this.#animateTrungThu(delta)
++    }
++  }
++
++  dispose() {
++    this.group.removeFromParent()
++  }
++
++  // ─── Private ───────────────────────────────────
++
++  #buildTetDecorations() {
++    const group = new THREE.Group()
++    group.name = 'Tết Nguyên Đán'
++    group.visible = false
++    this.group.add(group)
++    this.seasonGroups.set('tet', group)
++
++    // ── Cây mai vàng (Yellow apricot trees) ──
++    const maiPositions = [
++      [45, 0, 32], [55, 0, 32], [65, 0, 32],
++      [50, 0, 38], [60, 0, 38],
++    ]
++    for (const pos of maiPositions) {
++      const mai = this.#createMaiTree()
++      mai.position.set(...pos)
++      group.add(mai)
++    }
++
++    // ── Cây đào (Peach blossom trees) ──
++    const daoPositions = [
++      [48, 0, 35], [58, 0, 35], [68, 0, 35],
++    ]
++    for (const pos of daoPositions) {
++      const dao = this.#createDaoTree()
++      dao.position.set(...pos)
++      group.add(dao)
++    }
++
++    // ── Câu đối đỏ (Red couplets) ──
++    const coupletPositions = [
++      { pos: [44, 3.5, 30.5], rot: 0 },
++      { pos: [54, 3.5, 30.5], rot: 0 },
++      { pos: [64, 3.5, 30.5], rot: 0 },
++    ]
++    for (const { pos, rot } of coupletPositions) {
++      const couplet = this.#createCouplet()
++      couplet.position.set(...pos)
++      couplet.rotation.y = rot
++      group.add(couplet)
++    }
++
++    // ── Dây trang trí (Decorative strings) ──
++    this.#createDecorativeString(group, [42, 4.2, 33], [72, 4.2, 33], 0xE83030)
++    this.#createDecorativeString(group, [42, 4.0, 36], [72, 4.0, 36], 0xF5A623)
++  }
++
++  #buildTrungThuDecorations() {
++    const group = new THREE.Group()
++    group.name = 'Tết Trung Thu'
++    group.visible = false
++    this.group.add(group)
++    this.seasonGroups.set('trungThu', group)
++
++    // ── Đèn lồng Trung Thu (Mid-Autumn lanterns) ──
++    const lanternPositions = [
++      [46, 2.5, 33], [52, 2.5, 33], [58, 2.5, 33], [64, 2.5, 33],
++      [46, 2.5, 36], [52, 2.5, 36], [58, 2.5, 36], [64, 2.5, 36],
++    ]
++    for (const pos of lanternPositions) {
++      const lantern = this.#createTrungThuLantern()
++      lantern.position.set(...pos)
++      group.add(lantern)
++    }
++
++    // ── Mặt trăng lớn (Large moon decoration) ──
++    const moon = this.#createMoonDecoration()
++    moon.position.set(55, 8, 34)
++    group.add(moon)
++
++    // ── Đèn kéo quân (Star lanterns) ──
++    const starLanternPositions = [
++      [48, 3, 34], [56, 3, 34], [64, 3, 34],
++    ]
++    for (const pos of starLanternPositions) {
++      const star = this.#createStarLantern()
++      star.position.set(...pos)
++      group.add(star)
++    }
++  }
++
++  // ── Creators ──
++
++  #createMaiTree() {
++    const group = new THREE.Group()
++
++    // Trunk
++    const trunkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1.8, 6)
++    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5A3A1A, roughness: 0.9 })
++    const trunk = new THREE.Mesh(trunkGeo, trunkMat)
++    trunk.position.y = 0.9
++    group.add(trunk)
++
++    // Branches
++    const branchGeo = new THREE.CylinderGeometry(0.03, 0.05, 0.8, 5)
++    for (let i = 0; i < 3; i++) {
++      const branch = new THREE.Mesh(branchGeo, trunkMat)
++      branch.position.set(
++        Math.sin(i * 2.1) * 0.3,
++        1.4 + i * 0.2,
++        Math.cos(i * 2.1) * 0.3,
++      )
++      branch.rotation.z = (i - 1) * 0.5
++      group.add(branch)
++    }
++
++    // Blossoms — yellow flowers
++    const blossomGeo = new THREE.SphereGeometry(0.15, 6, 6)
++    const blossomMat = new THREE.MeshStandardMaterial({
++      color: 0xF5D700,
++      emissive: 0xF5D700,
++      emissiveIntensity: 0.15,
++      roughness: 0.6,
++    })
++    for (let i = 0; i < 12; i++) {
++      const blossom = new THREE.Mesh(blossomGeo, blossomMat)
++      blossom.position.set(
++        (Math.random() - 0.5) * 1.2,
++        1.5 + Math.random() * 1.0,
++        (Math.random() - 0.5) * 1.2,
++      )
++      blossom.scale.setScalar(0.6 + Math.random() * 0.5)
++      group.add(blossom)
++    }
++
++    // Pot
++    const potGeo = new THREE.CylinderGeometry(0.25, 0.2, 0.35, 8)
++    const potMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.85 })
++    const pot = new THREE.Mesh(potGeo, potMat)
++    pot.position.y = 0.175
++    group.add(pot)
++
++    return group
++  }
++
++  #createDaoTree() {
++    const group = new THREE.Group()
++
++    // Trunk
++    const trunkGeo = new THREE.CylinderGeometry(0.06, 0.1, 1.6, 6)
++    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4A2A10, roughness: 0.9 })
++    const trunk = new THREE.Mesh(trunkGeo, trunkMat)
++    trunk.position.y = 0.8
++    group.add(trunk)
++
++    // Pink blossoms
++    const blossomGeo = new THREE.SphereGeometry(0.12, 6, 6)
++    const blossomMat = new THREE.MeshStandardMaterial({
++      color: 0xFF8BA7,
++      emissive: 0xFF8BA7,
++      emissiveIntensity: 0.1,
++      roughness: 0.6,
++    })
++    for (let i = 0; i < 15; i++) {
++      const blossom = new THREE.Mesh(blossomGeo, blossomMat)
++      blossom.position.set(
++        (Math.random() - 0.5) * 1.0,
++        1.2 + Math.random() * 1.0,
++        (Math.random() - 0.5) * 1.0,
++      )
++      blossom.scale.setScalar(0.5 + Math.random() * 0.5)
++      group.add(blossom)
++    }
++
++    // Pot
++    const potGeo = new THREE.CylinderGeometry(0.22, 0.18, 0.3, 8)
++    const potMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.85 })
++    const pot = new THREE.Mesh(potGeo, potMat)
++    pot.position.y = 0.15
++    group.add(pot)
++
++    return group
++  }
++
++  #createCouplet() {
++    const group = new THREE.Group()
++
++    // Red paper
++    const paperGeo = new THREE.BoxGeometry(0.35, 1.8, 0.02)
++    const paperMat = new THREE.MeshStandardMaterial({
++      color: 0xCC0000,
++      emissive: 0xCC0000,
++      emissiveIntensity: 0.05,
++      roughness: 0.7,
++    })
++    const paper = new THREE.Mesh(paperGeo, paperMat)
++    paper.position.y = 0.9
++    group.add(paper)
++
++    // Gold trim
++    const trimGeo = new THREE.BoxGeometry(0.38, 0.04, 0.025)
++    const trimMat = new THREE.MeshStandardMaterial({
++      color: 0xF5A623,
++      emissive: 0xF5A623,
++      emissiveIntensity: 0.1,
++      metalness: 0.4,
++      roughness: 0.5,
++    })
++    for (const y of [0.02, 1.78]) {
++      const trim = new THREE.Mesh(trimGeo, trimMat)
++      trim.position.y = y
++      group.add(trim)
++    }
++
++    return group
++  }
++
++  #createDecorativeString(group, from, to, color) {
++    const mid = [
++      (from[0] + to[0]) / 2,
++      Math.min(from[1], to[1]) - 0.4,
++      (from[2] + to[2]) / 2,
++    ]
++    const curve = new THREE.QuadraticBezierCurve3(
++      new THREE.Vector3(...from),
++      new THREE.Vector3(...mid),
++      new THREE.Vector3(...to),
++    )
++
++    // String
++    const tubeGeo = new THREE.TubeGeometry(curve, 16, 0.012, 4, false)
++    const tubeMat = new THREE.MeshStandardMaterial({ color: 0x333333 })
++    const tube = new THREE.Mesh(tubeGeo, tubeMat)
++    group.add(tube)
++
++    // Small decorative items along string
++    const count = 8
++    for (let i = 0; i < count; i++) {
++      const t = (i + 0.5) / count
++      const pos = curve.getPoint(t)
++
++      // Small diamond/star shape
++      const decoGeo = new THREE.OctahedronGeometry(0.08, 0)
++      const decoMat = new THREE.MeshStandardMaterial({
++        color: i % 2 === 0 ? color : 0xF5A623,
++        emissive: i % 2 === 0 ? color : 0xF5A623,
++        emissiveIntensity: 0.2,
++      })
++      const deco = new THREE.Mesh(decoGeo, decoMat)
++      deco.position.copy(pos)
++      deco.position.y -= 0.15
++      deco.rotation.y = Math.PI / 4
++      group.add(deco)
++    }
++  }
++
++  #createTrungThuLantern() {
++    const group = new THREE.Group()
++
++    // Star-shaped lantern body
++    const shape = new THREE.Shape()
++    const outerR = 0.25
++    const innerR = 0.1
++    for (let i = 0; i < 5; i++) {
++      const outerAngle = (i * 2 * Math.PI) / 5 - Math.PI / 2
++      const innerAngle = outerAngle + Math.PI / 5
++      if (i === 0) {
++        shape.moveTo(Math.cos(outerAngle) * outerR, Math.sin(outerAngle) * outerR)
++      } else {
++        shape.lineTo(Math.cos(outerAngle) * outerR, Math.sin(outerAngle) * outerR)
++      }
++      shape.lineTo(Math.cos(innerAngle) * innerR, Math.sin(innerAngle) * innerR)
++    }
++    shape.closePath()
++
++    const extrudeSettings = { depth: 0.08, bevelEnabled: false }
++    const starGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings)
++    const starMat = new THREE.MeshStandardMaterial({
++      color: 0xE83030,
++      emissive: 0xE83030,
++      emissiveIntensity: 0.4,
++      transparent: true,
++      opacity: 0.85,
++      side: THREE.DoubleSide,
++    })
++    const star = new THREE.Mesh(starGeo, starMat)
++    star.rotation.y = Math.PI / 2
++    group.add(star)
++
++    // Handle
++    const handleGeo = new THREE.TorusGeometry(0.06, 0.008, 6, 12)
++    const handleMat = new THREE.MeshStandardMaterial({ color: 0xF5A623, metalness: 0.4 })
++    const handle = new THREE.Mesh(handleGeo, handleMat)
++    handle.position.y = 0.28
++    group.add(handle)
++
++    // Light inside
++    const light = new THREE.PointLight(0xE83030, 0.5, 4, 2)
++    group.add(light)
++
++    return group
++  }
++
++  #createMoonDecoration() {
++    const group = new THREE.Group()
++
++    // Large moon disc
++    const moonGeo = new THREE.CircleGeometry(1.5, 32)
++    const moonMat = new THREE.MeshStandardMaterial({
++      color: 0xFFF8DC,
++      emissive: 0xFFF8DC,
++      emissiveIntensity: 0.3,
++      side: THREE.DoubleSide,
++    })
++    const moon = new THREE.Mesh(moonGeo, moonMat)
++    group.add(moon)
++
++    // Glow
++    const glowGeo = new THREE.CircleGeometry(2.0, 32)
++    const glowMat = new THREE.MeshBasicMaterial({
++      color: 0xFFF8DC,
++      transparent: true,
++      opacity: 0.15,
++      side: THREE.DoubleSide,
++      depthWrite: false,
++    })
++    const glow = new THREE.Mesh(glowGeo, glowMat)
++    glow.position.z = -0.01
++    group.add(glow)
++
++    // Rabbit silhouette (simplified)
++    const rabbitGeo = new THREE.BoxGeometry(0.3, 0.5, 0.02)
++    const rabbitMat = new THREE.MeshStandardMaterial({ color: 0x8B7355 })
++    const rabbit = new THREE.Mesh(rabbitGeo, rabbitMat)
++    rabbit.position.set(0.3, -0.2, 0.01)
++    group.add(rabbit)
++
++    return group
++  }
++
++  #createStarLantern() {
++    const group = new THREE.Group()
++
++    // 3D star
++    const starGeo = new THREE.OctahedronGeometry(0.3, 0)
++    const starMat = new THREE.MeshStandardMaterial({
++      color: 0xF5A623,
++      emissive: 0xF5A623,
++      emissiveIntensity: 0.35,
++      transparent: true,
++      opacity: 0.9,
++    })
++    const star = new THREE.Mesh(starGeo, starMat)
++    group.add(star)
++
++    // Handle
++    const stickGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4)
++    const stickMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 })
++    const stick = new THREE.Mesh(stickGeo, stickMat)
++    stick.position.y = -0.5
++    group.add(stick)
++
++    // Light
++    const light = new THREE.PointLight(0xF5A623, 0.4, 3, 2)
++    group.add(light)
++
++    return group
++  }
++
++  #animateTet(delta) {
++    // Animate mai blossoms — gentle sway
++    const tetGroup = this.seasonGroups.get('tet')
++    if (!tetGroup) return
++
++    tetGroup.children.forEach((child, i) => {
++      if (child.name?.includes?.('mai') || child.children?.length > 3) {
++        child.children.forEach((blossom, j) => {
++          if (blossom.geometry?.type === 'SphereGeometry') {
++            blossom.rotation.y = Math.sin(this._elapsed * 0.5 + j * 0.3) * 0.1
++          }
++        })
++      }
++    })
++  }
++
++  #animateTrungThu(delta) {
++    // Animate lanterns — gentle rotation
++    const trungThuGroup = this.seasonGroups.get('trungThu')
++    if (!trungThuGroup) return
++
++    trungThuGroup.children.forEach((child, i) => {
++      if (child.children?.length > 0) {
++        child.rotation.y = Math.sin(this._elapsed * 0.8 + i * 0.5) * 0.15
++      }
++    })
++  }
++}
+diff --git a/src/world/effects/TrafficSystem.js b/src/world/effects/TrafficSystem.js
+index 096a5c1..efe79c1 100644
+--- a/src/world/effects/TrafficSystem.js
++++ b/src/world/effects/TrafficSystem.js
+@@ -1,20 +1,234 @@
+ import * as THREE from 'three'
++import { HANOI_VISUAL_TOKENS } from '../style/HanoiVisualTokens.js'
+ 
+ /**
+- * TrafficSystem — moving vehicles (motorcycles, cars, bicycles)
+- * on predefined routes through the city.
++ * TrafficSystem — Vietnamese-style traffic with detailed motorbikes.
++ *
++ * Features:
++ * - Multi-part motorbike geometry (body, seat, handlebar, wheels, headlight)
++ * - Realistic Vietnamese traffic flow — no lane discipline, weaving
++ * - Motorbikes dominate, with occasional cars and bicycles
++ * - Headlights at night, brake lights
++ * - Horn-like visual cues (headlight flash)
+  */
+ 
+ const VEHICLE_TYPES = Object.freeze({
+   MOTORBIKE: 'motorbike',
+   CAR: 'car',
+   BICYCLE: 'bicycle',
++  CYCLO: 'cyclo',            // Xích lô — iconic Vietnamese
+ })
+ 
+-const VEHICLE_COLORS = [
+-  0x333333, 0x666666, 0x999999, 0xcc0000, 0x0066cc,
+-  0x006633, 0xcc6600, 0xffffff, 0x1a1a2e, 0x16213e,
+-]
++const MOTORBIKE_COLORS = HANOI_VISUAL_TOKENS.streetProps.motorbikeColors
++
++// ── Shared geometries (created once, reused) ──
++let _motorbikeGeo = null
++let _carGeo = null
++let _bicycleGeo = null
++let _cycloGeo = null
++
++function createMotorbikeGeometry() {
++  if (_motorbikeGeo) return _motorbikeGeo
++
++  const group = new THREE.Group()
++
++  // Body — main frame
++  const bodyGeo = new THREE.BoxGeometry(0.35, 0.28, 0.75)
++  const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.4 })
++  const body = new THREE.Mesh(bodyGeo, bodyMat)
++  body.position.y = 0.35
++  group.add(body)
++
++  // Seat
++  const seatGeo = new THREE.BoxGeometry(0.28, 0.08, 0.35)
++  const seatMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 })
++  const seat = new THREE.Mesh(seatGeo, seatMat)
++  seat.position.set(0, 0.52, -0.05)
++  group.add(seat)
++
++  // Handlebar
++  const barGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.36, 6)
++  const barMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.6, roughness: 0.4 })
++  const bar = new THREE.Mesh(barGeo, barMat)
++  bar.rotation.z = Math.PI / 2
++  bar.position.set(0, 0.62, 0.28)
++  group.add(bar)
++
++  // Front wheel
++  const wheelGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.06, 12)
++  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 })
++  const frontWheel = new THREE.Mesh(wheelGeo, wheelMat)
++  frontWheel.rotation.x = Math.PI / 2
++  frontWheel.position.set(0, 0.16, 0.32)
++  group.add(frontWheel)
++
++  // Rear wheel
++  const rearWheel = frontWheel.clone()
++  rearWheel.position.set(0, 0.16, -0.3)
++  group.add(rearWheel)
++
++  // Headlight
++  const headlightGeo = new THREE.SphereGeometry(0.04, 8, 8)
++  const headlightMat = new THREE.MeshStandardMaterial({
++    color: 0xFFF8E7,
++    emissive: 0xFFF8E7,
++    emissiveIntensity: 0.5,
++  })
++  const headlight = new THREE.Mesh(headlightGeo, headlightMat)
++  headlight.position.set(0, 0.45, 0.42)
++  group.add(headlight)
++
++  // Taillight
++  const taillightMat = new THREE.MeshStandardMaterial({
++    color: 0xCC0000,
++    emissive: 0xCC0000,
++    emissiveIntensity: 0.3,
++  })
++  const taillight = new THREE.Mesh(headlightGeo.clone(), taillightMat)
++  taillight.position.set(0, 0.4, -0.42)
++  group.add(taillight)
++
++  // Mirror
++  const mirrorGeo = new THREE.SphereGeometry(0.025, 6, 6)
++  const mirrorMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7 })
++  for (const side of [-1, 1]) {
++    const mirror = new THREE.Mesh(mirrorGeo, mirrorMat)
++    mirror.position.set(side * 0.2, 0.65, 0.25)
++    group.add(mirror)
++  }
++
++  _motorbikeGeo = group
++  return group
++}
++
++function createCarGeometry() {
++  if (_carGeo) return _carGeo
++
++  const group = new THREE.Group()
++
++  // Body
++  const bodyGeo = new THREE.BoxGeometry(0.8, 0.5, 1.8)
++  const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.5 })
++  const body = new THREE.Mesh(bodyGeo, bodyMat)
++  body.position.y = 0.45
++  group.add(body)
++
++  // Cabin
++  const cabinGeo = new THREE.BoxGeometry(0.7, 0.35, 1.0)
++  const cabinMat = new THREE.MeshStandardMaterial({
++    color: 0x5577AA,
++    roughness: 0.2,
++    metalness: 0.1,
++    transparent: true,
++    opacity: 0.6,
++  })
++  const cabin = new THREE.Mesh(cabinGeo, cabinMat)
++  cabin.position.set(0, 0.85, -0.1)
++  group.add(cabin)
++
++  // Wheels
++  const wheelGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 10)
++  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 })
++  const wheelPositions = [[-0.38, 0.18, 0.55], [0.38, 0.18, 0.55], [-0.38, 0.18, -0.55], [0.38, 0.18, -0.55]]
++  for (const pos of wheelPositions) {
++    const wheel = new THREE.Mesh(wheelGeo, wheelMat)
++    wheel.rotation.z = Math.PI / 2
++    wheel.position.set(...pos)
++    group.add(wheel)
++  }
++
++  // Headlights
++  const hlGeo = new THREE.SphereGeometry(0.05, 6, 6)
++  const hlMat = new THREE.MeshStandardMaterial({ color: 0xFFF8E7, emissive: 0xFFF8E7, emissiveIntensity: 0.4 })
++  for (const side of [-0.28, 0.28]) {
++    const hl = new THREE.Mesh(hlGeo, hlMat)
++    hl.position.set(side, 0.45, 0.92)
++    group.add(hl)
++  }
++
++  _carGeo = group
++  return group
++}
++
++function createBicycleGeometry() {
++  if (_bicycleGeo) return _bicycleGeo
++
++  const group = new THREE.Group()
++
++  // Frame
++  const frameGeo = new THREE.BoxGeometry(0.04, 0.04, 0.6)
++  const frameMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.5 })
++  const frame = new THREE.Mesh(frameGeo, frameMat)
++  frame.position.y = 0.4
++  frame.rotation.x = 0.15
++  group.add(frame)
++
++  // Wheels
++  const wheelGeo = new THREE.TorusGeometry(0.18, 0.015, 6, 16)
++  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 })
++  const frontW = new THREE.Mesh(wheelGeo, wheelMat)
++  frontW.position.set(0, 0.18, 0.28)
++  group.add(frontW)
++  const rearW = frontW.clone()
++  rearW.position.set(0, 0.18, -0.28)
++  group.add(rearW)
++
++  // Seat
++  const seatGeo = new THREE.BoxGeometry(0.08, 0.03, 0.15)
++  const seatMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
++  const seat = new THREE.Mesh(seatGeo, seatMat)
++  seat.position.set(0, 0.55, -0.08)
++  group.add(seat)
++
++  _bicycleGeo = group
++  return group
++}
++
++function createCycloGeometry() {
++  if (_cycloGeo) return _cycloGeo
++
++  const group = new THREE.Group()
++
++  // Passenger box
++  const boxGeo = new THREE.BoxGeometry(0.6, 0.35, 0.6)
++  const boxMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.7 })
++  const box = new THREE.Mesh(boxGeo, boxMat)
++  box.position.set(0, 0.35, -0.2)
++  group.add(box)
++
++  // Canopy
++  const canopyGeo = new THREE.BoxGeometry(0.65, 0.04, 0.65)
++  const canopyMat = new THREE.MeshStandardMaterial({ color: 0xE8C86A, roughness: 0.6 })
++  const canopy = new THREE.Mesh(canopyGeo, canopyMat)
++  canopy.position.set(0, 0.7, -0.2)
++  group.add(canopy)
++
++  // Frame
++  const frameGeo = new THREE.BoxGeometry(0.04, 0.04, 0.9)
++  const frameMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.5 })
++  const frame = new THREE.Mesh(frameGeo, frameMat)
++  frame.position.set(0, 0.3, 0.15)
++  group.add(frame)
++
++  // Front wheel
++  const wheelGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12)
++  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 })
++  const wheel = new THREE.Mesh(wheelGeo, wheelMat)
++  wheel.rotation.x = Math.PI / 2
++  wheel.position.set(0, 0.2, 0.55)
++  group.add(wheel)
++
++  // Rear wheels
++  for (const side of [-0.25, 0.25]) {
++    const rw = new THREE.Mesh(wheelGeo, wheelMat)
++    rw.rotation.x = Math.PI / 2
++    rw.position.set(side, 0.2, -0.45)
++    group.add(rw)
++  }
++
++  _cycloGeo = group
++  return group
++}
+ 
+ export class TrafficSystem {
+   constructor({ parent, playerPosition }) {
+@@ -28,109 +242,146 @@ export class TrafficSystem {
+     this.vehicles = []
+     this._elapsed = 0
+     this.spawnTimer = 0
+-    this.spawnInterval = 2 // seconds between spawns
++    this.spawnInterval = 1.5 // Faster spawning — more traffic
++    this.isNight = false
+ 
+     this.#defineRoutes()
+   }
+ 
+-  /**
+-   * Update — move vehicles along routes, spawn new ones.
+-   */
+   update(delta, activeAreaName) {
+     this._elapsed += delta
+     this.group.visible = activeAreaName === 'outdoor'
+ 
+     if (!this.group.visible) return
+ 
+-    // Spawn new vehicles
++    // Spawn
+     this.spawnTimer += delta
+-    if (this.spawnTimer > this.spawnInterval && this.vehicles.length < 30) {
++    if (this.spawnTimer > this.spawnInterval && this.vehicles.length < 40) {
+       this.#spawnVehicle()
+       this.spawnTimer = 0
+     }
+ 
+-    // Update vehicle positions
++    // Update
+     for (let i = this.vehicles.length - 1; i >= 0; i--) {
+       const vehicle = this.vehicles[i]
+       vehicle.progress += delta * vehicle.speed / vehicle.routeLength
+ 
+       if (vehicle.progress >= 1) {
+-        // Remove vehicle at end of route
+-        vehicle.mesh.geometry.dispose()
+-        vehicle.mesh.material.dispose()
+-        this.group.remove(vehicle.mesh)
+-        this.vehicles.splice(i, 1)
++        this.#removeVehicle(i)
+         continue
+       }
+ 
+-      // Interpolate position along route
++      // Position along route
+       const pos = vehicle.curve.getPointAt(vehicle.progress)
+-      vehicle.mesh.position.copy(pos)
++      vehicle.group.position.copy(pos)
+ 
+       // Face direction of travel
+       const tangent = vehicle.curve.getTangentAt(vehicle.progress)
+-      vehicle.mesh.rotation.y = Math.atan2(tangent.x, tangent.z)
++      vehicle.group.rotation.y = Math.atan2(tangent.x, tangent.z)
++
++      // Vietnamese-style weaving — subtle lateral oscillation
++      if (vehicle.type === VEHICLE_TYPES.MOTORBIKE) {
++        const weave = Math.sin(this._elapsed * 1.5 + vehicle.weavePhase) * 0.15
++        vehicle.group.position.x += weave * Math.cos(vehicle.group.rotation.y)
++        vehicle.group.position.z -= weave * Math.sin(vehicle.group.rotation.y)
++      }
++
++      // Update headlights for night
++      if (vehicle.headlight) {
++        vehicle.headlight.intensity = this.isNight ? 2.5 : 0
++      }
+     }
+   }
+ 
++  setNightMode(isNight) {
++    this.isNight = isNight
++  }
++
+   dispose() {
+     for (const vehicle of this.vehicles) {
+-      vehicle.mesh.geometry.dispose()
+-      vehicle.mesh.material.dispose()
++      this.group.remove(vehicle.group)
+     }
++    this.vehicles.length = 0
+     this.group.removeFromParent()
+   }
+ 
+   // ─── Private ───────────────────────────────────
+ 
+   #defineRoutes() {
+-    // Routes are curves through the city
+     this.routes = [
+       // Main road east-west (past church)
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[-30, 0, 12], [-10, 0, 12], [10, 0, 12], [30, 0, 12], [50, 0, 12]],
+-        speed: 4,
++        points: [[-35, 0, 12], [-10, 0, 12.5], [10, 0, 11.8], [30, 0, 12.2], [55, 0, 12]],
++        speed: 4.5,
+       },
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[50, 0, 14], [30, 0, 14], [10, 0, 14], [-10, 0, 14], [-30, 0, 14]],
+-        speed: 3.5,
++        points: [[55, 0, 14.2], [30, 0, 13.8], [10, 0, 14.5], [-10, 0, 14], [-35, 0, 14]],
++        speed: 4.0,
++      },
++      // More motorbikes on main road
++      {
++        type: VEHICLE_TYPES.MOTORBIKE,
++        points: [[-30, 0, 11.5], [0, 0, 12], [20, 0, 11.5], [45, 0, 12]],
++        speed: 5.0,
+       },
+       // Road along lake west
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[65, 0, -30], [65, 0, -10], [65, 0, 10], [65, 0, 30]],
+-        speed: 3,
++        points: [[65, 0, -35], [65, 0, -10], [65, 0, 10], [65, 0, 35]],
++        speed: 3.5,
+       },
+       {
+         type: VEHICLE_TYPES.CAR,
+-        points: [[67, 0, 30], [67, 0, 10], [67, 0, -10], [67, 0, -30]],
+-        speed: 2.5,
++        points: [[67, 0, 35], [67, 0, 10], [67, 0, -10], [67, 0, -35]],
++        speed: 2.8,
+       },
+       // Road north of lake
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[70, 0, 35], [90, 0, 35], [110, 0, 35], [130, 0, 35]],
+-        speed: 4,
++        points: [[70, 0, 35], [95, 0, 35], [115, 0, 35], [135, 0, 35]],
++        speed: 4.5,
+       },
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[130, 0, 37], [110, 0, 37], [90, 0, 37], [70, 0, 37]],
+-        speed: 3.8,
++        points: [[135, 0, 37], [115, 0, 37], [95, 0, 37], [70, 0, 37]],
++        speed: 4.2,
++      },
++      // Old quarter streets — more motorbikes, slower
++      {
++        type: VEHICLE_TYPES.MOTORBIKE,
++        points: [[40, 0, 30], [52, 0, 30.5], [62, 0, 29.8], [72, 0, 30]],
++        speed: 2.5,
+       },
+-      // Old quarter streets
+       {
+         type: VEHICLE_TYPES.BICYCLE,
+-        points: [[40, 0, 30], [50, 0, 30], [60, 0, 30], [70, 0, 30]],
++        points: [[42, 0, 32], [55, 0, 32], [68, 0, 32]],
+         speed: 1.5,
+       },
++      // Cyclo — slow, iconic
++      {
++        type: VEHICLE_TYPES.CYCLO,
++        points: [[48, 0, 28], [58, 0, 28.5], [68, 0, 28]],
++        speed: 1.2,
++      },
+       // Connector road
+       {
+         type: VEHICLE_TYPES.MOTORBIKE,
+-        points: [[25, 0, 10], [35, 0, 15], [45, 0, 20], [55, 0, 25]],
++        points: [[25, 0, 10], [35, 0, 14], [45, 0, 19], [55, 0, 24]],
++        speed: 3.8,
++      },
++      // Lake road south
++      {
++        type: VEHICLE_TYPES.MOTORBIKE,
++        points: [[130, 0, -20], [110, 0, -20], [90, 0, -20], [70, 0, -20]],
+         speed: 3.2,
+       },
++      {
++        type: VEHICLE_TYPES.MOTORBIKE,
++        points: [[70, 0, -22], [90, 0, -22], [110, 0, -22], [130, 0, -22]],
++        speed: 3.0,
++      },
+     ]
+   }
+ 
+@@ -140,43 +391,68 @@ export class TrafficSystem {
+     const routeDef = this.routes[Math.floor(Math.random() * this.routes.length)]
+     const points = routeDef.points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
+ 
+-    // Add some curve variation
++    // Add slight curve variation for natural movement
+     const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal')
+-    const geometry = this.#getVehicleGeometry(routeDef.type)
+-    const color = VEHICLE_COLORS[Math.floor(Math.random() * VEHICLE_COLORS.length)]
+-    const material = new THREE.MeshStandardMaterial({
+-      color,
+-      roughness: 0.6,
+-      metalness: 0.3,
+-    })
+ 
+-    const mesh = new THREE.Mesh(geometry, material)
+-    mesh.castShadow = true
+-    mesh.scale.setScalar(routeDef.type === VEHICLE_TYPES.CAR ? 1.5 : 1)
+-    this.group.add(mesh)
++    const sourceGroup = this.#getVehicleModel(routeDef.type)
++    const vehicleGroup = sourceGroup.clone(true)
++
++    // Randomize color for motorbikes
++    if (routeDef.type === VEHICLE_TYPES.MOTORBIKE) {
++      const color = MOTORBIKE_COLORS[Math.floor(Math.random() * MOTORBIKE_COLORS.length)]
++      vehicleGroup.children[0]?.material?.color?.set(color)
++    }
++
++    // Scale
++    const scale = routeDef.type === VEHICLE_TYPES.CAR ? 1.4 :
++                  routeDef.type === VEHICLE_TYPES.CYCLO ? 1.2 : 1.0
++    vehicleGroup.scale.setScalar(scale)
++
++    vehicleGroup.castShadow = true
++    this.group.add(vehicleGroup)
++
++    // Headlight for night driving
++    let headlight = null
++    if (routeDef.type === VEHICLE_TYPES.MOTORBIKE || routeDef.type === VEHICLE_TYPES.CAR) {
++      headlight = new THREE.PointLight(0xFFF8E7, 0, 8, 2)
++      headlight.position.set(0, 0.5, 0.5)
++      vehicleGroup.add(headlight)
++    }
+ 
+     const routeLength = curve.getLength()
+ 
+     this.vehicles.push({
+-      mesh,
++      group: vehicleGroup,
+       curve,
+       progress: 0,
+-      speed: routeDef.speed * (0.8 + Math.random() * 0.4),
++      speed: routeDef.speed * (0.75 + Math.random() * 0.5),
+       routeLength,
+       type: routeDef.type,
++      weavePhase: Math.random() * Math.PI * 2,
++      headlight,
++    })
++  }
++
++  #removeVehicle(index) {
++    const vehicle = this.vehicles[index]
++    this.group.remove(vehicle.group)
++    // Dispose cloned geometries/materials
++    vehicle.group.traverse((child) => {
++      if (child.isMesh) {
++        child.geometry?.dispose()
++        child.material?.dispose()
++      }
+     })
++    this.vehicles.splice(index, 1)
+   }
+ 
+-  #getVehicleGeometry(type) {
++  #getVehicleModel(type) {
+     switch (type) {
+-      case VEHICLE_TYPES.MOTORBIKE:
+-        return new THREE.BoxGeometry(0.4, 0.5, 0.8)
+-      case VEHICLE_TYPES.CAR:
+-        return new THREE.BoxGeometry(0.8, 0.6, 1.6)
+-      case VEHICLE_TYPES.BICYCLE:
+-        return new THREE.BoxGeometry(0.3, 0.4, 0.6)
+-      default:
+-        return new THREE.BoxGeometry(0.4, 0.5, 0.8)
++      case VEHICLE_TYPES.MOTORBIKE: return createMotorbikeGeometry()
++      case VEHICLE_TYPES.CAR: return createCarGeometry()
++      case VEHICLE_TYPES.BICYCLE: return createBicycleGeometry()
++      case VEHICLE_TYPES.CYCLO: return createCycloGeometry()
++      default: return createMotorbikeGeometry()
+     }
+   }
+ }
+diff --git a/src/world/sky/EnhancedSky.js b/src/world/sky/EnhancedSky.js
+index 0835634..f342d9d 100644
+--- a/src/world/sky/EnhancedSky.js
++++ b/src/world/sky/EnhancedSky.js
+@@ -1,9 +1,15 @@
+ import * as THREE from 'three'
+ 
+ /**
+- * EnhancedSky — gradient sky dome with animated sun disc, moon, stars,
+- * and procedural clouds.  Replaces GradientSky while keeping the same
+- * DayNightCycle integration via setTransition().
++ * EnhancedSky — Stylized Realistic sky for Hanoi.
++ *
++ * Features:
++ * - Warm gradient sky with Vietnamese atmosphere
++ * - Animated sun disc with golden hour glow
++ * - Moon and stars for night scenes
++ * - Procedural cumulus clouds with wind animation
++ * - Atmospheric haze layer near horizon
++ * - Monsoon-style cloud density variation
+  */
+ 
+ const VERTEX_SHADER = /* glsl */`
+@@ -30,12 +36,14 @@ const FRAGMENT_SHADER = /* glsl */`
+   uniform float starVisibility;
+   uniform float cloudDensity;
+   uniform float cloudSpeed;
++  uniform float hazeIntensity;
++  uniform vec3 hazeColor;
+   uniform float time;
+ 
+   varying vec3 vWorldPosition;
+   varying float vSkyHeight;
+ 
+-  // Simple hash for procedural effects
++  // ── Noise functions ──
+   float hash(vec2 p) {
+     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+   }
+@@ -54,94 +62,126 @@ const FRAGMENT_SHADER = /* glsl */`
+   float fbm(vec2 p) {
+     float v = 0.0;
+     float a = 0.5;
+-    for (int i = 0; i < 4; i++) {
++    vec2 shift = vec2(100.0);
++    for (int i = 0; i < 5; i++) {
+       v += a * noise(p);
+-      p *= 2.1;
++      p = p * 2.1 + shift;
+       a *= 0.5;
+     }
+     return v;
+   }
+ 
+-  // Stars
++  // ── Stars ──
+   float stars(vec3 dir) {
+-    vec3 p = dir * 300.0;
++    vec3 p = dir * 350.0;
+     vec2 uv = floor(vec2(atan(p.x, p.z) * 3.0, asin(dir.y) * 6.0));
+     float h = hash(uv);
+     float star = step(0.997, h);
+-    float twinkle = sin(time * 2.0 + h * 100.0) * 0.5 + 0.5;
+-    return star * twinkle * smoothstep(0.0, 0.3, dir.y);
++    float twinkle = sin(time * 1.8 + h * 80.0) * 0.5 + 0.5;
++    return star * twinkle * smoothstep(0.0, 0.35, dir.y);
+   }
+ 
+-  // Clouds
++  // ── Cloud layers ──
+   float cloudLayer(vec2 uv, float speed, float scale) {
+-    uv += vec2(speed * time, speed * 0.5 * time);
++    uv += vec2(speed * time, speed * 0.3 * time);
+     return fbm(uv * scale);
+   }
+ 
++  // High-altitude cirrus
++  float cirrus(vec2 uv) {
++    uv += vec2(time * 0.015, time * 0.005);
++    float c = fbm(uv * 3.0);
++    return smoothstep(0.45, 0.7, c) * 0.3;
++  }
++
+   void main() {
+     vec3 dir = normalize(vWorldPosition - cameraPosition);
+ 
+-    // Base gradient
+-    float gradient = smoothstep(-0.18, 0.72, vSkyHeight);
+-    float horizonHaze = 1.0 - smoothstep(-0.08, 0.2, abs(vSkyHeight));
++    // ── Base gradient ──
++    float gradient = smoothstep(-0.18, 0.75, vSkyHeight);
++    float horizonHaze = 1.0 - smoothstep(-0.05, 0.25, abs(vSkyHeight));
+     vec3 color = mix(horizonColor, topColor, gradient);
+-    color = mix(color, horizonColor * 1.04, horizonHaze * 0.24);
+ 
+-    // Sun disc + glow
+-    float sunDot = dot(dir, sunDirection);
+-    float sunDisc = smoothstep(0.9985, 0.9995, sunDot);
+-    float sunGlow = pow(max(0.0, sunDot), 32.0) * 0.6;
+-    float sunHalo = pow(max(0.0, sunDot), 8.0) * 0.2;
+-    color += sunColor * (sunDisc * sunIntensity * 3.0 + sunGlow * sunIntensity + sunHalo * sunIntensity * 0.5);
++    // Horizon glow — warm at golden hour, cool at blue hour
++    color = mix(color, horizonColor * 1.08, horizonHaze * 0.3);
+ 
+-    // Moon
++    // ── Sun disc + atmospheric glow ──
++    float sunDot = dot(dir, sunDirection);
++    float sunDisc = smoothstep(0.9988, 0.9996, sunDot);
++    float sunGlow = pow(max(0.0, sunDot), 24.0) * 0.7;
++    float sunHalo = pow(max(0.0, sunDot), 6.0) * 0.25;
++    float sunBleed = pow(max(0.0, sunDot), 2.0) * 0.08; // Wide atmospheric scatter
++    color += sunColor * (
++      sunDisc * sunIntensity * 3.5 +
++      sunGlow * sunIntensity +
++      sunHalo * sunIntensity * 0.5 +
++      sunBleed * sunIntensity
++    );
++
++    // ── Moon ──
+     float moonDot = dot(dir, moonDirection);
+-    float moonDisc = smoothstep(0.9990, 0.9997, moonDot);
+-    float moonGlow = pow(max(0.0, moonDot), 64.0) * 0.15;
+-    color += moonColor * (moonDisc * moonIntensity * 2.0 + moonGlow * moonIntensity);
++    float moonDisc = smoothstep(0.9992, 0.9998, moonDot);
++    float moonGlow = pow(max(0.0, moonDot), 80.0) * 0.18;
++    color += moonColor * (moonDisc * moonIntensity * 2.5 + moonGlow * moonIntensity);
+ 
+-    // Stars
++    // ── Stars ──
+     float s = stars(dir);
+-    color += vec3(0.9, 0.92, 1.0) * s * starVisibility;
++    color += vec3(0.92, 0.94, 1.0) * s * starVisibility;
+ 
+-    // Clouds
++    // ── Clouds ──
+     if (dir.y > 0.0) {
+-      vec2 cloudUV = dir.xz / (dir.y + 0.1);
+-      float cloud1 = cloudLayer(cloudUV, 0.008, 1.8);
+-      float cloud2 = cloudLayer(cloudUV + 5.0, 0.012, 3.2);
+-      float clouds = smoothstep(0.45 - cloudDensity * 0.2, 0.65 - cloudDensity * 0.15, cloud1);
+-      clouds += smoothstep(0.5 - cloudDensity * 0.15, 0.7 - cloudDensity * 0.1, cloud2) * 0.5;
++      vec2 cloudUV = dir.xz / (dir.y + 0.08);
++
++      // Low cumulus — thicker, more defined
++      float cloud1 = cloudLayer(cloudUV, 0.01, 1.6);
++      float cloud2 = cloudLayer(cloudUV + 4.0, 0.015, 2.8);
++
++      // High cirrus — thin wisps
++      float cirrusLayer = cirrus(cloudUV * 0.5);
++
++      float clouds = smoothstep(0.42 - cloudDensity * 0.22, 0.62 - cloudDensity * 0.15, cloud1);
++      clouds += smoothstep(0.48 - cloudDensity * 0.18, 0.68 - cloudDensity * 0.12, cloud2) * 0.5;
+       clouds = clamp(clouds, 0.0, 1.0);
++      clouds = max(clouds, cirrusLayer * cloudDensity);
+ 
+-      // Cloud color based on sun position
++      // Cloud coloring — varies with sun position
+       float sunHeight = sunDirection.y;
+-      vec3 cloudColor = mix(
+-        vec3(0.85, 0.6, 0.4),   // sunset clouds
+-        vec3(1.0, 1.0, 1.0),     // day clouds
+-        smoothstep(-0.1, 0.3, sunHeight)
+-      );
+-      cloudColor = mix(
+-        vec3(0.2, 0.25, 0.35),   // night clouds
+-        cloudColor,
+-        smoothstep(-0.15, 0.1, sunHeight)
+-      );
+-
+-      float cloudFade = smoothstep(0.0, 0.15, dir.y);
+-      color = mix(color, cloudColor, clouds * cloudFade * 0.65);
++      vec3 cloudBright = vec3(1.0, 0.98, 0.95);    // Daytime white
++      vec3 cloudSunset = vec3(0.95, 0.6, 0.35);     // Sunset orange
++      vec3 cloudNight = vec3(0.15, 0.18, 0.25);     // Night dark blue
++
++      vec3 cloudColor = mix(cloudNight, cloudBright, smoothstep(-0.15, 0.2, sunHeight));
++      cloudColor = mix(cloudColor, cloudSunset, smoothstep(0.0, -0.15, sunHeight) * 0.6);
++
++      // Lit undersides during golden hour
++      float goldenLit = smoothstep(0.0, -0.2, sunHeight) * smoothstep(-0.35, -0.15, sunHeight);
++      cloudColor = mix(cloudColor, vec3(1.0, 0.7, 0.4), goldenLit * 0.3);
++
++      float cloudFade = smoothstep(0.0, 0.12, dir.y);
++      color = mix(color, cloudColor, clouds * cloudFade * 0.7);
+     }
+ 
++    // ── Atmospheric haze ──
++    float hazeFactor = smoothstep(0.4, -0.1, vSkyHeight) * hazeIntensity;
++    color = mix(color, hazeColor, hazeFactor);
++
+     gl_FragColor = vec4(color, 1.0);
+   }
+ `
+ 
++function smoothstep(edge0, edge1, x) {
++  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
++  return t * t * (3 - 2 * t)
++}
++
+ export class EnhancedSky {
+-  constructor({ parent, radius = 142 }) {
++  constructor({ parent, radius = 148 }) {
+     this.geometry = new THREE.SphereGeometry(radius, 32, 16)
+     this.material = new THREE.ShaderMaterial({
+       name: 'EnhancedSky',
+       uniforms: {
+-        topColor: { value: new THREE.Color(0x40516b) },
+-        horizonColor: { value: new THREE.Color(0x718295) },
++        topColor: { value: new THREE.Color(0x4A6580) },
++        horizonColor: { value: new THREE.Color(0x8A9BB0) },
+         sunDirection: { value: new THREE.Vector3(0, 0.5, 1).normalize() },
+         sunColor: { value: new THREE.Color(0xffeedd) },
+         sunIntensity: { value: 1.0 },
+@@ -151,6 +191,8 @@ export class EnhancedSky {
+         starVisibility: { value: 0.0 },
+         cloudDensity: { value: 0.5 },
+         cloudSpeed: { value: 1.0 },
++        hazeIntensity: { value: 0.25 },
++        hazeColor: { value: new THREE.Color(0xC8B89A) }, // Warm Hanoi haze
+         time: { value: 0 },
+       },
+       vertexShader: VERTEX_SHADER,
+@@ -172,7 +214,6 @@ export class EnhancedSky {
+ 
+   /**
+    * Called by DayNightCycle to blend sky colors per phase.
+-   * We also drive sun/moon/stars/clouds from the phase info.
+    */
+   setTransition(fromTop, toTop, fromHorizon, toHorizon, amount) {
+     const u = this.material.uniforms
+@@ -181,7 +222,7 @@ export class EnhancedSky {
+   }
+ 
+   /**
+-   * Update sun/moon/stars based on game hour (0-24).
++   * Update sun/moon/stars/clouds based on game hour (0-24).
+    */
+   updateCelestials(gameHour, delta) {
+     this._elapsed += delta
+@@ -193,28 +234,48 @@ export class EnhancedSky {
+     const sunZ = Math.cos(sunAngle)
+     u.sunDirection.value.set(0.2, Math.max(-0.1, sunY), sunZ).normalize()
+ 
+-    // Sun intensity: bright during day, dim at dawn/dusk, off at night
++    // Sun intensity and color — warm golden in Hanoi
+     const sunHeight = sunY
+     u.sunIntensity.value = smoothstep(-0.1, 0.2, sunHeight)
+     u.sunColor.value.setHSL(
+-      0.08 + (1 - sunHeight) * 0.05,  // hue shifts red at sunset
+-      0.6 + (1 - sunHeight) * 0.3,     // more saturated at sunset
+-      0.85 - (1 - sunHeight) * 0.25,   // dimmer at sunset
++      0.07 + (1 - sunHeight) * 0.06,  // Hue: golden → orange at sunset
++      0.65 + (1 - sunHeight) * 0.25,   // More saturated at sunset
++      0.88 - (1 - sunHeight) * 0.3,    // Dimmer at sunset
+     )
+ 
+-    // Moon: opposite of sun
++    // Moon
+     const moonAngle = ((gameHour - 18) / 12) * Math.PI
+     const moonY = Math.sin(moonAngle)
+     const moonZ = Math.cos(moonAngle)
+     u.moonDirection.value.set(-0.15, Math.max(-0.1, moonY), -moonZ).normalize()
+-    u.moonIntensity.value = smoothstep(-0.05, 0.15, moonY) * (gameHour > 18 || gameHour < 6 ? 1 : 0)
++    u.moonIntensity.value = smoothstep(-0.05, 0.15, moonY) *
++      (gameHour > 18 || gameHour < 6 ? 1 : 0)
+ 
+-    // Stars: visible at night, fade at dawn/dusk
+-    u.starVisibility.value = smoothstep(0.1, -0.15, sunHeight) * smoothstep(20, 19, gameHour) +
++    // Stars
++    u.starVisibility.value =
++      smoothstep(0.1, -0.15, sunHeight) * smoothstep(20, 19, gameHour) +
+       smoothstep(0.1, -0.15, sunHeight) * smoothstep(5, 6, gameHour)
+ 
+-    // Cloud density varies by time
+-    u.cloudDensity.value = 0.45 + Math.sin(gameHour * 0.5) * 0.15
++    // Cloud density — Hanoi can be quite cloudy
++    u.cloudDensity.value = 0.48 + Math.sin(gameHour * 0.4) * 0.18
++
++    // Haze — thicker during day (humidity), thinner at night
++    const dayFactor = smoothstep(6, 10, gameHour) * (1 - smoothstep(16, 19, gameHour))
++    u.hazeIntensity.value = 0.15 + dayFactor * 0.2
++
++    // Haze color — warm during day, cool at night
++    const isNight = gameHour > 19 || gameHour < 5.5
++    if (isNight) {
++      u.hazeColor.value.set(0.12, 0.14, 0.2)
++    } else {
++      const golden = smoothstep(16, 17, gameHour) * (1 - smoothstep(17.5, 18.5, gameHour))
++      u.hazeColor.value.set(
++        0.78 + golden * 0.2,
++        0.72 + golden * 0.1,
++        0.58 - golden * 0.1,
++      )
++    }
++
+     u.time.value = this._elapsed
+   }
+ 
+@@ -233,8 +294,3 @@ export class EnhancedSky {
+     this.material.dispose()
+   }
+ }
+-
+-function smoothstep(edge0, edge1, x) {
+-  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+-  return t * t * (3 - 2 * t)
+-}
+diff --git a/src/world/style/HanoiVisualTokens.js b/src/world/style/HanoiVisualTokens.js
+index d9511e1..6183828 100644
+--- a/src/world/style/HanoiVisualTokens.js
++++ b/src/world/style/HanoiVisualTokens.js
+@@ -1,5 +1,9 @@
+ /**
+- * Shared art direction for “Hà Nội Low-Poly Đồng Bộ”.
++ * Shared art direction for "Hà Nội Stylized Realistic — Street Life Edition".
++ *
++ * Warm, saturated Vietnamese palette inspired by real Hanoi:
++ * golden yellows, aged cream, terracotta reds, deep greens,
++ * weathered stone, and lantern-lit night atmospheres.
+  *
+  * Keep authored geometry and gameplay data outside this module. Builders consume
+  * these tokens so a facade, landmark or prop never invents its own visual
+@@ -7,114 +11,194 @@
+  */
+ export const HANOI_VISUAL_TOKENS = Object.freeze({
+   colors: Object.freeze({
+-    limeYellow: 0xcda765,
+-    agedCream: 0xe2d5ba,
+-    brickRed: 0x995343,
+-    doorGreen: 0x315f57,
+-    foliageGreen: 0x506d58,
+-    warmStone: 0xaaa79d,
+-    charcoal: 0x34393a,
+-    lakeWater: 0x35646c,
+-    lampYellow: 0xe7ac62,
+-    blueHour: 0x53647b,
++    // ── Primary Vietnamese palette ──
++    limeYellow: 0xE8C86A,       // Vàng tường Hà Nội — warm golden yellow
++    agedCream: 0xF0E2C8,        // Kem cũ — warm ivory, aged plaster
++    brickRed: 0xB85A3C,         // Gạch đỏ — terracotta, not too saturated
++    doorGreen: 0x2D5A4E,        // Xanh cửa — deep teal green (traditional doors)
++    foliageGreen: 0x3D6B3A,     // Xanh lá cây — lush tropical green
++    warmStone: 0xC4B89A,        // Đá ấm — weathered limestone
++    charcoal: 0x2E3334,         // Than — deep charcoal for shadows
++    lakeWater: 0x1E5A66,        // Xanh nước hồ — deep teal, Hoan Kiem
++    lampYellow: 0xF5BE58,       // Vàng đèn — warm amber lamp
++    blueHour: 0x4A5D78,         // Giờ xanh — twilight blue
++
++    // ── Extended Vietnamese palette ──
++    terracotta: 0xC46D3A,       // Ngói đất nung — roof tile
++    mossyGreen: 0x4A6B42,       // Xanh rêu — moss on old walls
++    silkWhite: 0xF5EDE0,        // Trắng lụa — áo dài white
++    lacquerRed: 0xA02020,       // Sơn mài đỏ — traditional lacquer
++    bambooYellow: 0xD4A84B,     // Vàng tre — bamboo/scaffolding
++    concreteGray: 0x9A9590,     // Xám bê tông — modern concrete
++    wetAsphalt: 0x4A4E52,       // Đường nhựa ướt — after rain
++    nightSky: 0x1A2538,         // Trời đêm — deep navy
++    lanternRed: 0xE83030,       // Đèn lồng đỏ — vibrant lantern red
++    lanternGold: 0xF5A623,      // Đèn lồng vàng — golden lantern
++    phoSteam: 0xE8DDD0,         // Khói phở — warm steam white
++    aoDaiWhite: 0xF2EBE0,       // Áo dài — slightly warm white
++    nonLaYellow: 0xDCC68A,      // Nón lá — straw yellow
+   }),
+   materials: Object.freeze({
+-    masonry: Object.freeze({ roughness: 0.9, metalness: 0 }),
+-    paintedWood: Object.freeze({ roughness: 0.82, metalness: 0 }),
+-    stone: Object.freeze({ roughness: 0.94, metalness: 0 }),
+-    metal: Object.freeze({ roughness: 0.62, metalness: 0.34 }),
+-    glass: Object.freeze({ roughness: 0.38, metalness: 0.03 }),
+-    water: Object.freeze({ roughness: 0.34, metalness: 0.06 }),
+-    emissive: Object.freeze({ intensity: 0.62 }),
++    // ── Stylized PBR materials — rougher, more character ──
++    masonry: Object.freeze({ roughness: 0.92, metalness: 0.02 }),
++    paintedWood: Object.freeze({ roughness: 0.78, metalness: 0.02 }),
++    stone: Object.freeze({ roughness: 0.95, metalness: 0.01 }),
++    metal: Object.freeze({ roughness: 0.55, metalness: 0.42 }),
++    glass: Object.freeze({ roughness: 0.28, metalness: 0.05 }),
++    water: Object.freeze({ roughness: 0.22, metalness: 0.08 }),
++    emissive: Object.freeze({ intensity: 0.75 }),
++
++    // ── New Vietnamese-specific materials ──
++    roofTile: Object.freeze({ roughness: 0.88, metalness: 0.03 }),       // Ngói đỏ
++    agedPlaster: Object.freeze({ roughness: 0.96, metalness: 0.0 }),     // Tường vôi cũ
++    woodenShutter: Object.freeze({ roughness: 0.82, metalness: 0.02 }),  // Cửa chớp gỗ
++    ironRailing: Object.freeze({ roughness: 0.48, metalness: 0.55 }),    // Lan can sắt
++    marbleFloor: Object.freeze({ roughness: 0.35, metalness: 0.08 }),    // Sàn đá cẩm thạch
++    ceramicTile: Object.freeze({ roughness: 0.42, metalness: 0.04 }),    // Gạch men
++    concrete: Object.freeze({ roughness: 0.88, metalness: 0.02 }),       // Bê tông
++    asphalt: Object.freeze({ roughness: 0.92, metalness: 0.0 }),         // Đường nhựa
++    silkFabric: Object.freeze({ roughness: 0.45, metalness: 0.02 }),     // Lụa
++    bamboo: Object.freeze({ roughness: 0.72, metalness: 0.02 }),         // Tre
+   }),
+   facadeKits: Object.freeze([
+     Object.freeze({
+       id: 'narrow-bay',
+       bayCount: 2,
+-      recess: 0.18,
++      recess: 0.22,
+       balcony: 'alternating',
+       roofline: 'parapet',
+     }),
+     Object.freeze({
+       id: 'recessed-shop',
+       bayCount: 3,
+-      recess: 0.28,
++      recess: 0.32,
+       balcony: 'none',
+       roofline: 'cornice',
+     }),
+     Object.freeze({
+       id: 'balcony-stack',
+       bayCount: 2,
+-      recess: 0.14,
++      recess: 0.18,
+       balcony: 'stacked',
+       roofline: 'stepped',
+     }),
+     Object.freeze({
+       id: 'shutter-house',
+       bayCount: 3,
+-      recess: 0.12,
++      recess: 0.15,
+       balcony: 'sparse',
+       roofline: 'tile',
+     }),
+     Object.freeze({
+       id: 'cafe-awning',
+       bayCount: 2,
+-      recess: 0.32,
++      recess: 0.36,
+       balcony: 'single',
+       roofline: 'cornice',
+     }),
+     Object.freeze({
+       id: 'stepped-roof',
+       bayCount: 3,
+-      recess: 0.2,
++      recess: 0.24,
+       balcony: 'alternating',
+       roofline: 'stepped',
+     }),
++    Object.freeze({
++      id: 'tube-house',            // Nhà ống classic — very narrow, very tall
++      bayCount: 1,
++      recess: 0.12,
++      balcony: 'stacked',
++      roofline: 'tile',
++    }),
++    Object.freeze({
++      id: 'colonial-french',       // Kiểu Pháp — wider, ornate
++      bayCount: 3,
++      recess: 0.28,
++      balcony: 'alternating',
++      roofline: 'parapet',
++    }),
+   ]),
+   signFamilies: Object.freeze([
+     Object.freeze({
+       id: 'painted-green',
+-      background: '#315F57',
+-      foreground: '#E2D5BA',
++      background: '#2D5A4E',
++      foreground: '#F0E2C8',
+       trim: 'agedCream',
+     }),
+     Object.freeze({
+       id: 'brick-panel',
+-      background: '#995343',
+-      foreground: '#F0DDAE',
++      background: '#B85A3C',
++      foreground: '#F5EDE0',
+       trim: 'brick',
+     }),
+     Object.freeze({
+       id: 'cream-letterboard',
+-      background: '#CDA765',
+-      foreground: '#34393A',
++      background: '#E8C86A',
++      foreground: '#2E3334',
+       trim: 'stoneWarm',
+     }),
++    Object.freeze({
++      id: 'lacquer-gold',
++      background: '#A02020',
++      foreground: '#F5BE58',
++      trim: 'lacquer',
++    }),
++    Object.freeze({
++      id: 'modern-white',
++      background: '#F5EDE0',
++      foreground: '#2E3334',
++      trim: 'concrete',
++    }),
+   ]),
+   treeVariants: Object.freeze([
+     Object.freeze({
+       id: 'compact',
+-      crownScale: [1.35, 1.15, 1.2],
++      crownScale: [1.45, 1.25, 1.3],
+       crownOffset: [0.18, 0, 0.12],
+-      secondaryScale: 0.64,
++      secondaryScale: 0.68,
+     }),
+     Object.freeze({
+       id: 'street-canopy',
+-      crownScale: [1.65, 1.2, 1.35],
++      crownScale: [1.75, 1.3, 1.45],
+       crownOffset: [-0.22, 0.08, 0],
+-      secondaryScale: 0.72,
++      secondaryScale: 0.76,
+     }),
+     Object.freeze({
+       id: 'lake-canopy',
+-      crownScale: [1.85, 1.35, 1.5],
++      crownScale: [1.95, 1.45, 1.6],
+       crownOffset: [-0.28, 0.12, 0.18],
+-      secondaryScale: 0.68,
++      secondaryScale: 0.72,
++    }),
++    Object.freeze({
++      id: 'tropical-palm',       // Cọ — iconic Vietnamese tree
++      crownScale: [0.8, 2.2, 0.8],
++      crownOffset: [0, 0.4, 0],
++      secondaryScale: 0.5,
+     }),
+   ]),
+   benchVariants: Object.freeze([
+     Object.freeze({ id: 'stone', seat: 'stoneLight', back: 'stoneWarm', legs: 'stoneDark' }),
+     Object.freeze({ id: 'wood-metal', seat: 'wood', back: 'wood', legs: 'metal' }),
++    Object.freeze({ id: 'plastic-street', seat: 'stoneLight', back: 'stoneLight', legs: 'metal' }), // Ghế nhựa vỉa hè
+   ]),
++  // ── Vietnamese street props ──
++  streetProps: Object.freeze({
++    motorbikeColors: Object.freeze([
++      0x2E3334, 0x4A4E52, 0x8B1A1A, 0x1A3A6B,
++      0xF5EDE0, 0x3D6B3A, 0xA02020, 0xDCC68A,
++      0x6B4226, 0x1A1A2E,
++    ]),
++    vendorCartColors: Object.freeze([
++      0xB85A3C, 0xE8C86A, 0x2D5A4E, 0xA02020,
++    ]),
++    lanternStringColors: Object.freeze([
++      0xE83030, // Đỏ
++      0xF5A623, // Vàng
++      0xFF6B35, // Cam
++      0xE83030, // Đỏ (more red than others)
++      0xF5BE58, // Vàng ấm
++    ]),
++  }),
+ })
+ 
+ export const HANOI_COLORS = HANOI_VISUAL_TOKENS.colors
+diff --git a/src/world/style/StylizedMaterials.js b/src/world/style/StylizedMaterials.js
+new file mode 100644
+index 0000000..d76935c
+--- /dev/null
++++ b/src/world/style/StylizedMaterials.js
+@@ -0,0 +1,335 @@
++import * as THREE from 'three'
++import { HANOI_COLORS } from './HanoiVisualTokens.js'
++
++/**
++ * StylizedMaterials — Vietnamese street-life material library.
++ *
++ * Each material is a MeshStandardMaterial tuned for the "Stylized Realistic"
++ * look: warm colors, visible weathering, and character. Materials use
++ * procedural noise in the fragment shader to add surface variation without
++ * external textures.
++ */
++
++// ── Shared procedural weathering shader chunk ──
++const WEATHERING_CHUNK = /* glsl */`
++  // Procedural noise for surface variation
++  float hash(vec2 p) {
++    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
++  }
++
++  float noise(vec2 p) {
++    vec2 i = floor(p);
++    vec2 f = fract(p);
++    f = f * f * (3.0 - 2.0 * f);
++    float a = hash(i);
++    float b = hash(i + vec2(1.0, 0.0));
++    float c = hash(i + vec2(0.0, 1.0));
++    float d = hash(i + vec2(1.0, 1.0));
++    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
++  }
++
++  float fbm(vec2 p) {
++    float v = 0.0;
++    float a = 0.5;
++    for (int i = 0; i < 3; i++) {
++      v += a * noise(p);
++      p *= 2.03;
++      a *= 0.5;
++    }
++    return v;
++  }
++`
++
++/**
++ * Create a weathered plaster material — yellow/cream walls with rain streaks.
++ */
++export function createWeatheredPlaster(baseColor = HANOI_COLORS.limeYellow) {
++  const mat = new THREE.MeshStandardMaterial({
++    color: baseColor,
++    roughness: 0.94,
++    metalness: 0.01,
++  })
++
++  mat.onBeforeCompile = (shader) => {
++    shader.uniforms.uTime = { value: 0 }
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <common>',
++      `#include <common>
++       ${WEATHERING_CHUNK}
++      `,
++    )
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <dithering_fragment>',
++      `
++       // Rain streaks — vertical darkening
++       vec2 streakUV = vUv * vec2(8.0, 2.0);
++       float streak = fbm(streakUV + vec2(0.0, 0.3));
++       streak = smoothstep(0.35, 0.65, streak);
++
++       // Bottom dampness
++       float dampness = smoothstep(0.4, 0.0, vUv.y) * 0.25;
++
++       // Corner darkening
++       float cornerDark = smoothstep(0.5, 0.0, min(vUv.x, 1.0 - vUv.x)) * 0.12;
++
++       // Apply weathering
++       gl_FragColor.rgb *= 1.0 - (streak * 0.12 + dampness + cornerDark);
++       gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vec3(0.92, 0.94, 0.96), streak * 0.15);
++
++       #include <dithering_fragment>
++      `,
++    )
++    mat.userData.shader = shader
++  }
++
++  return mat
++}
++
++/**
++ * Create a roof tile material — terracotta with weathering.
++ */
++export function createRoofTile(baseColor = HANOI_COLORS.terracotta) {
++  const mat = new THREE.MeshStandardMaterial({
++    color: baseColor,
++    roughness: 0.88,
++    metalness: 0.03,
++  })
++
++  mat.onBeforeCompile = (shader) => {
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <common>',
++      `#include <common>
++       ${WEATHERING_CHUNK}
++      `,
++    )
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <dithering_fragment>',
++      `
++       // Tile row pattern
++       vec2 tileUV = vUv * vec2(12.0, 6.0);
++       float row = step(0.5, fract(tileUV.y));
++       float tileShift = row * 0.5;
++       float tile = step(0.55, fract(tileUV.x + tileShift));
++
++       // Weathering — moss and darkening at edges
++       float weathering = fbm(vUv * 4.0) * 0.18;
++       float moss = smoothstep(0.6, 0.8, fbm(vUv * 8.0 + 3.0)) * 0.1;
++
++       gl_FragColor.rgb *= 1.0 - tile * 0.04 - weathering - moss;
++       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.35, 0.45, 0.3), moss * 0.5);
++
++       #include <dithering_fragment>
++      `,
++    )
++    mat.userData.shader = shader
++  }
++
++  return mat
++}
++
++/**
++ * Create an aged wood material — shutters, doors.
++ */
++export function createAgedWood(baseColor = 0x5A4230) {
++  const mat = new THREE.MeshStandardMaterial({
++    color: baseColor,
++    roughness: 0.82,
++    metalness: 0.02,
++  })
++
++  mat.onBeforeCompile = (shader) => {
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <common>',
++      `#include <common>
++       ${WEATHERING_CHUNK}
++      `,
++    )
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <dithering_fragment>',
++      `
++       // Wood grain
++       float grain = noise(vUv * vec2(2.0, 16.0)) * 0.08;
++
++       // Paint peeling
++       float peel = smoothstep(0.55, 0.7, fbm(vUv * 6.0)) * 0.15;
++
++       gl_FragColor.rgb += grain - 0.04;
++       gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vec3(0.7, 0.6, 0.5), peel);
++
++       #include <dithering_fragment>
++      `,
++    )
++    mat.userData.shader = shader
++  }
++
++  return mat
++}
++
++/**
++ * Create wet asphalt material — roads after rain.
++ */
++export function createWetAsphalt() {
++  return new THREE.MeshStandardMaterial({
++    color: HANOI_COLORS.wetAsphalt,
++    roughness: 0.55,
++    metalness: 0.08,
++  })
++}
++
++/**
++ * Create concrete sidewalk material.
++ */
++export function createSidewalk() {
++  const mat = new THREE.MeshStandardMaterial({
++    color: HANOI_COLORS.concreteGray,
++    roughness: 0.9,
++    metalness: 0.02,
++  })
++
++  mat.onBeforeCompile = (shader) => {
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <common>',
++      `#include <common>
++       ${WEATHERING_CHUNK}
++      `,
++    )
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <dithering_fragment>',
++      `
++       // Tile pattern for sidewalk
++       vec2 pavingUV = vUv * 16.0;
++       float pavingLine = smoothstep(0.48, 0.5, fract(pavingUV.x)) + smoothstep(0.48, 0.5, fract(pavingUV.y));
++       pavingLine = min(pavingLine, 1.0);
++
++       // Stain and dirt
++       float stain = fbm(vUv * 5.0 + 7.0) * 0.1;
++
++       gl_FragColor.rgb -= pavingLine * 0.04 + stain;
++
++       #include <dithering_fragment>
++      `,
++    )
++    mat.userData.shader = shader
++  }
++
++  return mat
++}
++
++/**
++ * Create glass with warm reflection — shop windows.
++ */
++export function createShopGlass() {
++  return new THREE.MeshStandardMaterial({
++    color: 0x6B8A9E,
++    roughness: 0.18,
++    metalness: 0.12,
++    transparent: true,
++    opacity: 0.72,
++    emissive: 0xF5BE58,
++    emissiveIntensity: 0.08,
++  })
++}
++
++/**
++ * Create lantern material — glowing paper lantern.
++ */
++export function createLanternMaterial(color = HANOI_COLORS.lanternRed) {
++  return new THREE.MeshStandardMaterial({
++    color,
++    emissive: color,
++    emissiveIntensity: 0.65,
++    transparent: true,
++    opacity: 0.88,
++    roughness: 0.4,
++    metalness: 0.0,
++    side: THREE.DoubleSide,
++  })
++}
++
++/**
++ * Create metal railing material — iron with rust.
++ */
++export function createIronRailing() {
++  const mat = new THREE.MeshStandardMaterial({
++    color: 0x3A3A3A,
++    roughness: 0.52,
++    metalness: 0.55,
++  })
++
++  mat.onBeforeCompile = (shader) => {
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <common>',
++      `#include <common>
++       ${WEATHERING_CHUNK}
++      `,
++    )
++    shader.fragmentShader = shader.fragmentShader.replace(
++      '#include <dithering_fragment>',
++      `
++       // Rust patches
++       float rust = smoothstep(0.6, 0.8, fbm(vUv * 10.0)) * 0.2;
++       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.45, 0.25, 0.12), rust);
++
++       #include <dithering_fragment>
++      `,
++    )
++    mat.userData.shader = shader
++  }
++
++  return mat
++}
++
++/**
++ * Material cache — reuse materials across the scene.
++ */
++export class MaterialLibrary {
++  constructor() {
++    this._cache = new Map()
++  }
++
++  get(key, factory) {
++    if (!this._cache.has(key)) {
++      this._cache.set(key, factory())
++    }
++    return this._cache.get(key)
++  }
++
++  weatheredPlaster(color) {
++    return this.get(`plaster-${color}`, () => createWeatheredPlaster(color))
++  }
++
++  roofTile(color) {
++    return this.get(`roof-${color}`, () => createRoofTile(color))
++  }
++
++  agedWood(color) {
++    return this.get(`wood-${color}`, () => createAgedWood(color))
++  }
++
++  wetAsphalt() {
++    return this.get('asphalt-wet', createWetAsphalt)
++  }
++
++  sidewalk() {
++    return this.get('sidewalk', createSidewalk)
++  }
++
++  shopGlass() {
++    return this.get('shop-glass', createShopGlass)
++  }
++
++  lantern(color) {
++    return this.get(`lantern-${color}`, () => createLanternMaterial(color))
++  }
++
++  ironRailing() {
++    return this.get('iron-railing', createIronRailing)
++  }
++
++  dispose() {
++    for (const mat of this._cache.values()) {
++      mat.dispose()
++    }
++    this._cache.clear()
++  }
++}
+diff --git a/test/DayNightCycle.test.js b/test/DayNightCycle.test.js
+index 62f8fcc..db2566a 100644
+--- a/test/DayNightCycle.test.js
++++ b/test/DayNightCycle.test.js
+@@ -51,15 +51,15 @@ test('day palette dims practical lights and updates all outdoor light types', ()
+     lighting: { outdoor: outdoor.context },
+   })
+ 
+-  closeTo(outdoor.ambient.intensity, 0.62)
+-  closeTo(outdoor.hemisphere.intensity, 1.25)
+-  closeTo(outdoor.directional.intensity, 2.05)
+-  closeTo(outdoor.rim.intensity, 0.2)
++  closeTo(outdoor.ambient.intensity, 0.65)
++  closeTo(outdoor.hemisphere.intensity, 1.3)
++  closeTo(outdoor.directional.intensity, 2.15)
++  closeTo(outdoor.rim.intensity, 0.22)
+   closeTo(outdoor.point.intensity, 0)
+   closeTo(outdoor.spot.intensity, 0)
+-  closeTo(outdoor.emissive.emissiveIntensity, 0.14)
+-  closeTo(scene.fog.near, 78)
+-  closeTo(scene.fog.far, 145)
++  closeTo(outdoor.emissive.emissiveIntensity, 0.125)
++  closeTo(scene.fog.near, 75)
++  closeTo(scene.fog.far, 142)
+   assert.equal(cycle.phase, 'day')
+ })
+ 
+@@ -76,9 +76,9 @@ test('night remains readable and restores warm practical lighting', () => {
+   assert.ok(outdoor.ambient.intensity >= 0.6)
+   assert.ok(outdoor.hemisphere.intensity >= 0.75)
+   assert.ok(outdoor.rim.intensity >= 0.4)
+-  closeTo(outdoor.point.intensity, 6)
+-  closeTo(outdoor.spot.intensity, 12)
+-  closeTo(outdoor.emissive.emissiveIntensity, 0.672)
++  closeTo(outdoor.point.intensity, 6 * 1.08)
++  closeTo(outdoor.spot.intensity, 12 * 1.08)
++  closeTo(outdoor.emissive.emissiveIntensity, 0.6 * 1.18)
+   assert.equal(cycle.phase, 'night')
+ })
+ 
+@@ -96,8 +96,8 @@ test('dawn transition interpolates without replacing scene atmosphere objects',
+     lighting: { outdoor: outdoor.context },
+   })
+ 
+-  closeTo(outdoor.directional.intensity, (0.42 + 1.18) / 2)
+-  closeTo(outdoor.point.intensity, 10 * ((1 + 0.28) / 2))
++  closeTo(outdoor.directional.intensity, (0.38 + 1.25) / 2)
++  closeTo(outdoor.point.intensity, 10 * ((1.08 + 0.3) / 2))
+   assert.equal(scene.background, originalBackground)
+   assert.equal(scene.fog, originalFog)
+ 
+@@ -151,11 +151,11 @@ test('Ba Dinh and Long Bien use outdoor lighting without rejecting area changes'
+ 
+   cycle.update('baDinh')
+   assert.equal(cycle.area, 'baDinh')
+-  closeTo(baDinh.directional.intensity, 2.05)
++  closeTo(baDinh.directional.intensity, 2.15)
+ 
+   cycle.update('longBien')
+   assert.equal(cycle.area, 'longBien')
+-  closeTo(longBien.hemisphere.intensity, 1.25)
++  closeTo(longBien.hemisphere.intensity, 1.3)
+ })
+ 
+ test('light and material descriptors can override captured base intensity', () => {
+@@ -174,8 +174,8 @@ test('light and material descriptors can override captured base intensity', () =
+     },
+   })
+ 
+-  closeTo(light.intensity, 4)
+-  closeTo(material.emissiveIntensity, 0.25 * 1.12)
++  closeTo(light.intensity, 4 * 1.08)
++  closeTo(material.emissiveIntensity, 0.25 * 1.18)
+   cycle.update()
+ })
+ 
+@@ -298,7 +298,7 @@ test('lake reflection and water roughness respond to photographic phases', () =>
+   const water = new THREE.MeshStandardMaterial({
+     emissive: 0x111111,
+     emissiveIntensity: 0.18,
+-    roughness: 0.36,
++    roughness: 0.38,
+   })
+   const cycle = new DayNightCycle({
+     scene,
+diff --git a/test/HanoiVisualTokens.test.js b/test/HanoiVisualTokens.test.js
+index 6f8a8f2..e3cbed4 100644
+--- a/test/HanoiVisualTokens.test.js
++++ b/test/HanoiVisualTokens.test.js
+@@ -10,39 +10,52 @@ import {
+ 
+ test('Hà Nội visual tokens expose the approved shared palette', () => {
+   assert.deepEqual(HANOI_VISUAL_TOKENS.colors, {
+-    limeYellow: 0xcda765,
+-    agedCream: 0xe2d5ba,
+-    brickRed: 0x995343,
+-    doorGreen: 0x315f57,
+-    foliageGreen: 0x506d58,
+-    warmStone: 0xaaa79d,
+-    charcoal: 0x34393a,
+-    lakeWater: 0x35646c,
+-    lampYellow: 0xe7ac62,
+-    blueHour: 0x53647b,
++    limeYellow: 0xE8C86A,
++    agedCream: 0xF0E2C8,
++    brickRed: 0xB85A3C,
++    doorGreen: 0x2D5A4E,
++    foliageGreen: 0x3D6B3A,
++    warmStone: 0xC4B89A,
++    charcoal: 0x2E3334,
++    lakeWater: 0x1E5A66,
++    lampYellow: 0xF5BE58,
++    blueHour: 0x4A5D78,
++    terracotta: 0xC46D3A,
++    mossyGreen: 0x4A6B42,
++    silkWhite: 0xF5EDE0,
++    lacquerRed: 0xA02020,
++    bambooYellow: 0xD4A84B,
++    concreteGray: 0x9A9590,
++    wetAsphalt: 0x4A4E52,
++    nightSky: 0x1A2538,
++    lanternRed: 0xE83030,
++    lanternGold: 0xF5A623,
++    phoSteam: 0xE8DDD0,
++    aoDaiWhite: 0xF2EBE0,
++    nonLaYellow: 0xDCC68A,
+   })
+ })
+ 
+ test('facades, signs and props have bounded reusable style variants', () => {
+-  assert.equal(HANOI_VISUAL_TOKENS.facadeKits.length, 6)
+-  assert.equal(HANOI_VISUAL_TOKENS.signFamilies.length, 3)
+-  assert.equal(HANOI_VISUAL_TOKENS.treeVariants.length, 3)
+-  assert.equal(HANOI_VISUAL_TOKENS.benchVariants.length, 2)
+-  assert.equal(getFacadeKit(6), getFacadeKit(0))
+-  assert.equal(getSignFamily(3), getSignFamily(0))
+-  assert.equal(getTreeVariant(3), getTreeVariant(0))
+-  assert.equal(getBenchVariant(2), getBenchVariant(0))
++  assert.equal(HANOI_VISUAL_TOKENS.facadeKits.length, 8)
++  assert.equal(HANOI_VISUAL_TOKENS.signFamilies.length, 5)
++  assert.equal(HANOI_VISUAL_TOKENS.treeVariants.length, 4)
++  assert.equal(HANOI_VISUAL_TOKENS.benchVariants.length, 3)
++  assert.equal(getFacadeKit(8), getFacadeKit(0))
++  assert.equal(getSignFamily(5), getSignFamily(0))
++  assert.equal(getTreeVariant(4), getTreeVariant(0))
++  assert.equal(getBenchVariant(3), getBenchVariant(0))
+ })
+ 
+-test('shared material families remain matte and low-poly friendly', () => {
++test('shared material families remain matte and stylized', () => {
+   for (const descriptor of Object.values(HANOI_VISUAL_TOKENS.materials)) {
+     if ('roughness' in descriptor) {
+-      assert.ok(descriptor.roughness >= 0.3)
++      assert.ok(descriptor.roughness >= 0.15)
+       assert.ok(descriptor.roughness <= 1)
+     }
+     if ('metalness' in descriptor) {
+       assert.ok(descriptor.metalness >= 0)
+-      assert.ok(descriptor.metalness <= 0.4)
++      assert.ok(descriptor.metalness <= 0.6)
+     }
+   }
+ })
+-- 
+2.43.0
+
+
+From 82a3987e2b3dfe3c4f21c234e6d416ff1442f955 Mon Sep 17 00:00:00 2001
+From: Hanoi Pixel Tour Dev <dev@hanoi-pixel-tour.vn>
+Date: Wed, 29 Jul 2026 18:52:02 +0800
+Subject: [PATCH 2/2] =?UTF-8?q?feat:=20Stylized=20Realistic=20=E2=80=94=20?=
+ =?UTF-8?q?full=20visual=20overhaul?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Major geometry changes:
+- EnhancedSky now ACTIVE (replaced GradientSky) — animated sun, moon,
+  stars, cumulus+cirrus clouds, atmospheric haze
+- VietnameseGeometryBuilder — detailed trees (multi-canopy with trunk,
+  branches, 4-layer foliage), street lamps (pole+arm+shade+bulb+pool),
+  benches, vendor carts, lake edges
+- 18 detailed trees added along streets and plaza
+- 6 detailed street lamps with warm light pools
+- 4 stone benches along streets
+- 2 vendor carts with canopies
+- Buildings now have balconies with iron railings and potted plants
+- Motorbikes have exhaust pipes, luggage racks, tail lights
+
+Atmosphere:
+- Thick atmospheric fog (near=40, far=95) — dramatic depth
+- Strong bloom (0.7 strength, 0.8 radius) — lights glow warmly
+- Warm sky (0x8AA8C0) — humid Hanoi atmosphere
+- EnhancedSky drives sun/moon/stars/clouds animation
+
+Tests: 298/298 pass, build OK
+---
+ src/core/PostProcessing.js                   |   8 +-
+ src/core/Renderer.js                         |   4 +-
+ src/world/ChurchDistrict.js                  |  67 ++-
+ src/world/props/StreetProps.js               |  71 ++-
+ src/world/style/VietnameseGeometryBuilder.js | 530 +++++++++++++++++++
+ 5 files changed, 664 insertions(+), 16 deletions(-)
+ create mode 100644 src/world/style/VietnameseGeometryBuilder.js
+
+diff --git a/src/core/PostProcessing.js b/src/core/PostProcessing.js
+index 85c3ef0..c08d4e9 100644
+--- a/src/core/PostProcessing.js
++++ b/src/core/PostProcessing.js
+@@ -161,12 +161,12 @@ export class PostProcessing {
+     this.renderPass = new RenderPass(scene, camera)
+     this.composer.addPass(this.renderPass)
+ 
+-    // Bloom — makes emissive lights (lamps, lanterns, signs) glow
++    // Bloom — strong glow on all lights and emissive surfaces
+     this.bloomPass = new UnrealBloomPass(
+       new THREE.Vector2(size.x, size.y),
+-      0.4,   // strength — slightly stronger than before
+-      0.6,   // radius — wider bloom
+-      0.75,  // threshold — catch more light sources
++      0.7,   // strength — strong bloom
++      0.8,   // radius — wide glow
++      0.6,   // threshold — catch most light sources
+     )
+     this.composer.addPass(this.bloomPass)
+ 
+diff --git a/src/core/Renderer.js b/src/core/Renderer.js
+index ba63f87..5197a9e 100644
+--- a/src/core/Renderer.js
++++ b/src/core/Renderer.js
+@@ -6,8 +6,8 @@ const OUTDOOR_VIEW_DISTANCE = 150
+ export class Renderer {
+   constructor(container) {
+     this.scene = new THREE.Scene()
+-    this.scene.background = new THREE.Color(0x7A9AB8)  // Warmer Hanoi sky
+-    this.scene.fog = new THREE.Fog(0x98ABB8, 68, 140)  // Warm haze
++    this.scene.background = new THREE.Color(0x8AA8C0)  // Warm humid Hanoi sky
++    this.scene.fog = new THREE.Fog(0xA0B0B8, 40, 95)   // Thick atmospheric haze — close fog
+ 
+     this.camera = new THREE.PerspectiveCamera(
+       68,
+diff --git a/src/world/ChurchDistrict.js b/src/world/ChurchDistrict.js
+index 00609a5..f444d10 100644
+--- a/src/world/ChurchDistrict.js
++++ b/src/world/ChurchDistrict.js
+@@ -27,7 +27,8 @@ import { ShopManager } from './shops/ShopManager.js'
+ import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
+ import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
+ import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
+-import { GradientSky } from './sky/GradientSky.js'
++import { EnhancedSky } from './sky/EnhancedSky.js'
++import { VietnameseGeometryBuilder } from './style/VietnameseGeometryBuilder.js'
+ 
+ const OUTDOOR_SKY = 0x53647b
+ const INTERIOR_SKY = 0x17191b
+@@ -67,7 +68,7 @@ export class ChurchDistrict {
+     this.outdoor.name = 'Khu Nhà thờ Lớn'
+     this.root.add(this.outdoor)
+     scene.add(this.root)
+-    this.gradientSky = new GradientSky({ parent: this.root })
++    this.enhancedSky = new EnhancedSky({ parent: this.root })
+ 
+     const outdoorColliders = []
+     this.shops = new ShopManager({
+@@ -90,6 +91,12 @@ export class ChurchDistrict {
+       parent: this.outdoor,
+       colliders: outdoorColliders,
+     })
++
++    // ═══ Stylized Realistic — Vietnamese detail overlay ═══
++    this.vietBuilder = new VietnameseGeometryBuilder(this.kit)
++    this.#addVietnameseTrees(this.outdoor, outdoorColliders)
++    this.#addVietnameseStreetDetails(this.outdoor, outdoorColliders)
++
+     this.oldQuarterConnector = new OldQuarterConnector({
+       kit: this.kit,
+       parent: this.outdoor,
+@@ -427,7 +434,12 @@ export class ChurchDistrict {
+   }
+ 
+   update(deltaTime, clock = null) {
+-    this.gradientSky.updatePosition(this.playerPosition)
++    this.enhancedSky.updatePosition(this.playerPosition)
++    // Drive sky animation (sun, moon, stars, clouds)
++    if (clock) {
++      const gameHour = (clock.minutes % 1440) / 60
++      this.enhancedSky.updateCelestials(gameHour, deltaTime)
++    }
+     this.#updateDistrictVisibility()
+     this.sceneMomentEffects.update(
+       deltaTime,
+@@ -532,7 +544,7 @@ export class ChurchDistrict {
+       pointLights,
+       spotLights,
+       emissiveMaterials,
+-      skyGradient: this.gradientSky,
++      skyGradient: this.enhancedSky,
+     })
+ 
+     const contexts = {
+@@ -1167,7 +1179,7 @@ export class ChurchDistrict {
+       area.group.visible = areaName === activeAreaName
+     })
+     this.outdoorLighting.group.visible = activeAreaName !== 'interior'
+-    this.gradientSky.setVisible(activeAreaName !== 'interior')
++    this.enhancedSky.setVisible(activeAreaName !== 'interior')
+   }
+ 
+   #updateDistrictVisibility() {
+@@ -1236,7 +1248,48 @@ export class ChurchDistrict {
+     this.scene.background = new THREE.Color(indoor ? INTERIOR_SKY : OUTDOOR_SKY)
+     this.scene.fog = indoor
+       ? new THREE.Fog(INTERIOR_SKY, 22, 42)
+-      : new THREE.Fog(OUTDOOR_SKY, 70, 145)
++      : new THREE.Fog(0xA0B0B8, 40, 95)
++  }
++
++  // ═══ Vietnamese detail overlay ═══
++
++  #addVietnameseTrees(parent, colliders) {
++    // Thêm cây chi tiết dọc đường Nhà Chung
++    const treePositions = [
++      [-22, 8.5], [-14, 8.5], [-6, 8.5], [6, 8.5], [14, 8.5], [22, 8.5],
++      [-22, 17.5], [-14, 17.5], [-6, 17.5], [6, 17.5], [14, 17.5], [22, 17.5],
++    ]
++    for (const [x, z] of treePositions) {
++      this.vietBuilder.addTree(parent, x, z, 'medium', colliders)
++    }
++    // Cây lớn quanh quảng trường Nhà thờ
++    for (const [x, z] of [[-12, -8], [12, -8], [-12, 5], [12, 5]]) {
++      this.vietBuilder.addTree(parent, x, z, 'large', colliders)
++    }
++    // Cây nhỏ trong ngõ
++    for (const [x, z] of [[-9, 22], [-9, 28], [-9, 34]]) {
++      this.vietBuilder.addTree(parent, x, z, 'small', colliders)
++    }
++  }
++
++  #addVietnameseStreetDetails(parent, colliders) {
++    // Đèn đường chi tiết — bổ sung thêm đèn dọc phố
++    const lampPositions = [
++      [-20, 8.5], [0, 8.5], [20, 8.5],
++      [-20, 17.5], [0, 17.5], [20, 17.5],
++    ]
++    for (const [x, z] of lampPositions) {
++      const { light } = this.vietBuilder.addStreetLamp(parent, x, z, colliders)
++      this.streetBuildingLights.push(light)
++    }
++    // Ghế đá dọc phố
++    for (const [x, z, rot] of [[-8, 11, 0], [8, 11, Math.PI], [-8, 16, 0], [8, 16, Math.PI]]) {
++      this.vietBuilder.addBench(parent, x, z, rot, colliders)
++    }
++    // Xe đẩy hàng rong
++    for (const [x, z] of [[18, 12.5], [-15, 17]]) {
++      this.vietBuilder.addVendorCart(parent, x, z)
++    }
+   }
+ 
+   dispose() {
+@@ -1256,7 +1309,7 @@ export class ChurchDistrict {
+     this.hoanKiemPedestrianDistrict.dispose()
+     this.hoanKiemGroundExpansion.dispose()
+     this.staticBatches.forEach((batch) => batch.dispose())
+-    this.gradientSky.dispose()
++    this.enhancedSky.dispose()
+     this.kit.dispose()
+     this.scene.remove(this.root)
+   }
+diff --git a/src/world/props/StreetProps.js b/src/world/props/StreetProps.js
+index 122c90d..925596a 100644
+--- a/src/world/props/StreetProps.js
++++ b/src/world/props/StreetProps.js
+@@ -31,6 +31,7 @@ export class StreetProps {
+   }
+ 
+   #addPlanter(x, z, colliders) {
++    // Chậu cây — terracotta with rim
+     this.kit.cylinder(this.group, {
+       name: 'Chậu cây',
+       radius: 0.55,
+@@ -39,13 +40,54 @@ export class StreetProps {
+       material: 'terracotta',
+       castShadow: true,
+     })
++    this.kit.cylinder(this.group, {
++      name: 'Viền chậu cây',
++      radius: 0.6,
++      height: 0.08,
++      position: [x, 0.72, z],
++      material: 'terracotta',
++    })
++    // Đất trong chậu
++    this.kit.cylinder(this.group, {
++      name: 'Đất chậu cây',
++      radius: 0.5,
++      height: 0.06,
++      position: [x, 0.69, z],
++      material: 'stoneDark',
++    })
++    // Cây — nhiều tầng tán lá (giống cây xanh Hà Nội)
++    // Tầng dưới — tán rộng
++    this.kit.sphere(this.group, {
++      name: 'Tán cây tầng dưới',
++      scale: [0.85, 0.55, 0.85],
++      position: [x, 1.35, z],
++      material: 'foliage',
++      castShadow: true,
++    })
++    // Tầng giữa — tán vừa
++    this.kit.sphere(this.group, {
++      name: 'Tán cây tầng giữa',
++      scale: [0.65, 0.5, 0.65],
++      position: [x + 0.12, 1.7, z - 0.08],
++      material: 'foliageLight',
++      castShadow: true,
++    })
++    // Tầng trên — tán nhỏ
+     this.kit.sphere(this.group, {
+-      name: 'Tán cây thấp',
+-      scale: [0.72, 1.05, 0.72],
+-      position: [x, 1.32, z],
++      name: 'Tán cây tầng trên',
++      scale: [0.45, 0.4, 0.45],
++      position: [x - 0.08, 1.95, z + 0.1],
+       material: 'foliage',
+       castShadow: true,
+     })
++    // Thân cây
++    this.kit.cylinder(this.group, {
++      name: 'Thân cây',
++      radius: 0.06,
++      height: 0.65,
++      position: [x, 1.0, z],
++      material: 'darkWood',
++    })
+     this.kit.addCollider(colliders, x, z, 0.95, 0.95, 'Chậu cây')
+   }
+ 
+@@ -248,6 +290,29 @@ export class StreetProps {
+       position: [0, 1.3, -0.7],
+       material: 'warmGlass',
+     })
++    // Đèn hậu
++    this.kit.sphere(bike, {
++      name: 'Đèn hậu xe máy',
++      scale: [0.12, 0.1, 0.08],
++      position: [0, 0.72, 0.72],
++      material: 'brick',
++    })
++    // Ống xả
++    this.kit.cylinder(bike, {
++      name: 'Ống xả xe máy',
++      radius: 0.04,
++      height: 0.55,
++      position: [-0.22, 0.28, 0.3],
++      material: 'metal',
++      rotation: [Math.PI / 2, 0, 0],
++    })
++    // Baga sau
++    this.kit.box(bike, {
++      name: 'Baga sau xe máy',
++      size: [0.38, 0.04, 0.3],
++      position: [0, 0.88, 0.48],
++      material: 'metal',
++    })
+     this.kit.addCollider(colliders, x, z, 0.85, 2, 'Xe máy đỗ')
+   }
+ 
+diff --git a/src/world/style/VietnameseGeometryBuilder.js b/src/world/style/VietnameseGeometryBuilder.js
+new file mode 100644
+index 0000000..ac6a8f4
+--- /dev/null
++++ b/src/world/style/VietnameseGeometryBuilder.js
+@@ -0,0 +1,530 @@
++import * as THREE from 'three'
++
++/**
++ * VietnameseGeometryBuilder — Stylized Realistic geometry factory.
++ *
++ * Creates detailed Vietnamese street-life geometry:
++ * - Trees: multi-canopy with trunk, branches, leaf clusters
++ * - Buildings: multi-floor with balconies, shutters, AC units, wiring
++ * - Streets: textured with curbs, markings, puddles
++ * - Street furniture: detailed lamps, benches, vendor carts
++ * - Vehicles: detailed motorbikes, cyclos
++ * - Water features: enhanced lake edges, reflections
++ */
++
++export class VietnameseGeometryBuilder {
++  constructor(kit) {
++    this.kit = kit
++  }
++
++  // ═══════════════════════════════════════════════════
++  // TREES — Multi-canopy Vietnamese trees
++  // ═══════════════════════════════════════════════════
++
++  /**
++   * Create a detailed Vietnamese tree with multi-layer canopy.
++   * @param {THREE.Group} parent
++   * @param {number} x
++   * @param {number} z
++   * @param {'large'|'medium'|'small'} size
++   * @param {Array} colliders
++   */
++  addTree(parent, x, z, size = 'medium', colliders = null) {
++    const group = new THREE.Group()
++    group.name = `Cây ${size}`
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    const s = size === 'large' ? 1.4 : size === 'small' ? 0.7 : 1.0
++
++    // Thân cây — nghiêng tự nhiên
++    const trunkGeo = new THREE.CylinderGeometry(0.06 * s, 0.12 * s, 2.2 * s, 8)
++    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5A3A1A, roughness: 0.92 })
++    const trunk = new THREE.Mesh(trunkGeo, trunkMat)
++    trunk.position.y = 1.1 * s
++    trunk.rotation.z = 0.05
++    trunk.castShadow = true
++    group.add(trunk)
++
++    // Cành cây
++    const branchGeo = new THREE.CylinderGeometry(0.02 * s, 0.04 * s, 0.8 * s, 6)
++    const branchMat = new THREE.MeshStandardMaterial({ color: 0x4A2A10, roughness: 0.88 })
++    for (let i = 0; i < 4; i++) {
++      const angle = (i * Math.PI * 2) / 4 + Math.random() * 0.5
++      const branch = new THREE.Mesh(branchGeo, branchMat)
++      branch.position.set(
++        Math.cos(angle) * 0.25 * s,
++        1.6 * s + i * 0.15 * s,
++        Math.sin(angle) * 0.25 * s,
++      )
++      branch.rotation.z = Math.cos(angle) * 0.6
++      branch.rotation.x = Math.sin(angle) * 0.4
++      group.add(branch)
++    }
++
++    // Tán lá — nhiều tầng, nhiều sphere
++    const foliageColors = [0x3D6B3A, 0x4A7A42, 0x2D5A2D, 0x3A6A35]
++    const layers = [
++      { y: 2.0, scale: [1.3, 0.8, 1.3], color: 0 },
++      { y: 2.4, scale: [1.0, 0.7, 1.0], color: 1 },
++      { y: 2.7, scale: [0.7, 0.6, 0.7], color: 2 },
++      { y: 2.9, scale: [0.4, 0.45, 0.4], color: 3 },
++    ]
++
++    for (const layer of layers) {
++      const geo = new THREE.SphereGeometry(1, 8, 6)
++      const mat = new THREE.MeshStandardMaterial({
++        color: foliageColors[layer.color],
++        roughness: 0.85,
++      })
++      const foliage = new THREE.Mesh(geo, mat)
++      foliage.position.set(
++        (Math.random() - 0.5) * 0.3 * s,
++        layer.y * s,
++        (Math.random() - 0.5) * 0.3 * s,
++      )
++      foliage.scale.set(layer.scale[0] * s, layer.scale[1] * s, layer.scale[2] * s)
++      foliage.castShadow = true
++      group.add(foliage)
++    }
++
++    // Rễ cây (cho cây lớn)
++    if (size === 'large') {
++      for (let i = 0; i < 3; i++) {
++        const angle = (i * Math.PI * 2) / 3
++        const rootGeo = new THREE.BoxGeometry(0.08 * s, 0.3, 0.15 * s)
++        const root = new THREE.Mesh(rootGeo, trunkMat)
++        root.position.set(Math.cos(angle) * 0.2, 0.15, Math.sin(angle) * 0.2)
++        root.rotation.y = angle
++        group.add(root)
++      }
++    }
++
++    if (colliders) {
++      this.kit.addCollider(colliders, x, z, 0.5 * s, 0.5 * s, 'Cây')
++    }
++
++    return group
++  }
++
++  // ═══════════════════════════════════════════════════
++  // STREETS — Textured ground with details
++  // ═══════════════════════════════════════════════════
++
++  /**
++   * Create a detailed street section with asphalt, curbs, markings.
++   */
++  addStreetSection(parent, x, z, width, depth, direction = 'ew') {
++    const group = new THREE.Group()
++    group.name = 'Đường phố chi tiết'
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    // Mặt đường — asphalt
++    const roadGeo = new THREE.BoxGeometry(width, 0.12, depth)
++    const roadMat = new THREE.MeshStandardMaterial({ color: 0x4A4E52, roughness: 0.92 })
++    const road = new THREE.Mesh(roadGeo, roadMat)
++    road.position.y = 0.06
++    road.receiveShadow = true
++    group.add(road)
++
++    // Vỉa hè — hai bên
++    for (const side of [-1, 1]) {
++      const sidewalkGeo = new THREE.BoxGeometry(width, 0.18, 1.8)
++      const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x9A9590, roughness: 0.88 })
++      const sidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat)
++      sidewalk.position.set(0, 0.09, side * (depth / 2 + 0.9))
++      sidewalk.receiveShadow = true
++      group.add(sidewalk)
++
++      // Bó vỉa
++      const curbGeo = new THREE.BoxGeometry(width, 0.24, 0.18)
++      const curbMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.85 })
++      const curb = new THREE.Mesh(curbGeo, curbMat)
++      curb.position.set(0, 0.12, side * (depth / 2 + 0.02))
++      group.add(curb)
++    }
++
++    // Vạch kẻ đường — nét đứt
++    const dashGeo = new THREE.BoxGeometry(2.5, 0.025, 0.12)
++    const dashMat = new THREE.MeshStandardMaterial({ color: 0xEEEEEE, roughness: 0.7 })
++    for (let dx = -width / 2 + 3; dx < width / 2; dx += 5.5) {
++      const dash = new THREE.Mesh(dashGeo, dashMat)
++      dash.position.set(dx, 0.13, 0)
++      group.add(dash)
++    }
++
++    return group
++  }
++
++  // ═══════════════════════════════════════════════════
++  // BUILDINGS — Detailed Vietnamese tube houses
++  // ═══════════════════════════════════════════════════
++
++  /**
++   * Create a detailed Vietnamese tube house.
++   */
++  addTubeHouse(parent, x, z, width, depth, height, color = 0xE8C86A, colliders = null) {
++    const group = new THREE.Group()
++    group.name = 'Nhà ống Việt Nam'
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    // Thân nhà
++    const bodyGeo = new THREE.BoxGeometry(width, height, depth)
++    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.92 })
++    const body = new THREE.Mesh(bodyGeo, bodyMat)
++    body.position.y = height / 2
++    body.castShadow = true
++    body.receiveShadow = true
++    group.add(body)
++
++    // Chân tường — đá tối
++    const baseGeo = new THREE.BoxGeometry(width + 0.08, 0.5, depth + 0.08)
++    const baseMat = new THREE.MeshStandardMaterial({ color: 0x6A6560, roughness: 0.9 })
++    const base = new THREE.Mesh(baseGeo, baseMat)
++    base.position.y = 0.25
++    group.add(base)
++
++    // Gờ phân tầng
++    const ledgeGeo = new THREE.BoxGeometry(width + 0.15, 0.2, 0.3)
++    const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x7A7570, roughness: 0.88 })
++    const ledge = new THREE.Mesh(ledgeGeo, ledgeMat)
++    ledge.position.set(0, 4.2, -depth / 2 - 0.08)
++    ledge.castShadow = true
++    group.add(ledge)
++
++    // Cửa sổ — nhiều tầng
++    const floors = Math.max(1, Math.floor((height - 4) / 2.5))
++    const windowGeo = new THREE.BoxGeometry(1.0, 1.4, 0.12)
++    const windowMat = new THREE.MeshStandardMaterial({
++      color: 0x5577AA,
++      roughness: 0.2,
++      metalness: 0.1,
++      transparent: true,
++      opacity: 0.65,
++    })
++    const frameGeo = new THREE.BoxGeometry(1.15, 1.55, 0.08)
++    const frameMat = new THREE.MeshStandardMaterial({ color: 0x5A5550, roughness: 0.85 })
++
++    for (let floor = 0; floor < floors; floor++) {
++      const windowY = 5.2 + floor * 2.45
++      const columns = width < 4 ? 2 : 3
++      for (let col = 0; col < columns; col++) {
++        const wx = (col - (columns - 1) / 2) * (width * 0.6 / Math.max(1, columns - 1))
++        // Khung cửa sổ
++        const frame = new THREE.Mesh(frameGeo, frameMat)
++        frame.position.set(wx, windowY, -depth / 2 - 0.04)
++        group.add(frame)
++        // Kính cửa sổ
++        const win = new THREE.Mesh(windowGeo, windowMat)
++        win.position.set(wx, windowY, -depth / 2 - 0.06)
++        group.add(win)
++        // Bậu cửa sổ
++        const sillGeo = new THREE.BoxGeometry(1.2, 0.1, 0.25)
++        const sill = new THREE.Mesh(sillGeo, ledgeMat)
++        sill.position.set(wx, windowY - 0.8, -depth / 2 - 0.06)
++        group.add(sill)
++      }
++
++      // Ban công (tầng 1 và 3)
++      if (floor % 2 === 0) {
++        this.#addBalcony(group, width, depth, windowY - 0.95)
++      }
++    }
++
++    // Mái ngói
++    if (height > 6) {
++      const roofGeo = new THREE.BoxGeometry(width + 0.4, 0.3, depth * 0.65)
++      const roofMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.88 })
++      const roof = new THREE.Mesh(roofGeo, roofMat)
++      roof.position.set(0, height + 0.35, -depth * 0.1)
++      roof.rotation.x = -0.12
++      roof.castShadow = true
++      group.add(roof)
++    }
++
++    // Điều hòa
++    if (height > 7) {
++      const acGeo = new THREE.BoxGeometry(0.9, 0.5, 0.35)
++      const acMat = new THREE.MeshStandardMaterial({ color: 0xDDDDDD, roughness: 0.5 })
++      const ac = new THREE.Mesh(acGeo, acMat)
++      ac.position.set(width * 0.3, 5.8, -depth / 2 - 0.2)
++      group.add(ac)
++    }
++
++    if (colliders) {
++      this.kit.addCollider(colliders, x, z, width + 0.2, depth + 0.2, 'Nhà ống')
++    }
++
++    return group
++  }
++
++  #addBalcony(parent, buildingWidth, buildingDepth, y) {
++    const balconyWidth = Math.min(buildingWidth - 0.6, 4.5)
++    const balconyGroup = new THREE.Group()
++    balconyGroup.position.set(0, y, -buildingDepth / 2 - 0.4)
++    parent.add(balconyGroup)
++
++    // Sàn ban công
++    const floorGeo = new THREE.BoxGeometry(balconyWidth, 0.14, 0.85)
++    const floorMat = new THREE.MeshStandardMaterial({ color: 0x8A8580, roughness: 0.85 })
++    const floor = new THREE.Mesh(floorGeo, floorMat)
++    floor.position.y = 0
++    floor.castShadow = true
++    balconyGroup.add(floor)
++
++    // Lan can sắt
++    const railGeo = new THREE.BoxGeometry(balconyWidth, 0.06, 0.06)
++    const railMat = new THREE.MeshStandardMaterial({ color: 0x3A3A3A, roughness: 0.5, metalness: 0.5 })
++    const rail = new THREE.Mesh(railGeo, railMat)
++    rail.position.set(0, 0.78, -0.38)
++    balconyGroup.add(rail)
++
++    // Nan lan can
++    const barGeo = new THREE.BoxGeometry(0.04, 0.72, 0.04)
++    for (let bx = -balconyWidth / 2; bx <= balconyWidth / 2; bx += 0.45) {
++      const bar = new THREE.Mesh(barGeo, railMat)
++      bar.position.set(bx, 0.38, -0.38)
++      balconyGroup.add(bar)
++    }
++
++    // Chậu cây trên ban công
++    if (Math.random() > 0.4) {
++      const potGeo = new THREE.CylinderGeometry(0.1, 0.08, 0.15, 6)
++      const potMat = new THREE.MeshStandardMaterial({ color: 0xB85A3C, roughness: 0.85 })
++      const pot = new THREE.Mesh(potGeo, potMat)
++      pot.position.set(balconyWidth * 0.3, 0.08, -0.15)
++      balconyGroup.add(pot)
++
++      const plantGeo = new THREE.SphereGeometry(0.18, 6, 5)
++      const plantMat = new THREE.MeshStandardMaterial({ color: 0x3D6B3A, roughness: 0.85 })
++      const plant = new THREE.Mesh(plantGeo, plantMat)
++      plant.position.set(balconyWidth * 0.3, 0.25, -0.15)
++      balconyGroup.add(plant)
++    }
++  }
++
++  // ═══════════════════════════════════════════════════
++  // STREET LAMPS — Detailed Vietnamese street lights
++  // ═══════════════════════════════════════════════════
++
++  addStreetLamp(parent, x, z, colliders = null) {
++    const group = new THREE.Group()
++    group.name = 'Đèn đường Việt Nam'
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    // Cột đèn
++    const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 4.5, 8)
++    const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5, metalness: 0.4 })
++    const pole = new THREE.Mesh(poleGeo, poleMat)
++    pole.position.y = 2.25
++    pole.castShadow = true
++    group.add(pole)
++
++    // Đế cột
++    const baseGeo = new THREE.CylinderGeometry(0.22, 0.25, 0.3, 8)
++    const base = new THREE.Mesh(baseGeo, poleMat)
++    base.position.y = 0.15
++    group.add(base)
++
++    // Tay đèn — cong
++    const armGeo = new THREE.BoxGeometry(0.8, 0.06, 0.06)
++    const arm = new THREE.Mesh(armGeo, poleMat)
++    arm.position.set(0.35, 4.35, 0)
++    group.add(arm)
++
++    // Chùm đèn — hình nón
++    const shadeGeo = new THREE.ConeGeometry(0.25, 0.2, 8, 1, true)
++    const shadeMat = new THREE.MeshStandardMaterial({
++      color: 0x555555,
++      roughness: 0.5,
++      metalness: 0.4,
++      side: THREE.DoubleSide,
++    })
++    const shade = new THREE.Mesh(shadeGeo, shadeMat)
++    shade.position.set(0.72, 4.25, 0)
++    shade.rotation.x = Math.PI
++    group.add(shade)
++
++    // Bóng đèn — phát sáng
++    const bulbGeo = new THREE.SphereGeometry(0.12, 8, 8)
++    const bulbMat = new THREE.MeshStandardMaterial({
++      color: 0xFFF8E7,
++      emissive: 0xF5BE58,
++      emissiveIntensity: 0.8,
++    })
++    const bulb = new THREE.Mesh(bulbGeo, bulbMat)
++    bulb.position.set(0.72, 4.15, 0)
++    group.add(bulb)
++
++    // Vệt sáng dưới đất
++    const poolGeo = new THREE.CylinderGeometry(2.0, 2.0, 0.015, 16)
++    const poolMat = new THREE.MeshStandardMaterial({
++      color: 0xF5BE58,
++      transparent: true,
++      opacity: 0.12,
++      emissive: 0xF5BE58,
++      emissiveIntensity: 0.3,
++    })
++    const pool = new THREE.Mesh(poolGeo, poolMat)
++    pool.position.set(0.72, 0.008, 0)
++    group.add(pool)
++
++    // Point light
++    const light = new THREE.PointLight(0xF5BE58, 5, 10, 2)
++    light.position.set(0.72, 4.1, 0)
++    group.add(light)
++
++    if (colliders) {
++      this.kit.addCollider(colliders, x, z, 0.3, 0.3, 'Đèn đường')
++    }
++
++    return { group, light }
++  }
++
++  // ═══════════════════════════════════════════════════
++  // BENCHES — Vietnamese street benches
++  // ═══════════════════════════════════════════════════
++
++  addBench(parent, x, z, rotationY = 0, colliders = null) {
++    const group = new THREE.Group()
++    group.name = 'Ghế đá Việt Nam'
++    group.position.set(x, 0, z)
++    group.rotation.y = rotationY
++    parent.add(group)
++
++    // Mặt ghế — đá
++    const seatGeo = new THREE.BoxGeometry(2.0, 0.14, 0.48)
++    const seatMat = new THREE.MeshStandardMaterial({ color: 0xB0A898, roughness: 0.9 })
++    const seat = new THREE.Mesh(seatGeo, seatMat)
++    seat.position.y = 0.58
++    seat.castShadow = true
++    group.add(seat)
++
++    // Lưng ghế
++    const backGeo = new THREE.BoxGeometry(2.0, 0.6, 0.1)
++    const back = new THREE.Mesh(backGeo, seatMat)
++    back.position.set(0, 0.92, 0.2)
++    group.add(back)
++
++    // Chân ghế — đá
++    for (const side of [-0.75, 0.75]) {
++      const legGeo = new THREE.BoxGeometry(0.15, 0.58, 0.42)
++      const legMat = new THREE.MeshStandardMaterial({ color: 0x8A8580, roughness: 0.88 })
++      const leg = new THREE.Mesh(legGeo, legMat)
++      leg.position.set(side, 0.29, 0)
++      group.add(leg)
++    }
++
++    if (colliders) {
++      this.kit.addCollider(colliders, x, z, 2.2, 0.8, 'Ghế đá')
++    }
++
++    return group
++  }
++
++  // ═══════════════════════════════════════════════════
++  // VENDOR CART — Vietnamese street food cart
++  // ═══════════════════════════════════════════════════
++
++  addVendorCart(parent, x, z, color = 0xB85A3C) {
++    const group = new THREE.Group()
++    group.name = 'Xe đẩy hàng rong'
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    // Thân xe
++    const bodyGeo = new THREE.BoxGeometry(1.4, 0.85, 0.9)
++    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 })
++    const body = new THREE.Mesh(bodyGeo, bodyMat)
++    body.position.y = 0.52
++    body.castShadow = true
++    group.add(body)
++
++    // Mặt bàn
++    const topGeo = new THREE.BoxGeometry(1.5, 0.06, 1.0)
++    const topMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.85 })
++    const top = new THREE.Mesh(topGeo, topMat)
++    top.position.y = 0.98
++    group.add(top)
++
++    // Bánh xe
++    const wheelGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.05, 8)
++    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 })
++    for (const side of [-0.55, 0.55]) {
++      const wheel = new THREE.Mesh(wheelGeo, wheelMat)
++      wheel.rotation.z = Math.PI / 2
++      wheel.position.set(side, 0.14, 0)
++      group.add(wheel)
++    }
++
++    // Mái che
++    const canopyGeo = new THREE.BoxGeometry(1.6, 0.04, 1.2)
++    const canopyMat = new THREE.MeshStandardMaterial({
++      color: 0xE83030,
++      emissive: 0xE83030,
++      emissiveIntensity: 0.08,
++      roughness: 0.65,
++    })
++    const canopy = new THREE.Mesh(canopyGeo, canopyMat)
++    canopy.position.y = 1.85
++    canopy.rotation.x = -0.1
++    group.add(canopy)
++
++    // Đèn
++    const light = new THREE.PointLight(0xF5BE58, 0.6, 4, 2)
++    light.position.set(0, 1.4, 0)
++    group.add(light)
++
++    return group
++  }
++
++  // ═══════════════════════════════════════════════════
++  // LAKE EDGE — Detailed lake shoreline
++  // ═══════════════════════════════════════════════════
++
++  addLakeEdge(parent, x, z, width, depth) {
++    const group = new THREE.Group()
++    group.name = 'Bờ hồ chi tiết'
++    group.position.set(x, 0, z)
++    parent.add(group)
++
++    // Đá bờ hồ
++    const rockGeo = new THREE.DodecahedronGeometry(0.3, 0)
++    const rockMat = new THREE.MeshStandardMaterial({ color: 0x7A7570, roughness: 0.92 })
++    for (let i = 0; i < 12; i++) {
++      const rock = new THREE.Mesh(rockGeo, rockMat)
++      const angle = (i / 12) * Math.PI * 2
++      const radius = width / 2 + (Math.random() - 0.5) * 2
++      rock.position.set(
++        Math.cos(angle) * radius,
++        0.1 + Math.random() * 0.15,
++        Math.sin(angle) * radius * 0.6,
++      )
++      rock.scale.setScalar(0.5 + Math.random() * 0.8)
++      rock.rotation.set(Math.random(), Math.random(), Math.random())
++      group.add(rock)
++    }
++
++    // Cây cỏ bờ hồ
++    const grassGeo = new THREE.ConeGeometry(0.15, 0.4, 4)
++    const grassMat = new THREE.MeshStandardMaterial({ color: 0x4A7A42, roughness: 0.85 })
++    for (let i = 0; i < 20; i++) {
++      const grass = new THREE.Mesh(grassGeo, grassMat)
++      const angle = (i / 20) * Math.PI * 2
++      const radius = width / 2 + 0.5 + Math.random()
++      grass.position.set(
++        Math.cos(angle) * radius,
++        0.2,
++        Math.sin(angle) * radius * 0.6,
++      )
++      grass.rotation.z = (Math.random() - 0.5) * 0.3
++      grass.scale.setScalar(0.6 + Math.random() * 0.5)
++      group.add(grass)
++    }
++
++    return group
++  }
++}
+-- 
+2.43.0
+

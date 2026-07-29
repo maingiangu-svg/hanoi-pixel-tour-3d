@@ -115,118 +115,118 @@ function state({
 
 const OUTDOOR = Object.freeze({
   night: state({
-    sky: 0x1A2538,          // Deeper navy — Vietnamese night sky
-    fog: 0x2A3548,
-    ambient: 0x6A7890,
-    ambientIntensity: 0.82,
-    hemisphereSky: 0x4A6080,
-    hemisphereGround: 0x2A2420,  // Warm ground glow from lanterns
-    hemisphereIntensity: 1.05,
-    directional: 0x99B3D4,
-    directionalIntensity: 0.38,
-    rim: 0x5A7090,
-    rimIntensity: 0.62,
-    practicalScale: 1.08,         // Stronger practical lights at night
-    emissiveScale: 1.18,          // Lanterns and signs glow more
-    reflectionScale: 1.1,
-    waterRoughness: 0.35,
-    fogNear: 65,
-    fogFar: 128,
+    sky: 0x0E1825,          // Deep navy — dark Vietnamese night
+    fog: 0x1A2535,
+    ambient: 0x5A6880,
+    ambientIntensity: 0.75,
+    hemisphereSky: 0x3A5070,
+    hemisphereGround: 0x1E1815,  // Dark warm ground
+    hemisphereIntensity: 1.1,
+    directional: 0x88A0C0,
+    directionalIntensity: 0.3,
+    rim: 0x4A6080,
+    rimIntensity: 0.7,
+    practicalScale: 1.2,          // Strong lantern/lamp glow
+    emissiveScale: 1.3,           // Signs and lanterns pop
+    reflectionScale: 1.15,
+    waterRoughness: 0.32,
+    fogNear: 30,
+    fogFar: 80,
   }),
   dawn: state({
-    sky: 0x7A8EA5,
-    fog: 0x908A88,           // Warm morning mist
-    ambient: 0x9EA8B5,
-    ambientIntensity: 0.72,
-    hemisphereSky: 0xA8BCC8,
-    hemisphereGround: 0x6A5A4E,  // Warm earth
-    hemisphereIntensity: 1.05,
-    directional: 0xFFC488,       // Golden dawn sun
-    directionalIntensity: 1.25,
-    rim: 0x8A9DB8,
-    rimIntensity: 0.5,
+    sky: 0x6A809A,
+    fog: 0x888888,           // Thick morning mist
+    ambient: 0x95A0B0,
+    ambientIntensity: 0.7,
+    hemisphereSky: 0xA0B5C5,
+    hemisphereGround: 0x605045,  // Warm earth
+    hemisphereIntensity: 1.08,
+    directional: 0xFFBB75,       // Golden dawn
+    directionalIntensity: 1.3,
+    rim: 0x8095B0,
+    rimIntensity: 0.52,
     practicalScale: 0.3,
-    emissiveScale: 0.72,
+    emissiveScale: 0.7,
     reflectionScale: 0.85,
-    waterRoughness: 0.3,
-    fogNear: 58,
-    fogFar: 122,
+    waterRoughness: 0.28,
+    fogNear: 35,
+    fogFar: 85,
   }),
   day: state({
-    sky: 0x7A9AB8,           // Warmer blue — Hanoi humid sky
-    fog: 0x98ABB8,           // Warm haze
-    ambient: 0xC8CDD2,
-    ambientIntensity: 0.65,
-    hemisphereSky: 0xD0E0EC,
-    hemisphereGround: 0x7A6E5C,      // Warm earth tone
-    hemisphereIntensity: 1.3,
-    directional: 0xFFF0D0,           // Warmer sunlight
-    directionalIntensity: 2.15,
-    rim: 0xA0B8CC,
-    rimIntensity: 0.22,
+    sky: 0x6A90B0,           // Hanoi humid blue
+    fog: 0x90A5B5,           // Warm haze
+    ambient: 0xC0C8D0,
+    ambientIntensity: 0.62,
+    hemisphereSky: 0xC8D8E5,
+    hemisphereGround: 0x756858,  // Warm earth
+    hemisphereIntensity: 1.35,
+    directional: 0xFFF0D0,       // Warm sunlight
+    directionalIntensity: 2.3,
+    rim: 0x98B0C5,
+    rimIntensity: 0.2,
     practicalScale: 0,
-    emissiveScale: 0.25,
-    reflectionScale: 0.6,
-    waterRoughness: 0.38,
-    fogNear: 75,
-    fogFar: 142,
+    emissiveScale: 0.22,
+    reflectionScale: 0.58,
+    waterRoughness: 0.4,
+    fogNear: 40,
+    fogFar: 95,
   }),
   goldenHour: state({
-    sky: 0xB8A888,           // Warmer golden sky
-    fog: 0xB5A898,
-    ambient: 0xC0B5A2,
-    ambientIntensity: 0.66,
-    hemisphereSky: 0xCCBFB5,
-    hemisphereGround: 0x6A5A48,  // Deep warm earth
-    hemisphereIntensity: 1.15,
-    directional: 0xFFB050,       // Rich golden sun
-    directionalIntensity: 1.75,
-    rim: 0xFFCC70,
-    rimIntensity: 0.65,
-    practicalScale: 0.25,
-    emissiveScale: 0.68,
-    reflectionScale: 1.32,
-    waterRoughness: 0.22,
-    fogNear: 68,
-    fogFar: 135,
+    sky: 0xAA9878,           // Rich golden sky
+    fog: 0xAA9880,
+    ambient: 0xBBA895,
+    ambientIntensity: 0.68,
+    hemisphereSky: 0xC5B5A5,
+    hemisphereGround: 0x605040,  // Deep warm earth
+    hemisphereIntensity: 1.2,
+    directional: 0xFFA840,       // Deep golden sun
+    directionalIntensity: 1.85,
+    rim: 0xFFC060,
+    rimIntensity: 0.7,
+    practicalScale: 0.28,
+    emissiveScale: 0.7,
+    reflectionScale: 1.35,
+    waterRoughness: 0.2,
+    fogNear: 35,
+    fogFar: 85,
   }),
   sunset: state({
-    sky: 0x786872,           // Warmer purple
-    fog: 0x7A7068,           // Warm fog
-    ambient: 0x908888,
-    ambientIntensity: 0.6,
-    hemisphereSky: 0x8A8095,
-    hemisphereGround: 0x4A4038,  // Warm dark earth
-    hemisphereIntensity: 1.05,
-    directional: 0xFF8548,       // Deep orange sunset
-    directionalIntensity: 1.08,
-    rim: 0x6A80A8,
-    rimIntensity: 0.75,
-    practicalScale: 0.65,
-    emissiveScale: 0.92,
-    reflectionScale: 1.22,
-    waterRoughness: 0.25,
-    fogNear: 65,
-    fogFar: 130,
+    sky: 0x6A5868,           // Deep purple-orange
+    fog: 0x706058,           // Warm fog
+    ambient: 0x857878,
+    ambientIntensity: 0.58,
+    hemisphereSky: 0x807085,
+    hemisphereGround: 0x403530,  // Warm dark earth
+    hemisphereIntensity: 1.08,
+    directional: 0xFF7840,       // Deep orange sunset
+    directionalIntensity: 1.15,
+    rim: 0x6070A0,
+    rimIntensity: 0.8,
+    practicalScale: 0.7,
+    emissiveScale: 0.95,
+    reflectionScale: 1.25,
+    waterRoughness: 0.22,
+    fogNear: 32,
+    fogFar: 82,
   }),
   blueHour: state({
     sky: HANOI_COLORS.blueHour,
-    fog: 0x505E72,
-    ambient: 0x7585A0,
-    ambientIntensity: 0.68,
-    hemisphereSky: 0x5870A0,
-    hemisphereGround: 0x38302A,  // Warm ground glow
-    hemisphereIntensity: 1.12,
-    directional: 0x91acd0,
-    directionalIntensity: 0.38,
-    rim: 0x7897c2,
-    rimIntensity: 0.72,
-    practicalScale: 0.92,
-    emissiveScale: 1.08,
-    reflectionScale: 1.3,
-    waterRoughness: 0.3,
-    fogNear: 70,
-    fogFar: 136,
+    fog: 0x404E65,
+    ambient: 0x6A7A95,
+    ambientIntensity: 0.7,
+    hemisphereSky: 0x4A6595,
+    hemisphereGround: 0x302820,  // Dark warm ground
+    hemisphereIntensity: 1.15,
+    directional: 0x85A0C5,
+    directionalIntensity: 0.32,
+    rim: 0x6888B5,
+    rimIntensity: 0.78,
+    practicalScale: 1.0,
+    emissiveScale: 1.15,
+    reflectionScale: 1.35,
+    waterRoughness: 0.28,
+    fogNear: 30,
+    fogFar: 80,
   }),
 })
 

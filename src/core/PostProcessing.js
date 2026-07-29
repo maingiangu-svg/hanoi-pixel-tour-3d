@@ -6,36 +6,32 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 
 /**
- * PostProcessing — Stylized Realistic cinematic pipeline.
+ * PostProcessing — Dramatic Stylized Realistic cinematic pipeline.
  *
- * Pipeline:
- *   RenderPass → Bloom → Output → Vietnamese Color Grading → Vignette + Film Grain
- *
- * The color grading adds warm golden tones characteristic of Hanoi,
- * with enhanced contrast and subtle desaturation in shadows for depth.
+ * Strong bloom, warm color grading, thick vignette, film grain,
+ * and atmospheric haze. Creates the "golden hour in Hanoi" look.
  */
 
-// ── Vietnamese Color Grading Shader ──
-const VietnameseColorGradingShader = {
+const VietnameseCinematicShader = {
   uniforms: {
     tDiffuse: { value: null },
-    // Color grading
-    shadows: { value: new THREE.Vector3(0.02, 0.01, -0.02) },   // Cool blue shadows
-    midtones: { value: new THREE.Vector3(0.04, 0.02, -0.01) },  // Warm golden midtones
-    highlights: { value: new THREE.Vector3(0.06, 0.04, 0.0) },  // Golden highlights
+    // Shadows/midtones/highlights
+    shadows: { value: new THREE.Vector3(0.02, 0.01, -0.03) },
+    midtones: { value: new THREE.Vector3(0.06, 0.03, -0.02) },
+    highlights: { value: new THREE.Vector3(0.08, 0.05, -0.01) },
     // Global
-    brightness: { value: 0.02 },
-    contrast: { value: 1.12 },
-    saturation: { value: 1.18 },
-    warmth: { value: 0.06 },
+    brightness: { value: 0.03 },
+    contrast: { value: 1.15 },
+    saturation: { value: 1.22 },
+    warmth: { value: 0.08 },
     // Vignette
-    vignetteStrength: { value: 0.38 },
-    vignetteRadius: { value: 0.55 },
+    vignetteStrength: { value: 0.45 },
+    vignetteRadius: { value: 0.5 },
     // Film grain
-    filmGrain: { value: 0.025 },
-    // Atmospheric
-    atmosphericDensity: { value: 0.0 },
-    atmosphericColor: { value: new THREE.Vector3(0.85, 0.78, 0.65) },
+    filmGrain: { value: 0.03 },
+    // Atmospheric haze
+    hazeDensity: { value: 0.12 },
+    hazeColor: { value: new THREE.Vector3(0.82, 0.75, 0.6) },
     // Time
     time: { value: 0 },
   },
@@ -58,8 +54,8 @@ const VietnameseColorGradingShader = {
     uniform float vignetteStrength;
     uniform float vignetteRadius;
     uniform float filmGrain;
-    uniform float atmosphericDensity;
-    uniform vec3 atmosphericColor;
+    uniform float hazeDensity;
+    uniform vec3 hazeColor;
     uniform float time;
     varying vec2 vUv;
 
@@ -68,74 +64,62 @@ const VietnameseColorGradingShader = {
     }
 
     vec3 colorGrade(vec3 color) {
-      // Luminance for shadow/mid/high split
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-
-      // Shadow lift
-      float shadowMask = 1.0 - smoothstep(0.0, 0.35, luma);
+      // Shadow lift — cool blue
+      float shadowMask = 1.0 - smoothstep(0.0, 0.38, luma);
       color += shadows * shadowMask;
-
-      // Midtone tint
-      float midMask = smoothstep(0.0, 0.25, luma) * (1.0 - smoothstep(0.6, 0.85, luma));
+      // Midtone push — warm golden
+      float midMask = smoothstep(0.0, 0.28, luma) * (1.0 - smoothstep(0.55, 0.82, luma));
       color += midtones * midMask;
-
-      // Highlight push
-      float highMask = smoothstep(0.55, 1.0, luma);
+      // Highlight — golden
+      float highMask = smoothstep(0.5, 1.0, luma);
       color += highlights * highMask;
-
       return color;
     }
 
     void main() {
-      vec4 tex = texture2D(tDiffuse, vUv);
-      vec3 color = tex.rgb;
+      vec3 color = texture2D(tDiffuse, vUv).rgb;
 
       // Brightness
       color += brightness;
 
-      // Contrast (around mid-gray)
+      // Contrast
       color = (color - 0.5) * contrast + 0.5;
 
       // Saturation
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       color = mix(vec3(luma), color, saturation);
 
-      // Warmth — push toward golden
-      color.r += warmth * 0.7;
+      // Warmth — push golden
+      color.r += warmth * 0.8;
       color.g += warmth * 0.35;
-      color.b -= warmth * 0.15;
+      color.b -= warmth * 0.2;
 
-      // Color grading (shadow/mid/high)
+      // Color grading
       color = colorGrade(color);
 
-      // Atmospheric haze — distance-based
-      if (atmosphericDensity > 0.01) {
-        float depth = tex.a; // We'll use alpha channel for depth if available
-        float haze = atmosphericDensity * 0.3;
-        color = mix(color, atmosphericColor, haze);
-      }
+      // Atmospheric haze — uniform (no depth buffer needed)
+      color = mix(color, hazeColor, hazeDensity);
 
-      // Vignette — smooth oval
+      // Vignette — oval
       vec2 center = vUv - 0.5;
-      float dist = length(center / vec2(vignetteRadius, vignetteRadius * 0.85));
-      float vignette = 1.0 - smoothstep(0.6, 1.4, dist) * vignetteStrength;
+      float dist = length(center / vec2(vignetteRadius, vignetteRadius * 0.82));
+      float vignette = 1.0 - smoothstep(0.5, 1.3, dist) * vignetteStrength;
       color *= vignette;
 
-      // Film grain — organic noise
-      float grain = hash(vUv * 800.0 + time * 7.0) * filmGrain;
+      // Film grain
+      float grain = hash(vUv * 900.0 + time * 6.0) * filmGrain;
       color += grain - filmGrain * 0.5;
 
-      // Subtle chromatic aberration at edges (very subtle)
-      float caStrength = 0.0015;
+      // Subtle chromatic aberration at edges
+      float caStrength = 0.002;
       vec2 caOffset = center * caStrength;
       float caR = texture2D(tDiffuse, vUv + caOffset).r;
       float caB = texture2D(tDiffuse, vUv - caOffset).b;
-      color.r = mix(color.r, caR, 0.3);
-      color.b = mix(color.b, caB, 0.3);
+      color.r = mix(color.r, caR, 0.35);
+      color.b = mix(color.b, caB, 0.35);
 
-      // Clamp
       color = clamp(color, 0.0, 1.0);
-
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -150,7 +134,6 @@ export class PostProcessing {
     const size = renderer.getSize(new THREE.Vector2())
     const pixelRatio = renderer.getPixelRatio()
 
-    // Disable renderer tone mapping — OutputPass handles it
     renderer.toneMapping = THREE.NoToneMapping
 
     this.composer = new EffectComposer(renderer)
@@ -161,117 +144,107 @@ export class PostProcessing {
     this.renderPass = new RenderPass(scene, camera)
     this.composer.addPass(this.renderPass)
 
-    // Bloom — strong glow on all lights and emissive surfaces
+    // Bloom — STRONG glow on all lights
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.x, size.y),
-      0.7,   // strength — strong bloom
-      0.8,   // radius — wide glow
-      0.6,   // threshold — catch most light sources
+      0.85,  // strength — strong
+      0.9,   // radius — wide
+      0.5,   // threshold — catch most lights
     )
     this.composer.addPass(this.bloomPass)
 
-    // Output pass (handles color space + tone mapping)
+    // Output pass
     this.outputPass = new OutputPass()
     this.composer.addPass(this.outputPass)
 
-    // Vietnamese color grading + vignette + film grain
-    this.colorGradingPass = new ShaderPass(VietnameseColorGradingShader)
+    // Vietnamese cinematic color grading
+    this.colorGradingPass = new ShaderPass(VietnameseCinematicShader)
     this.composer.addPass(this.colorGradingPass)
   }
 
-  /**
-   * Adjust post-processing based on lighting phase.
-   * Vietnamese atmosphere: golden warmth by day, lantern glow at night.
-   */
   updatePhase(phase) {
     if (!this.enabled) return
-
     const cg = this.colorGradingPass.uniforms
 
     switch (phase) {
       case 'night':
-        this.bloomPass.strength = 0.65
-        this.bloomPass.threshold = 0.55
-        cg.vignetteStrength.value = 0.45
+        this.bloomPass.strength = 0.95
+        this.bloomPass.threshold = 0.4
+        cg.vignetteStrength.value = 0.55
         cg.warmth.value = 0.02
-        cg.saturation.value = 0.95
-        cg.contrast.value = 1.15
-        cg.shadows.value.set(-0.01, -0.01, 0.04)   // Cool blue shadows
-        cg.midtones.value.set(0.03, 0.01, -0.02)    // Warm streetlight
-        cg.highlights.value.set(0.05, 0.03, 0.0)     // Golden highlights
-        cg.atmosphericDensity.value = 0.08
-        cg.atmosphericColor.value.set(0.15, 0.12, 0.2)  // Night haze
+        cg.saturation.value = 0.88
+        cg.contrast.value = 1.2
+        cg.shadows.value.set(-0.02, -0.02, 0.05)
+        cg.midtones.value.set(0.04, 0.02, -0.03)
+        cg.highlights.value.set(0.06, 0.04, 0.0)
+        cg.hazeDensity.value = 0.06
+        cg.hazeColor.value.set(0.1, 0.1, 0.15)
         break
-
       case 'blueHour':
+        this.bloomPass.strength = 0.8
+        this.bloomPass.threshold = 0.45
+        cg.vignetteStrength.value = 0.45
+        cg.warmth.value = 0.0
+        cg.saturation.value = 1.0
+        cg.contrast.value = 1.15
+        cg.shadows.value.set(-0.01, 0.0, 0.04)
+        cg.midtones.value.set(0.03, 0.02, 0.03)
+        cg.highlights.value.set(0.04, 0.03, 0.05)
+        cg.hazeDensity.value = 0.08
+        cg.hazeColor.value.set(0.25, 0.3, 0.45)
+        break
+      case 'sunset':
+        this.bloomPass.strength = 0.75
+        this.bloomPass.threshold = 0.5
+        cg.vignetteStrength.value = 0.4
+        cg.warmth.value = 0.1
+        cg.saturation.value = 1.25
+        cg.contrast.value = 1.12
+        cg.shadows.value.set(0.03, 0.0, -0.03)
+        cg.midtones.value.set(0.08, 0.04, -0.02)
+        cg.highlights.value.set(0.1, 0.06, -0.03)
+        cg.hazeDensity.value = 0.1
+        cg.hazeColor.value.set(0.85, 0.55, 0.25)
+        break
+      case 'goldenHour':
+        this.bloomPass.strength = 0.7
+        this.bloomPass.threshold = 0.55
+        cg.vignetteStrength.value = 0.38
+        cg.warmth.value = 0.12
+        cg.saturation.value = 1.3
+        cg.contrast.value = 1.1
+        cg.shadows.value.set(0.04, 0.02, -0.04)
+        cg.midtones.value.set(0.1, 0.05, -0.03)
+        cg.highlights.value.set(0.12, 0.08, -0.02)
+        cg.hazeDensity.value = 0.08
+        cg.hazeColor.value.set(0.95, 0.75, 0.45)
+        break
+      case 'dawn':
         this.bloomPass.strength = 0.55
         this.bloomPass.threshold = 0.6
-        cg.vignetteStrength.value = 0.38
-        cg.warmth.value = 0.0
-        cg.saturation.value = 1.05
-        cg.contrast.value = 1.12
-        cg.shadows.value.set(-0.01, 0.0, 0.03)
-        cg.midtones.value.set(0.02, 0.01, 0.02)
-        cg.highlights.value.set(0.03, 0.02, 0.04)
-        cg.atmosphericDensity.value = 0.05
-        cg.atmosphericColor.value.set(0.3, 0.35, 0.5)  // Blue hour haze
+        cg.vignetteStrength.value = 0.35
+        cg.warmth.value = 0.05
+        cg.saturation.value = 1.12
+        cg.contrast.value = 1.08
+        cg.shadows.value.set(0.0, 0.0, 0.03)
+        cg.midtones.value.set(0.04, 0.03, 0.01)
+        cg.highlights.value.set(0.06, 0.05, 0.02)
+        cg.hazeDensity.value = 0.15
+        cg.hazeColor.value.set(0.65, 0.65, 0.7)
         break
-
-      case 'sunset':
+      case 'day':
+      default:
         this.bloomPass.strength = 0.5
         this.bloomPass.threshold = 0.65
         cg.vignetteStrength.value = 0.35
         cg.warmth.value = 0.08
-        cg.saturation.value = 1.2
-        cg.contrast.value = 1.1
-        cg.shadows.value.set(0.02, 0.0, -0.02)
-        cg.midtones.value.set(0.06, 0.03, -0.01)
-        cg.highlights.value.set(0.08, 0.04, -0.02)
-        cg.atmosphericDensity.value = 0.04
-        cg.atmosphericColor.value.set(0.9, 0.6, 0.3)  // Sunset glow
-        break
-
-      case 'goldenHour':
-        this.bloomPass.strength = 0.48
-        this.bloomPass.threshold = 0.68
-        cg.vignetteStrength.value = 0.32
-        cg.warmth.value = 0.1
-        cg.saturation.value = 1.25
-        cg.contrast.value = 1.08
-        cg.shadows.value.set(0.03, 0.01, -0.03)
-        cg.midtones.value.set(0.08, 0.04, -0.02)
-        cg.highlights.value.set(0.1, 0.06, -0.01)
-        cg.atmosphericDensity.value = 0.03
-        cg.atmosphericColor.value.set(1.0, 0.8, 0.5)  // Golden haze
-        break
-
-      case 'dawn':
-        this.bloomPass.strength = 0.35
-        this.bloomPass.threshold = 0.72
-        cg.vignetteStrength.value = 0.28
-        cg.warmth.value = 0.04
-        cg.saturation.value = 1.1
-        cg.contrast.value = 1.06
-        cg.shadows.value.set(0.0, 0.0, 0.02)
-        cg.midtones.value.set(0.03, 0.02, 0.01)
-        cg.highlights.value.set(0.05, 0.04, 0.02)
-        cg.atmosphericDensity.value = 0.06
-        cg.atmosphericColor.value.set(0.7, 0.7, 0.75)  // Morning mist
-        break
-
-      case 'day':
-      default:
-        this.bloomPass.strength = 0.28
-        this.bloomPass.threshold = 0.78
-        cg.vignetteStrength.value = 0.3
-        cg.warmth.value = 0.06
-        cg.saturation.value = 1.18
-        cg.contrast.value = 1.12
-        cg.shadows.value.set(0.02, 0.01, -0.02)
-        cg.midtones.value.set(0.04, 0.02, -0.01)
-        cg.highlights.value.set(0.06, 0.04, 0.0)
-        cg.atmosphericDensity.value = 0.02
-        cg.atmosphericColor.value.set(0.85, 0.78, 0.65)  // Hazy Hanoi day
+        cg.saturation.value = 1.22
+        cg.contrast.value = 1.15
+        cg.shadows.value.set(0.02, 0.01, -0.03)
+        cg.midtones.value.set(0.06, 0.03, -0.02)
+        cg.highlights.value.set(0.08, 0.05, -0.01)
+        cg.hazeDensity.value = 0.12
+        cg.hazeColor.value.set(0.82, 0.75, 0.6)
         break
     }
   }

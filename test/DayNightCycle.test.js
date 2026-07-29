@@ -51,15 +51,15 @@ test('day palette dims practical lights and updates all outdoor light types', ()
     lighting: { outdoor: outdoor.context },
   })
 
-  closeTo(outdoor.ambient.intensity, 0.65)
-  closeTo(outdoor.hemisphere.intensity, 1.3)
-  closeTo(outdoor.directional.intensity, 2.15)
-  closeTo(outdoor.rim.intensity, 0.22)
+  closeTo(outdoor.ambient.intensity, 0.62)
+  closeTo(outdoor.hemisphere.intensity, 1.35)
+  closeTo(outdoor.directional.intensity, 2.3)
+  closeTo(outdoor.rim.intensity, 0.2)
   closeTo(outdoor.point.intensity, 0)
   closeTo(outdoor.spot.intensity, 0)
-  closeTo(outdoor.emissive.emissiveIntensity, 0.125)
-  closeTo(scene.fog.near, 75)
-  closeTo(scene.fog.far, 142)
+  closeTo(outdoor.emissive.emissiveIntensity, 0.11)
+  closeTo(scene.fog.near, 40)
+  closeTo(scene.fog.far, 95)
   assert.equal(cycle.phase, 'day')
 })
 
@@ -76,9 +76,9 @@ test('night remains readable and restores warm practical lighting', () => {
   assert.ok(outdoor.ambient.intensity >= 0.6)
   assert.ok(outdoor.hemisphere.intensity >= 0.75)
   assert.ok(outdoor.rim.intensity >= 0.4)
-  closeTo(outdoor.point.intensity, 6 * 1.08)
-  closeTo(outdoor.spot.intensity, 12 * 1.08)
-  closeTo(outdoor.emissive.emissiveIntensity, 0.6 * 1.18)
+  closeTo(outdoor.point.intensity, 6 * 1.2)
+  closeTo(outdoor.spot.intensity, 12 * 1.2)
+  closeTo(outdoor.emissive.emissiveIntensity, 0.6 * 1.3)
   assert.equal(cycle.phase, 'night')
 })
 
@@ -96,8 +96,8 @@ test('dawn transition interpolates without replacing scene atmosphere objects', 
     lighting: { outdoor: outdoor.context },
   })
 
-  closeTo(outdoor.directional.intensity, (0.38 + 1.25) / 2)
-  closeTo(outdoor.point.intensity, 10 * ((1.08 + 0.3) / 2))
+  closeTo(outdoor.directional.intensity, (0.3 + 1.3) / 2)
+  closeTo(outdoor.point.intensity, 10 * ((1.2 + 0.3) / 2))
   assert.equal(scene.background, originalBackground)
   assert.equal(scene.fog, originalFog)
 
@@ -151,11 +151,11 @@ test('Ba Dinh and Long Bien use outdoor lighting without rejecting area changes'
 
   cycle.update('baDinh')
   assert.equal(cycle.area, 'baDinh')
-  closeTo(baDinh.directional.intensity, 2.15)
+  closeTo(baDinh.directional.intensity, 2.3)
 
   cycle.update('longBien')
   assert.equal(cycle.area, 'longBien')
-  closeTo(longBien.hemisphere.intensity, 1.3)
+  closeTo(longBien.hemisphere.intensity, 1.35)
 })
 
 test('light and material descriptors can override captured base intensity', () => {
@@ -174,8 +174,8 @@ test('light and material descriptors can override captured base intensity', () =
     },
   })
 
-  closeTo(light.intensity, 4 * 1.08)
-  closeTo(material.emissiveIntensity, 0.25 * 1.18)
+  closeTo(light.intensity, 4 * 1.2)
+  closeTo(material.emissiveIntensity, 0.25 * 1.3)
   cycle.update()
 })
 

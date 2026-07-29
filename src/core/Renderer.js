@@ -1,30 +1,35 @@
 import * as THREE from 'three'
 
 const MAX_PIXEL_RATIO = 1.75
-const OUTDOOR_VIEW_DISTANCE = 150
+const OUTDOOR_VIEW_DISTANCE = 160
 
 export class Renderer {
   constructor(container) {
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x8AA8C0)  // Warm humid Hanoi sky
-    this.scene.fog = new THREE.Fog(0xA0B0B8, 40, 95)   // Thick atmospheric haze — close fog
+    // Warm humid Hanoi atmosphere — golden haze
+    this.scene.background = new THREE.Color(0x92A8B8)
+    // Thick atmospheric fog — close objects clear, far objects fade into haze
+    this.scene.fog = new THREE.Fog(0x9AABB8, 35, 90)
 
     this.camera = new THREE.PerspectiveCamera(
-      68,
+      65,
       window.innerWidth / window.innerHeight,
       0.05,
       OUTDOOR_VIEW_DISTANCE,
     )
     this.activeCamera = this.camera
 
-    this.instance = new THREE.WebGLRenderer({ antialias: true })
+    this.instance = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    })
     this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.instance.setSize(window.innerWidth, window.innerHeight)
     this.instance.outputColorSpace = THREE.SRGBColorSpace
     this.instance.toneMapping = THREE.ACESFilmicToneMapping
-    this.instance.toneMappingExposure = 1.02  // Slightly brighter for Vietnamese warmth
+    this.instance.toneMappingExposure = 1.08  // Brighter, warmer
     this.instance.shadowMap.enabled = true
-    this.instance.shadowMap.type = THREE.PCFShadowMap
+    this.instance.shadowMap.type = THREE.PCFSoftShadowMap  // Softer shadows
     this.instance.domElement.className = 'game-canvas'
     this.instance.domElement.setAttribute('aria-label', 'Khung nhìn phố 3D')
     container.append(this.instance.domElement)
@@ -43,7 +48,7 @@ export class Renderer {
       this.activeCamera.aspect = width / height
       this.activeCamera.updateProjectionMatrix()
     }
-    this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
+    this.instance.setPixelRatio(Math.min(window.deviceRatio, MAX_PIXEL_RATIO))
     this.instance.setSize(width, height)
   }
 
