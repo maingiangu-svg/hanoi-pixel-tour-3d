@@ -73,13 +73,9 @@ export class NightMarketLanterns {
   #buildLanternStrings() {
     // Lantern strings along Old Quarter streets
     const strings = [
-      // Main Old Quarter street
-      { from: [45, 4.5, 33], to: [70, 4.5, 33], count: 12 },
-      { from: [45, 4.5, 36], to: [70, 4.5, 36], count: 12 },
-      // Connector street
-      { from: [30, 4, 15], to: [55, 4, 25], count: 10 },
-      // Near church
-      { from: [-10, 4, 8], to: [10, 4, 8], count: 8 },
+      // Main Old Quarter street — fewer lanterns, fewer lights
+      { from: [45, 4.5, 33], to: [70, 4.5, 33], count: 6 },
+      { from: [45, 4.5, 36], to: [70, 4.5, 36], count: 6 },
     ]
 
     for (const string of strings) {
@@ -107,7 +103,7 @@ export class NightMarketLanterns {
     const tube = new THREE.Mesh(tubeGeo, tubeMat)
     this.group.add(tube)
 
-    // Lanterns along the string
+    // Lanterns along the string — only add light every 3rd lantern
     for (let i = 0; i < count; i++) {
       const t = (i + 0.5) / count
       const pos = curve.getPoint(t)
@@ -117,11 +113,13 @@ export class NightMarketLanterns {
       lantern.position.copy(pos)
       this.group.add(lantern)
 
-      // Point light for each lantern (dim, for performance)
-      const light = new THREE.PointLight(color, 0.8, 6, 2)
-      light.position.copy(pos)
-      light.position.y -= 0.3
-      this.group.add(light)
+      // Only add light every 3rd lantern to reduce GPU load
+      if (i % 3 === 0) {
+        const light = new THREE.PointLight(color, 0.8, 6, 2)
+        light.position.copy(pos)
+        light.position.y -= 0.3
+        this.group.add(light)
+      }
 
       this.lanterns.push({
         mesh: lantern,
@@ -174,9 +172,7 @@ export class NightMarketLanterns {
     // Night market stalls (simplified boxes with awnings)
     const stalls = [
       { pos: [48, 0, 34], size: [2.5, 2, 2], color: 0xcc3333 },
-      { pos: [53, 0, 34], size: [2.5, 2, 2], color: 0xff8800 },
       { pos: [58, 0, 34], size: [2.5, 2, 2], color: 0xffcc00 },
-      { pos: [63, 0, 34], size: [2.5, 2, 2], color: 0xff4444 },
     ]
 
     for (const stall of stalls) {
