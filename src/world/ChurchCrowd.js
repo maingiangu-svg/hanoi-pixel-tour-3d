@@ -331,6 +331,35 @@ export class ChurchCrowd {
       castShadow: true,
       colliderRadius: 0.2,
     }, { role: 'driver' })
+
+    // Extra ambient NPCs
+    this.#actor({
+      preset: 'officeWorker',
+      name: 'Nhân viên văn phòng đi làm',
+      behavior: 'walker',
+      position: [-8, 0, 9],
+      waypoints: [[-8, 0, 9], [8, 0, 9]],
+      animationOffset: 0.5,
+      colliderRadius: 0.19,
+    }, { role: 'ambientDay' })
+    this.#actor({
+      preset: 'tourist',
+      name: 'Du khách chụp Nhà thờ',
+      behavior: 'photographer',
+      position: [-5, 0, 12],
+      rotationY: Math.PI,
+      colliderRadius: 0.18,
+      animationOffset: 1.2,
+    }, { role: 'ambientDay' })
+    this.#actor({
+      preset: 'elderly',
+      name: 'Cụ già ngồi ghế đá 2',
+      behavior: 'seated',
+      position: [-9.5, 0.36, 0.95],
+      rotationY: 0,
+      collides: false,
+      animationOffset: 5.2,
+    }, { role: 'ambientDay' })
   }
 
   #buildSpecialCast() {
