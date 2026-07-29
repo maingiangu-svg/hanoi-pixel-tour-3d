@@ -8,8 +8,8 @@ export class Renderer {
     this.scene = new THREE.Scene()
     // Warm humid Hanoi atmosphere — golden haze
     this.scene.background = new THREE.Color(0x92A8B8)
-    // Thick atmospheric fog — close objects clear, far objects fade into haze
-    this.scene.fog = new THREE.Fog(0x9AABB8, 35, 90)
+    // Atmospheric fog — close objects clear, far objects fade into haze
+    this.scene.fog = new THREE.Fog(0x9AABB8, 75, 160)
 
     this.camera = new THREE.PerspectiveCamera(
       65,

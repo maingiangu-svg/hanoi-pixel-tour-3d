@@ -42,14 +42,15 @@ export class MinimapUI {
   }
 
   /**
-   * Update minimap with current player state.
+   * Update minimap with current player state and optional active mission target.
    */
-  update(playerX, playerZ, playerAngle, landmarks = [], collectibles = []) {
+  update(playerX, playerZ, playerAngle, landmarks = [], collectibles = [], missionTarget = null) {
     this.playerX = playerX
     this.playerZ = playerZ
     this.playerAngle = playerAngle
     this.landmarks = landmarks
     this.collectibles = collectibles
+    this.missionTarget = missionTarget
     this.#render()
   }
 
@@ -156,6 +157,31 @@ export class MinimapUI {
       ctx.arc(cx2, cz2, 3, 0, Math.PI * 2)
       ctx.fill()
       ctx.globalAlpha = 1
+    }
+
+    // Active Mission target
+    if (this.missionTarget && Number.isFinite(this.missionTarget.x) && Number.isFinite(this.missionTarget.z)) {
+      const tx = cx + (this.missionTarget.x - this.playerX) * scale
+      const tz = cy + (this.missionTarget.z - this.playerZ) * scale
+      const dist = Math.sqrt((tx - cx) ** 2 + (tz - cy) ** 2)
+
+      // Clamp to minimap border if outside
+      let renderX = tx
+      let renderY = tz
+      const maxR = w / 2 - 8
+      if (dist > maxR) {
+        const angle = Math.atan2(tz - cy, tx - cx)
+        renderX = cx + Math.cos(angle) * maxR
+        renderY = cy + Math.sin(angle) * maxR
+      }
+
+      ctx.fillStyle = '#FFA840'
+      ctx.beginPath()
+      ctx.arc(renderX, renderY, 5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#FFFFFF'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
     }
 
     // Player dot

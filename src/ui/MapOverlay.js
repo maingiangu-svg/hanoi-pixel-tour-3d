@@ -134,9 +134,10 @@ export function getMapHotkeyAction(event, isOpen) {
 }
 
 export class MapOverlay {
-  constructor(root, { onRequestClose = () => {} } = {}) {
+  constructor(root, { onRequestClose = () => {}, fastTravelSystem = null } = {}) {
     this.root = root
     this.onRequestClose = onRequestClose
+    this.fastTravelSystem = fastTravelSystem
     this.document = root.ownerDocument ?? document
     this.isOpen = false
     this.mapId = null
@@ -293,7 +294,57 @@ export class MapOverlay {
     view.fixtures.forEach((entry) => this.#appendFixture(entry))
     view.landmarks.forEach((entry) => this.#appendLandmark(entry, view.width))
     view.exits.forEach((entry) => this.#appendExit(entry, view.width))
+    this.#appendFastTravelStops(view.width)
     this.#appendPlayerMarker(view.width)
+  }
+
+  setFastTravelSystem(system) {
+    this.fastTravelSystem = system
+  }
+
+  #appendFastTravelStops(mapWidth) {
+    if (!this.fastTravelSystem) return
+    const stops = this.fastTravelSystem.getStops()
+    stops.forEach((stop) => {
+      const pt = mapCoordinates.worldToSource(this.mapId, stop.position)
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return
+
+      const r = Math.max(14, mapWidth / 45)
+      const group = this.#svg('g', {
+        class: `map-fast-travel map-fast-travel--${stop.type}`,
+        style: 'cursor: pointer;',
+      })
+
+      group.append(
+        this.#svg('circle', {
+          cx: pt.x,
+          cy: pt.y,
+          r,
+          fill: stop.type === 'bus' ? '#1E88E5' : '#FB8C00',
+          stroke: '#FFFFFF',
+          'stroke-width': 2,
+        }),
+        this.#svg('text', {
+          x: pt.x,
+          y: pt.y + r * 0.25,
+          'text-anchor': 'middle',
+          'dominant-baseline': 'middle',
+          fill: '#FFFFFF',
+          'font-size': `${r * 1.1}px`,
+        }, stop.icon),
+        this.#svg('title', {}, `Di chuyển nhanh: ${stop.name}`),
+      )
+
+      group.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const ok = this.fastTravelSystem.travelToStop(stop.id)
+        if (ok) {
+          this.close()
+        }
+      })
+
+      this.svg.append(group)
+    })
   }
 
   #appendRect(entry, className) {

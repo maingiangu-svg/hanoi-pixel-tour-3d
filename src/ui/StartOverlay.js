@@ -51,6 +51,7 @@ export class StartOverlay {
     this.dialogueActive = false
     this.mapActive = false
     this.cinematicActive = false
+    this.missionPickerActive = false
     this.resumeMode = false
     this.noticeTimer = null
     this.flashTimer = null
@@ -82,6 +83,13 @@ export class StartOverlay {
   setCinematicActive(active) {
     this.cinematicActive = active
     this.shell.classList.toggle('is-cinematic-active', active)
+    if (active) this.setInteraction(null)
+    this.#renderState()
+  }
+
+  setMissionPickerActive(active) {
+    this.missionPickerActive = active
+    this.shell.classList.toggle('is-mission-picker-active', active)
     if (active) this.setInteraction(null)
     this.#renderState()
   }
@@ -130,12 +138,14 @@ export class StartOverlay {
       || this.dialogueActive
       || this.mapActive
       || this.cinematicActive
+      || this.missionPickerActive
     )
     const crosshairVisible = (
       this.locked
       && !this.dialogueActive
       && !this.mapActive
       && !this.cinematicActive
+      && !this.missionPickerActive
     )
     this.overlay.classList.toggle('is-hidden', overlayHidden)
     this.crosshair.classList.toggle('is-visible', crosshairVisible)

@@ -130,8 +130,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 1.3,           // Signs and lanterns pop
     reflectionScale: 1.15,
     waterRoughness: 0.32,
-    fogNear: 30,
-    fogFar: 80,
+    fogNear: 65,
+    fogFar: 140,
   }),
   dawn: state({
     sky: 0x6A809A,
@@ -149,8 +149,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.7,
     reflectionScale: 0.85,
     waterRoughness: 0.28,
-    fogNear: 35,
-    fogFar: 85,
+    fogNear: 60,
+    fogFar: 130,
   }),
   day: state({
     sky: 0x6A90B0,           // Hanoi humid blue
@@ -168,8 +168,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.22,
     reflectionScale: 0.58,
     waterRoughness: 0.4,
-    fogNear: 40,
-    fogFar: 95,
+    fogNear: 75,
+    fogFar: 160,
   }),
   goldenHour: state({
     sky: 0xAA9878,           // Rich golden sky
@@ -187,8 +187,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.7,
     reflectionScale: 1.35,
     waterRoughness: 0.2,
-    fogNear: 35,
-    fogFar: 85,
+    fogNear: 70,
+    fogFar: 150,
   }),
   sunset: state({
     sky: 0x6A5868,           // Deep purple-orange
@@ -206,8 +206,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 0.95,
     reflectionScale: 1.25,
     waterRoughness: 0.22,
-    fogNear: 32,
-    fogFar: 82,
+    fogNear: 65,
+    fogFar: 145,
   }),
   blueHour: state({
     sky: HANOI_COLORS.blueHour,
@@ -225,8 +225,8 @@ const OUTDOOR = Object.freeze({
     emissiveScale: 1.15,
     reflectionScale: 1.35,
     waterRoughness: 0.28,
-    fogNear: 30,
-    fogFar: 80,
+    fogNear: 70,
+    fogFar: 150,
   }),
 })
 

@@ -51,6 +51,9 @@ import { registerPedestrianMoments } from '../moments/PedestrianMoments.js'
 import { registerLakeBridgeTempleMoments } from '../moments/LakeBridgeTempleMoments.js'
 import { registerDevelopmentTestMoments } from '../moments/developmentMomentFixtures.js'
 import { StoryManager } from '../story/StoryManager.js'
+import { FastTravelSystem } from '../systems/FastTravelSystem.js'
+import { MotorcycleMissionSystem } from '../systems/MotorcycleMissionSystem.js'
+import { MotorcycleMissionUI } from '../ui/MotorcycleMissionUI.js'
 
 const ENABLE_DEBUG_MOMENT_FIXTURES = import.meta.env.DEV
   && new URLSearchParams(window.location.search).has('debug-moments')
@@ -173,8 +176,25 @@ export class Game {
     })
     this.clockUi = new GameClockUI(this.ui.shell)
     this.clockUi.update(this.clock)
+    this.fastTravelSystem = new FastTravelSystem({
+      player: this.player,
+      audio: this.audio,
+      ui: this.ui,
+    })
     this.mapUi = new MapOverlay(this.ui.shell, {
       onRequestClose: () => this.#closeMap(true),
+      fastTravelSystem: this.fastTravelSystem,
+    })
+    this.motorcycleMissionSystem = new MotorcycleMissionSystem({
+      ui: this.ui,
+      player: this.player,
+    })
+    this.motorcycleMissionUi = new MotorcycleMissionUI({
+      missionSystem: this.motorcycleMissionSystem,
+      gameUi: this.ui,
+      player: this.player,
+      input: this.input,
+      parent: this.ui.shell,
     })
     this.mapDirection = new THREE.Vector3()
     this.resumePointerLockAfterMap = false
@@ -399,6 +419,7 @@ export class Game {
         || this.photoAlbum.isOpen
         || this.photoQuestJournal.isOpen
         || this.cinematics.isActive()
+        || this.motorcycleMissionUi.isOpen
       ) {
         this.player.controls.unlock()
         return
@@ -480,6 +501,11 @@ export class Game {
       }
       this.world.update(simulationDelta, this.clock)
       this.interactions.update()
+      this.motorcycleMissionSystem.update(
+        deltaTime,
+        this.player.camera.position,
+        this.player.isMotorbikeMounted,
+      )
     }
     this.clockUi.update(this.clock)
     const renderStartedAt = this.profiler?.begin() ?? 0
@@ -495,7 +521,15 @@ export class Game {
       || this.photoAlbum.isOpen
       || this.photoQuestJournal.isOpen
       || this.cinematics.isActive()
+      || this.motorcycleMissionUi.isOpen
     ) return
+
+    if (!event.repeat && (event.code === 'Digit3' || event.code === 'Numpad3' || (!event.code && event.key === '3'))) {
+      event.preventDefault()
+      this.motorcycleMissionUi.showMissionPicker()
+      return
+    }
+
     const action = getMapHotkeyAction(event, this.mapUi.isOpen)
     if (!action) return
     if (action === 'open') {
