@@ -27,7 +27,8 @@ import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
 import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
-import { GradientSky } from './sky/GradientSky.js'
+import { EnhancedSky } from './sky/EnhancedSky.js'
+import { VietnameseGeometryBuilder } from './style/VietnameseGeometryBuilder.js'
 
 const OUTDOOR_SKY = 0x53647b
 const INTERIOR_SKY = 0x17191b
@@ -67,7 +68,7 @@ export class ChurchDistrict {
     this.outdoor.name = 'Khu Nhà thờ Lớn'
     this.root.add(this.outdoor)
     scene.add(this.root)
-    this.gradientSky = new GradientSky({ parent: this.root })
+    this.enhancedSky = new EnhancedSky({ parent: this.root })
 
     const outdoorColliders = []
     this.shops = new ShopManager({
@@ -90,6 +91,12 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
     })
+
+    // ═══ Stylized Realistic — Vietnamese detail overlay ═══
+    this.vietBuilder = new VietnameseGeometryBuilder(this.kit)
+    this.#addVietnameseTrees(this.outdoor, outdoorColliders)
+    this.#addVietnameseStreetDetails(this.outdoor, outdoorColliders)
+
     this.oldQuarterConnector = new OldQuarterConnector({
       kit: this.kit,
       parent: this.outdoor,
@@ -427,7 +434,12 @@ export class ChurchDistrict {
   }
 
   update(deltaTime, clock = null) {
-    this.gradientSky.updatePosition(this.playerPosition)
+    this.enhancedSky.updatePosition(this.playerPosition)
+    // Drive sky animation (sun, moon, stars, clouds)
+    if (clock) {
+      const gameHour = (clock.minutes % 1440) / 60
+      this.enhancedSky.updateCelestials(gameHour, deltaTime)
+    }
     this.#updateDistrictVisibility()
     this.sceneMomentEffects.update(
       deltaTime,
@@ -532,7 +544,7 @@ export class ChurchDistrict {
       pointLights,
       spotLights,
       emissiveMaterials,
-      skyGradient: this.gradientSky,
+      skyGradient: this.enhancedSky,
     })
 
     const contexts = {
@@ -1167,7 +1179,7 @@ export class ChurchDistrict {
       area.group.visible = areaName === activeAreaName
     })
     this.outdoorLighting.group.visible = activeAreaName !== 'interior'
-    this.gradientSky.setVisible(activeAreaName !== 'interior')
+    this.enhancedSky.setVisible(activeAreaName !== 'interior')
   }
 
   #updateDistrictVisibility() {
@@ -1236,7 +1248,48 @@ export class ChurchDistrict {
     this.scene.background = new THREE.Color(indoor ? INTERIOR_SKY : OUTDOOR_SKY)
     this.scene.fog = indoor
       ? new THREE.Fog(INTERIOR_SKY, 22, 42)
-      : new THREE.Fog(OUTDOOR_SKY, 70, 145)
+      : new THREE.Fog(0xA0B0B8, 40, 95)
+  }
+
+  // ═══ Vietnamese detail overlay ═══
+
+  #addVietnameseTrees(parent, colliders) {
+    // Thêm cây chi tiết dọc đường Nhà Chung
+    const treePositions = [
+      [-22, 8.5], [-14, 8.5], [-6, 8.5], [6, 8.5], [14, 8.5], [22, 8.5],
+      [-22, 17.5], [-14, 17.5], [-6, 17.5], [6, 17.5], [14, 17.5], [22, 17.5],
+    ]
+    for (const [x, z] of treePositions) {
+      this.vietBuilder.addTree(parent, x, z, 'medium', colliders)
+    }
+    // Cây lớn quanh quảng trường Nhà thờ
+    for (const [x, z] of [[-12, -8], [12, -8], [-12, 5], [12, 5]]) {
+      this.vietBuilder.addTree(parent, x, z, 'large', colliders)
+    }
+    // Cây nhỏ trong ngõ
+    for (const [x, z] of [[-9, 22], [-9, 28], [-9, 34]]) {
+      this.vietBuilder.addTree(parent, x, z, 'small', colliders)
+    }
+  }
+
+  #addVietnameseStreetDetails(parent, colliders) {
+    // Đèn đường chi tiết — bổ sung thêm đèn dọc phố
+    const lampPositions = [
+      [-20, 8.5], [0, 8.5], [20, 8.5],
+      [-20, 17.5], [0, 17.5], [20, 17.5],
+    ]
+    for (const [x, z] of lampPositions) {
+      const { light } = this.vietBuilder.addStreetLamp(parent, x, z, colliders)
+      this.streetBuildingLights.push(light)
+    }
+    // Ghế đá dọc phố
+    for (const [x, z, rot] of [[-8, 11, 0], [8, 11, Math.PI], [-8, 16, 0], [8, 16, Math.PI]]) {
+      this.vietBuilder.addBench(parent, x, z, rot, colliders)
+    }
+    // Xe đẩy hàng rong
+    for (const [x, z] of [[18, 12.5], [-15, 17]]) {
+      this.vietBuilder.addVendorCart(parent, x, z)
+    }
   }
 
   dispose() {
@@ -1256,7 +1309,7 @@ export class ChurchDistrict {
     this.hoanKiemPedestrianDistrict.dispose()
     this.hoanKiemGroundExpansion.dispose()
     this.staticBatches.forEach((batch) => batch.dispose())
-    this.gradientSky.dispose()
+    this.enhancedSky.dispose()
     this.kit.dispose()
     this.scene.remove(this.root)
   }

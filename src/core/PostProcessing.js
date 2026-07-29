@@ -161,12 +161,12 @@ export class PostProcessing {
     this.renderPass = new RenderPass(scene, camera)
     this.composer.addPass(this.renderPass)
 
-    // Bloom — makes emissive lights (lamps, lanterns, signs) glow
+    // Bloom — strong glow on all lights and emissive surfaces
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.x, size.y),
-      0.4,   // strength — slightly stronger than before
-      0.6,   // radius — wider bloom
-      0.75,  // threshold — catch more light sources
+      0.7,   // strength — strong bloom
+      0.8,   // radius — wide glow
+      0.6,   // threshold — catch most light sources
     )
     this.composer.addPass(this.bloomPass)
 

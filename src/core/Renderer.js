@@ -6,8 +6,8 @@ const OUTDOOR_VIEW_DISTANCE = 150
 export class Renderer {
   constructor(container) {
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x7A9AB8)  // Warmer Hanoi sky
-    this.scene.fog = new THREE.Fog(0x98ABB8, 68, 140)  // Warm haze
+    this.scene.background = new THREE.Color(0x8AA8C0)  // Warm humid Hanoi sky
+    this.scene.fog = new THREE.Fog(0xA0B0B8, 40, 95)   // Thick atmospheric haze — close fog
 
     this.camera = new THREE.PerspectiveCamera(
       68,

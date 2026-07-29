@@ -31,6 +31,7 @@ export class StreetProps {
   }
 
   #addPlanter(x, z, colliders) {
+    // Chậu cây — terracotta with rim
     this.kit.cylinder(this.group, {
       name: 'Chậu cây',
       radius: 0.55,
@@ -39,12 +40,53 @@ export class StreetProps {
       material: 'terracotta',
       castShadow: true,
     })
+    this.kit.cylinder(this.group, {
+      name: 'Viền chậu cây',
+      radius: 0.6,
+      height: 0.08,
+      position: [x, 0.72, z],
+      material: 'terracotta',
+    })
+    // Đất trong chậu
+    this.kit.cylinder(this.group, {
+      name: 'Đất chậu cây',
+      radius: 0.5,
+      height: 0.06,
+      position: [x, 0.69, z],
+      material: 'stoneDark',
+    })
+    // Cây — nhiều tầng tán lá (giống cây xanh Hà Nội)
+    // Tầng dưới — tán rộng
     this.kit.sphere(this.group, {
-      name: 'Tán cây thấp',
-      scale: [0.72, 1.05, 0.72],
-      position: [x, 1.32, z],
+      name: 'Tán cây tầng dưới',
+      scale: [0.85, 0.55, 0.85],
+      position: [x, 1.35, z],
       material: 'foliage',
       castShadow: true,
+    })
+    // Tầng giữa — tán vừa
+    this.kit.sphere(this.group, {
+      name: 'Tán cây tầng giữa',
+      scale: [0.65, 0.5, 0.65],
+      position: [x + 0.12, 1.7, z - 0.08],
+      material: 'foliageLight',
+      castShadow: true,
+    })
+    // Tầng trên — tán nhỏ
+    this.kit.sphere(this.group, {
+      name: 'Tán cây tầng trên',
+      scale: [0.45, 0.4, 0.45],
+      position: [x - 0.08, 1.95, z + 0.1],
+      material: 'foliage',
+      castShadow: true,
+    })
+    // Thân cây
+    this.kit.cylinder(this.group, {
+      name: 'Thân cây',
+      radius: 0.06,
+      height: 0.65,
+      position: [x, 1.0, z],
+      material: 'darkWood',
     })
     this.kit.addCollider(colliders, x, z, 0.95, 0.95, 'Chậu cây')
   }
@@ -247,6 +289,29 @@ export class StreetProps {
       scale: [0.18, 0.18, 0.14],
       position: [0, 1.3, -0.7],
       material: 'warmGlass',
+    })
+    // Đèn hậu
+    this.kit.sphere(bike, {
+      name: 'Đèn hậu xe máy',
+      scale: [0.12, 0.1, 0.08],
+      position: [0, 0.72, 0.72],
+      material: 'brick',
+    })
+    // Ống xả
+    this.kit.cylinder(bike, {
+      name: 'Ống xả xe máy',
+      radius: 0.04,
+      height: 0.55,
+      position: [-0.22, 0.28, 0.3],
+      material: 'metal',
+      rotation: [Math.PI / 2, 0, 0],
+    })
+    // Baga sau
+    this.kit.box(bike, {
+      name: 'Baga sau xe máy',
+      size: [0.38, 0.04, 0.3],
+      position: [0, 0.88, 0.48],
+      material: 'metal',
     })
     this.kit.addCollider(colliders, x, z, 0.85, 2, 'Xe máy đỗ')
   }
