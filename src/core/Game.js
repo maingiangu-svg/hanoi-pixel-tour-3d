@@ -568,7 +568,7 @@ export class Game {
     }
 
     const renderStartedAt = this.profiler?.begin() ?? 0
-    this.renderer.render(deltaTime, this.dayNight.getLightingPhase())
+    this.renderer.render()
     this.profiler?.end('render', renderStartedAt)
     this.profiler?.endFrame(deltaTime)
     this.debug?.update(deltaTime)
