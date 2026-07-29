@@ -22,8 +22,8 @@ export class Renderer {
     this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.instance.setSize(window.innerWidth, window.innerHeight)
     this.instance.outputColorSpace = THREE.SRGBColorSpace
-    this.instance.toneMapping = THREE.ACESFilmicToneMapping
-    this.instance.toneMappingExposure = 0.94
+    this.instance.toneMapping = THREE.NoToneMapping
+    this.instance.toneMappingExposure = 1
     this.instance.shadowMap.enabled = true
     this.instance.shadowMap.type = THREE.PCFShadowMap
     this.instance.domElement.className = 'game-canvas'

@@ -50,25 +50,10 @@ const ColorGradingShader = {
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
 
-      // Brightness
-      color.rgb += brightness;
-
-      // Contrast
-      color.rgb = (color.rgb - 0.5) * contrast + 0.5;
-
-      // Saturation
-      float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-      color.rgb = mix(vec3(luma), color.rgb, saturation);
-
-      // Warmth (subtle orange shift)
-      color.r += warmth * 0.6;
-      color.g += warmth * 0.25;
-      color.b -= warmth * 0.15;
-
       // Vignette
       vec2 center = vUv - 0.5;
       float dist = length(center);
-      float vignette = 1.0 - smoothstep(0.4, 0.9, dist) * vignetteStrength;
+      float vignette = 1.0 - smoothstep(0.5, 1.0, dist) * vignetteStrength;
       color.rgb *= vignette;
 
       // Subtle film grain
@@ -92,6 +77,9 @@ export class PostProcessing {
     const size = renderer.getSize(new THREE.Vector2())
     const pixelRatio = renderer.getPixelRatio()
 
+    // Disable renderer tone mapping — OutputPass handles it
+    renderer.toneMapping = THREE.NoToneMapping
+
     this.composer = new EffectComposer(renderer)
     this.composer.setPixelRatio(pixelRatio)
     this.composer.setSize(size.x, size.y)
@@ -103,83 +91,59 @@ export class PostProcessing {
     // Bloom — makes emissive lights glow
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.x, size.y),
-      0.4,   // strength — subtle, not overwhelming
-      0.6,   // radius
-      0.7,   // threshold — only bright things bloom
+      0.35,  // strength
+      0.5,   // radius
+      0.8,   // threshold — only very bright things bloom
     )
     this.composer.addPass(this.bloomPass)
 
-    // Color grading + vignette
-    this.colorGradingPass = new ShaderPass(ColorGradingShader)
-    this.composer.addPass(this.colorGradingPass)
-
-    // Output pass (handles color space)
+    // Output pass (handles color space + tone mapping)
     this.outputPass = new OutputPass()
     this.composer.addPass(this.outputPass)
+
+    // Color grading + vignette (after output)
+    this.colorGradingPass = new ShaderPass(ColorGradingShader)
+    this.composer.addPass(this.colorGradingPass)
   }
 
   /**
    * Adjust bloom/color grading based on lighting phase.
    */
-  updatePhase(phase, gameHour) {
+  updatePhase(phase) {
     if (!this.enabled) return
 
     // Bloom varies by time of day
     switch (phase) {
       case 'night':
-        this.bloomPass.strength = 0.7
-        this.bloomPass.threshold = 0.5
-        this.colorGradingPass.uniforms.brightness.value = -0.02
-        this.colorGradingPass.uniforms.contrast.value = 1.12
-        this.colorGradingPass.uniforms.saturation.value = 0.95
-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.45
-        this.colorGradingPass.uniforms.warmth.value = -0.02
+        this.bloomPass.strength = 0.6
+        this.bloomPass.threshold = 0.6
+        this.colorGradingPass.uniforms.vignetteStrength.value = 0.4
         break
       case 'blueHour':
-        this.bloomPass.strength = 0.55
-        this.bloomPass.threshold = 0.55
-        this.colorGradingPass.uniforms.brightness.value = -0.01
-        this.colorGradingPass.uniforms.contrast.value = 1.1
-        this.colorGradingPass.uniforms.saturation.value = 1.05
-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.4
-        this.colorGradingPass.uniforms.warmth.value = -0.01
+        this.bloomPass.strength = 0.5
+        this.bloomPass.threshold = 0.65
+        this.colorGradingPass.uniforms.vignetteStrength.value = 0.35
         break
       case 'sunset':
-        this.bloomPass.strength = 0.5
-        this.bloomPass.threshold = 0.6
-        this.colorGradingPass.uniforms.brightness.value = 0.01
-        this.colorGradingPass.uniforms.contrast.value = 1.08
-        this.colorGradingPass.uniforms.saturation.value = 1.15
-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.35
-        this.colorGradingPass.uniforms.warmth.value = 0.06
+        this.bloomPass.strength = 0.45
+        this.bloomPass.threshold = 0.7
+        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
         break
       case 'goldenHour':
-        this.bloomPass.strength = 0.45
-        this.bloomPass.threshold = 0.6
-        this.colorGradingPass.uniforms.brightness.value = 0.02
-        this.colorGradingPass.uniforms.contrast.value = 1.06
-        this.colorGradingPass.uniforms.saturation.value = 1.18
+        this.bloomPass.strength = 0.4
+        this.bloomPass.threshold = 0.7
         this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
-        this.colorGradingPass.uniforms.warmth.value = 0.08
         break
       case 'dawn':
-        this.bloomPass.strength = 0.35
-        this.bloomPass.threshold = 0.65
-        this.colorGradingPass.uniforms.brightness.value = 0.01
-        this.colorGradingPass.uniforms.contrast.value = 1.05
-        this.colorGradingPass.uniforms.saturation.value = 1.08
-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
-        this.colorGradingPass.uniforms.warmth.value = 0.04
+        this.bloomPass.strength = 0.3
+        this.bloomPass.threshold = 0.75
+        this.colorGradingPass.uniforms.vignetteStrength.value = 0.25
         break
       case 'day':
       default:
-        this.bloomPass.strength = 0.3
-        this.bloomPass.threshold = 0.75
-        this.colorGradingPass.uniforms.brightness.value = 0.02
-        this.colorGradingPass.uniforms.contrast.value = 1.08
-        this.colorGradingPass.uniforms.saturation.value = 1.12
-        this.colorGradingPass.uniforms.vignetteStrength.value = 0.35
-        this.colorGradingPass.uniforms.warmth.value = 0.04
+        this.bloomPass.strength = 0.25
+        this.bloomPass.threshold = 0.8
+        this.colorGradingPass.uniforms.vignetteStrength.value = 0.3
         break
     }
   }
