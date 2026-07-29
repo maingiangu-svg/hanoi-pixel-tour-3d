@@ -249,6 +249,7 @@ export class Game {
       lighting: this.world.getLightingContext(),
       area: this.world.activeAreaName,
     })
+    this.world.setDayNightRef(this.dayNight)
     this.photoUi = new PhotoModeUI(this.ui.shell)
     this.photoStore = new PhotoStore()
     this.photoQuestSystem = new PhotoQuestSystem()
@@ -475,7 +476,7 @@ export class Game {
     }
     this.clockUi.update(this.clock)
     const renderStartedAt = this.profiler?.begin() ?? 0
-    this.renderer.render()
+    this.renderer.render(deltaTime, this.dayNight.getLightingPhase())
     this.profiler?.end('render', renderStartedAt)
     this.profiler?.endFrame(deltaTime)
     this.debug?.update(deltaTime)

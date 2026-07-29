@@ -27,7 +27,7 @@ import { ShopManager } from './shops/ShopManager.js'
 import { batchStaticMeshes } from './shared/StaticMeshBatcher.js'
 import { HOAN_KIEM_PHOTO_VIEWPOINTS } from './map/hoanKiemPhotoViewpoints.js'
 import { AmbientLifeSystem } from '../npcs/AmbientLifeSystem.js'
-import { GradientSky } from './sky/GradientSky.js'
+import { EnhancedSky } from './sky/EnhancedSky.js'
 
 const OUTDOOR_SKY = 0x53647b
 const INTERIOR_SKY = 0x17191b
@@ -67,7 +67,7 @@ export class ChurchDistrict {
     this.outdoor.name = 'Khu Nhà thờ Lớn'
     this.root.add(this.outdoor)
     scene.add(this.root)
-    this.gradientSky = new GradientSky({ parent: this.root })
+    this.gradientSky = new EnhancedSky({ parent: this.root })
 
     const outdoorColliders = []
     this.shops = new ShopManager({
@@ -101,6 +101,7 @@ export class ChurchDistrict {
       parent: this.outdoor,
       colliders: outdoorColliders,
     })
+    this.dayNightRef = null
     this.shops.addShop({
       id: 'cafe-bo-ho',
       parent: this.hoanKiemDistrict.group,
@@ -428,6 +429,7 @@ export class ChurchDistrict {
 
   update(deltaTime, clock = null) {
     this.gradientSky.updatePosition(this.playerPosition)
+    if (clock) this.gradientSky.updateCelestials(clock.minutes / 60, deltaTime)
     this.#updateDistrictVisibility()
     this.sceneMomentEffects.update(
       deltaTime,
@@ -435,6 +437,7 @@ export class ChurchDistrict {
     )
     if (clock) this.crowd?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.hoanKiemCrowd?.update(deltaTime, clock, this.activeAreaName)
+    if (clock) this.hoanKiemDistrict?.update(deltaTime, clock, this.dayNightRef)
     if (clock) this.ambientLife?.update(deltaTime, clock, this.activeAreaName)
     if (clock) this.shops.update(deltaTime, clock, this.activeAreaName)
     const moStartedAt = this.profiler?.begin() ?? 0
@@ -499,6 +502,10 @@ export class ChurchDistrict {
         interior: countMeshes(this.interior.group),
       },
     }
+  }
+
+  setDayNightRef(dayNight) {
+    this.dayNightRef = dayNight
   }
 
   getLightingContext() {

@@ -4,6 +4,7 @@ import {
   createPhotoPoint,
   createSeatPoint,
 } from './interactions/WorldActionPoints.js'
+import { EnhancedLakeWater } from './effects/EnhancedLakeWater.js'
 
 const TOWER_POSITION = Object.freeze({ x: 103, y: 0, z: 0 })
 export const HOAN_KIEM_WATER_COLLIDERS = Object.freeze([
@@ -32,6 +33,36 @@ export class HoanKiemDistrict {
     this.#buildLamps()
     this.#buildLakefront()
     this.#buildInteractions()
+
+    // Enhanced water surface for the main lake
+    this.enhancedWater = new EnhancedLakeWater({
+      parent: this.group,
+      width: 60,
+      depth: 66,
+      position: [102, -0.02, 0],
+    })
+  }
+
+  update(deltaTime, clock, dayNight) {
+    if (this.enhancedWater && dayNight) {
+      const sunAngle = ((clock.minutes / 60 - 6) / 12) * Math.PI
+      const sunDir = new THREE.Vector3(
+        0.2,
+        Math.max(-0.1, Math.sin(sunAngle)),
+        Math.cos(sunAngle),
+      ).normalize()
+      this.enhancedWater.update(
+        deltaTime,
+        sunDir,
+        null,
+        null,
+        dayNight.getLightingPhase(),
+      )
+    }
+  }
+
+  dispose() {
+    this.enhancedWater?.dispose()
   }
 
   #buildTerrain() {

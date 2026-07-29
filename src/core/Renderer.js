@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { PostProcessing } from './PostProcessing.js'
 
 const MAX_PIXEL_RATIO = 1.75
 const OUTDOOR_VIEW_DISTANCE = 150
@@ -29,6 +30,9 @@ export class Renderer {
     this.instance.domElement.setAttribute('aria-label', 'Khung nhìn phố 3D')
     container.append(this.instance.domElement)
 
+    // Post-processing (bloom, color grading, vignette)
+    this.postProcessing = new PostProcessing(this.instance, this.scene, this.camera)
+
     this.handleResize = this.handleResize.bind(this)
     window.addEventListener('resize', this.handleResize)
   }
@@ -45,6 +49,7 @@ export class Renderer {
     }
     this.instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.instance.setSize(width, height)
+    this.postProcessing.handleResize(width, height)
   }
 
   setActiveCamera(camera = this.camera) {
@@ -54,12 +59,14 @@ export class Renderer {
     return this.activeCamera
   }
 
-  render() {
-    this.instance.render(this.scene, this.activeCamera)
+  render(delta = 0, phase = 'day') {
+    this.postProcessing.updatePhase(phase)
+    this.postProcessing.render(delta)
   }
 
   dispose() {
     window.removeEventListener('resize', this.handleResize)
+    this.postProcessing.dispose()
     this.instance.dispose()
     this.instance.domElement.remove()
   }
